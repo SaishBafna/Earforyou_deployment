@@ -7,13 +7,14 @@ import { ApiError } from "../../utils/ApiError.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import User from "../../models/Users.js";
+import admin from 'firebase-admin';
 
 import {
   getLocalPath,
   getStaticFilePath,
   removeLocalFile,
 } from "../../utils/helpers.js";
-import admin from "../../config/firebaseConfig.js";
+
 /**
  * @description Utility function which returns the pipeline stages to structure the chat message schema with common lookups
  * @returns {mongoose.PipelineStage[]}
@@ -190,31 +191,36 @@ const sendMessage = asyncHandler(async (req, res) => {
       receivedMessage
     );
 
-    // Send push notification if device token exists
-    if (participant.deviceToken) {
-      const notificationPayload = {
-        notification: {
-          title: `New message from ${senderName}`,
-          body: content || 'You received an attachment',
-          badge: '1',
-          sound: 'default'
-        },
-        data: {
-          chatId: chatId.toString(),
-          messageId: message._id.toString(),
-          type: 'chat_message'
-        },
-        token: participant.deviceToken
-      };
 
-      try {
-        await admin.messaging().send(notificationPayload);
-        console.log(`Push notification sent to user ${participant._id}`);
-      } catch (error) {
-        console.error('Error sending push notification:', error);
-        // Don't throw error as push notification failure shouldn't break the message flow
-      }
-    }
+    const notificationTitle = `New message from ${senderName}`;
+    const notificationMessage = content || 'You received an attachment'; 
+    
+      
+    await sendNotification(participant, notificationTitle, notificationMessage);
+
+    // Send push notification if device token exists
+    // if (participant.deviceToken) {
+    //   const notificationPayload = {
+    //     notification: {
+    //       title: `New message from ${senderName}`,
+    //       body: content || 'You received an attachment',
+    //     },
+    //     data: {
+    //       chatId: chatId.toString(),
+    //       messageId: message._id.toString(),
+    //       type: 'chat_message'
+    //     },
+    //     token: participant.deviceToken
+    //   };
+
+    //   try {
+    //     await admin.messaging().sendNotification(notificationPayload);
+    //     console.log(`Push notification sent to user ${participant._id}`);
+    //   } catch (error) {
+    //     console.error('Error sending push notification:', error);
+    //     // Don't throw error as push notification failure shouldn't break the message flow
+    //   }
+    // }
   });
 
   // Wait for all notifications to be processed
@@ -300,3 +306,32 @@ const deleteMessage = asyncHandler(async (req, res) => {
 });
 
 export { getAllMessages, sendMessage, deleteMessage };
+
+
+
+async function sendNotification(userId, title, message,) {
+  // Assuming you have the FCM device token stored in your database
+  const user = await User.findById(userId);
+  const deviceToken = user.deviceToken;
+
+  if (!deviceToken) {
+    console.error("No device token found for user:", userId);
+    return;
+  }
+
+  const payload = {
+    notification: {
+      title: title,
+      body: message,
+    },
+
+    token: deviceToken,
+  };
+
+  try {
+    const response = await admin.messaging().send(payload);
+    console.log("Notification sent successfully:", response);
+  } catch (error) {
+    console.error("Error sending notification:", error);
+  }
+}
