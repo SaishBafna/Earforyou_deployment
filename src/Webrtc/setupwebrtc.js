@@ -46,10 +46,18 @@ export const setupWebRTC = (io) => {
         const user = await User.findById(userId);
 
         // Check if user exists and is registered in the "user" category
-        if (!user || user.userType === 'USER') {
+        if (!user || user.userType === 'RECEIVER') {
           socket.emit('callError', { message: 'You are not eligible to initiate a call' });
           return;
         }
+
+        // Check if user exists and is eligible to initiate a call
+        if (!user || ['Doctor', 'Therapist', 'Healer', 'Psychologist', 'User'].includes(user.userCategory)) {
+          socket.emit('callError', { message: 'You are not eligible to initiate a call' });
+          return;
+        }
+
+        
 
         // Get all available users (excluding the requester and users in calls)
         const allAvailableUsers = Object.keys(users).filter(potentialUserId =>

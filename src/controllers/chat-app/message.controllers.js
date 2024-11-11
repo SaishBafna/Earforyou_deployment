@@ -194,33 +194,13 @@ const sendMessage = asyncHandler(async (req, res) => {
 
     const notificationTitle = `New message from ${senderName}`;
     const notificationMessage = content || 'You received an attachment'; 
-    
+    const chatId= chatId.toString()
+    const messageId= message._id.toString()
       
-    await sendNotification(participant, notificationTitle, notificationMessage);
+    await sendNotification(participant, notificationTitle, notificationMessage,chatId,messageId);
 
-    // Send push notification if device token exists
-    // if (participant.deviceToken) {
-    //   const notificationPayload = {
-    //     notification: {
-    //       title: `New message from ${senderName}`,
-    //       body: content || 'You received an attachment',
-    //     },
-    //     data: {
-    //       chatId: chatId.toString(),
-    //       messageId: message._id.toString(),
-    //       type: 'chat_message'
-    //     },
-    //     token: participant.deviceToken
-    //   };
-
-    //   try {
-    //     await admin.messaging().sendNotification(notificationPayload);
-    //     console.log(`Push notification sent to user ${participant._id}`);
-    //   } catch (error) {
-    //     console.error('Error sending push notification:', error);
-    //     // Don't throw error as push notification failure shouldn't break the message flow
-    //   }
-    // }
+  
+  
   });
 
   // Wait for all notifications to be processed
@@ -309,7 +289,7 @@ export { getAllMessages, sendMessage, deleteMessage };
 
 
 
-async function sendNotification(userId, title, message,) {
+async function sendNotification(userId, title, message ,chatId,messageId) {
   // Assuming you have the FCM device token stored in your database
   const user = await User.findById(userId);
   const deviceToken = user.deviceToken;
@@ -323,6 +303,10 @@ async function sendNotification(userId, title, message,) {
     notification: {
       title: title,
       body: message,
+    },
+    data: { 
+      chatId:chatId,
+      messageId:messageId
     },
 
     token: deviceToken,
