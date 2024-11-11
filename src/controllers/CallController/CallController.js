@@ -32,50 +32,92 @@ import User from '../../models/Users.js';
 
 
 
-
 export const getRecentCalls = async (req, res) => {
     try {
-      const { userId } = req.params; // Assuming userId is passed as a request parameter
+      const { userId } = req.params;
   
       console.log('Fetching calls for userId:', userId);
   
-      // Retrieve recent call logs where the user is either the caller or the receiver
+      // First, verify if userId exists and is valid
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID is required.' });
+      }
+  
+      // Retrieve recent call logs with proper error handling for null references
       const recentCalls = await CallLog.find({
         $or: [{ caller: userId }, { receiver: userId }],
       })
-        .sort({ startTime: -1 }) // Sorting by `startTime` in descending order (most recent first)
+        .sort({ startTime: -1 })
         .limit(10)
-        .populate('caller', 'username userType userCategory phone') // Populate the caller's user details from User model
-        .populate('receiver', 'username userType userCategory phone') // Populate the receiver's user details from User model
-        .exec(); // Ensure the query is executed
+        .populate('caller', 'username userType userCategory phone')
+        .populate('receiver', 'username userType userCategory phone')
+        .lean() // Convert to plain JavaScript objects
+        .exec();
   
-      if (recentCalls.length === 0) {
+      if (!recentCalls || recentCalls.length === 0) {
         return res.status(404).json({ message: 'No call history found.' });
       }
   
-      // Remove duplicate calls based on unique combination of `caller` and `receiver`
+      // Filter out invalid calls and handle null references
+      const validCalls = recentCalls.filter(call => {
+        return call.caller && call.receiver && // Check if both caller and receiver exist
+               call.caller._id && call.receiver._id; // Check if both have _id properties
+      });
+  
+      // Remove duplicate calls
       const uniqueCalls = [];
       const seen = new Set();
   
-      for (const call of recentCalls) {
-        const callerId = call.caller._id.toString();
-        const receiverId = call.receiver._id.toString();
-        const callKey = [callerId, receiverId].sort().join('-'); // Sort to handle duplicate regardless of order
+      for (const call of validCalls) {
+        try {
+          const callerId = call.caller._id.toString();
+          const receiverId = call.receiver._id.toString();
+          const callKey = [callerId, receiverId].sort().join('-');
   
-        if (!seen.has(callKey)) {
-          seen.add(callKey);
-          uniqueCalls.push(call);
+          if (!seen.has(callKey)) {
+            seen.add(callKey);
+            uniqueCalls.push({
+              ...call,
+              caller: call.caller || { username: 'Unknown User' },
+              receiver: call.receiver || { username: 'Unknown User' }
+            });
+          }
+        } catch (err) {
+          console.warn('Skipping invalid call record:', err);
+          continue;
         }
       }
   
-      return res.status(200).json({ recentCalls: uniqueCalls });
+      // If all calls were invalid, return appropriate message
+      if (uniqueCalls.length === 0) {
+        return res.status(404).json({ 
+          message: 'No valid call history found.',
+          details: 'All retrieved calls contained invalid or missing user references.'
+        });
+      }
+  
+      return res.status(200).json({ 
+        recentCalls: uniqueCalls,
+        totalCalls: uniqueCalls.length
+      });
+  
     } catch (error) {
       console.error('Error fetching recent call history:', error);
-      return res.status(500).json({ message: 'Server error, unable to fetch call history.' });
+      
+      // Provide more specific error messages based on error type
+      if (error.name === 'CastError') {
+        return res.status(400).json({ 
+          message: 'Invalid user ID format.',
+          details: error.message 
+        });
+      }
+  
+      return res.status(500).json({ 
+        message: 'Server error, unable to fetch call history.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
   };
-  
-
 
 
 /**
