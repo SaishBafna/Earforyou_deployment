@@ -27,47 +27,168 @@ export const setupWebRTC = (io) => {
 
 
     // Handle random call request
+    // socket.on('requestRandomCall', async ({ userId }) => {
+    //   try {
+    //     logger.info(`User ${userId} requesting random call`);
+
+    //     // Check if user is already in a call
+    //     if (activeCalls[userId]) {
+    //       socket.emit('callError', { message: 'You are already in a call' });
+    //       return;
+    //     }
+
+    //     // Check if user is already in queue
+    //     if (randomCallQueue.has(userId)) {
+    //       socket.emit('callError', { message: 'You are already in random call queue' });
+    //       return;
+    //     }
+
+    //     const user = await User.findById(userId);
+
+    //     // Check if user exists and is registered in the "user" category
+    //     if (!user || user.userType === 'RECEIVER') {
+    //       socket.emit('callError', { message: 'You are not eligible to initiate a call' });
+    //       return;
+    //     }
+
+    //     // Check if user exists and is eligible to initiate a call
+    //     if (!user || ['Doctor', 'Therapist', 'Healer', 'Psychologist', 'User'].includes(user.userCategory)) {
+    //       socket.emit('callError', { message: 'You are not eligible to initiate a call' });
+    //       return;
+    //     }
+
+        
+
+    //     // Get all available users (excluding the requester and users in calls)
+    //     const allAvailableUsers = Object.keys(users).filter(potentialUserId =>
+    //       potentialUserId !== userId && // Not the requesting user
+    //       !activeCalls[potentialUserId] && // Not in a call
+    //       users[potentialUserId]?.length > 0 && // Has active socket connections
+    //       !randomCallQueue.has(potentialUserId) // Not already in queue
+    //     );
+
+    //     logger.info(`Available users for random call with ${userId}:`, {
+    //       totalAvailable: allAvailableUsers.length,
+    //       availableUserIds: allAvailableUsers,
+    //       activeConnections: allAvailableUsers.map(id => ({
+    //         userId: id,
+    //         socketCount: users[id]?.length || 0
+    //       }))
+    //     });
+
+    //     if (allAvailableUsers.length > 0) {
+    //       // Match with a random available user
+    //       const randomIndex = Math.floor(Math.random() * allAvailableUsers.length);
+    //       const matchedUserId = allAvailableUsers[randomIndex];
+
+    //       // Get user details for both parties
+    //       const [caller, receiver] = await Promise.all([
+    //         User.findById(userId),
+    //         User.findById(matchedUserId)
+    //       ]);
+
+    //       if (!caller || !receiver) {
+    //         socket.emit('callError', { message: 'Failed to match users' });
+    //         return;
+    //       }
+
+    //       // Set active call status
+    //       activeCalls[userId] = matchedUserId;
+    //       activeCalls[matchedUserId] = userId;
+
+    //       // Notify the caller about the match
+    //       socket.emit('randomCallMatched', {
+    //         matchedUserId: matchedUserId,
+    //         matchedUsername: receiver.username,
+    //         socketId: socket.id
+    //       });
+
+    //       // Notify the matched user about incoming call
+    //       users[matchedUserId].forEach((receiverSocketId) => {
+    //         socket.to(receiverSocketId).emit('incomingRandomCall', {
+    //           callerId: userId,
+    //           callerUsername: caller.username,
+    //           socketId: socket.id
+    //         });
+    //       });
+
+    //       // Send push notification if receiver has a device token
+    //       if (receiver.deviceToken) {
+    //         const title = 'Random Call';
+    //         const message = `${caller.username} wants to connect with you!`;
+    //         await sendNotification(matchedUserId, title, message);
+    //         logger.info(`Push notification sent to User ${matchedUserId}`);
+    //       }
+
+    //       logger.info(`Random call matched: ${userId} with ${matchedUserId}`);
+
+
+    //     } else {
+    //       // Add user to queue if no users available
+    //       randomCallQueue.add(userId);
+    //       socket.emit('waitingForRandomMatch', {
+    //         message: 'Waiting for another user to connect'
+    //       });
+    //       logger.info(`User ${userId} added to random call queue`);
+
+    //       // Set a timeout for queue waiting
+    //       setTimeout(() => {
+    //         if (randomCallQueue.has(userId)) {
+    //           randomCallQueue.delete(userId);
+    //           socket.emit('randomCallTimeout', {
+    //             message: 'No users available for random call. Please try again later.'
+    //           });
+    //           logger.info(`User ${userId} removed from queue due to timeout`);
+    //         }
+    //       }, 60000); // 60 seconds queue timeout
+    //     }
+    //   } catch (error) {
+    //     logger.error(`Error in random call handler: ${error.message}`);
+    //     socket.emit('callError', { message: 'Failed to process random call request' });
+    //   }
+    // });
+
     socket.on('requestRandomCall', async ({ userId }) => {
       try {
         logger.info(`User ${userId} requesting random call`);
-
+    
         // Check if user is already in a call
         if (activeCalls[userId]) {
           socket.emit('callError', { message: 'You are already in a call' });
           return;
         }
-
+    
         // Check if user is already in queue
         if (randomCallQueue.has(userId)) {
           socket.emit('callError', { message: 'You are already in random call queue' });
           return;
         }
-
+    
         const user = await User.findById(userId);
-
-        // Check if user exists and is registered in the "user" category
-        if (!user || user.userType === 'RECEIVER') {
-          socket.emit('callError', { message: 'You are not eligible to initiate a call' });
+    
+        // Check if user exists and is a CALLER
+        if (!user || user.userType !== 'CALLER') {
+          socket.emit('callError', { message: 'Only CALLER users can initiate calls' });
           return;
         }
-
-        // Check if user exists and is eligible to initiate a call
-        if (!user || ['Doctor', 'Therapist', 'Healer', 'Psychologist', 'User'].includes(user.userCategory)) {
-          socket.emit('callError', { message: 'You are not eligible to initiate a call' });
+    
+        // Check if user is eligible to initiate a call based on category
+        if (!['Doctor', 'Therapist', 'Healer', 'Psychologist', 'User'].includes(user.userCategory)) {
+          socket.emit('callError', { message: 'You are not eligible to initiate a call based on your category' });
           return;
         }
-
-        
-
-        // Get all available users (excluding the requester and users in calls)
-        const allAvailableUsers = Object.keys(users).filter(potentialUserId =>
-          potentialUserId !== userId && // Not the requesting user
-          !activeCalls[potentialUserId] && // Not in a call
-          users[potentialUserId]?.length > 0 && // Has active socket connections
-          !randomCallQueue.has(potentialUserId) // Not already in queue
-        );
-
-        logger.info(`Available users for random call with ${userId}:`, {
+    
+        // Get all available RECEIVER users only
+        const allAvailableUsers = Object.keys(users).filter(async potentialUserId => {
+          const potentialUser = await User.findById(potentialUserId);
+          return potentialUserId !== userId && // Not the requesting user
+            !activeCalls[potentialUserId] && // Not in a call
+            users[potentialUserId]?.length > 0 && // Has active socket connections
+            !randomCallQueue.has(potentialUserId) && // Not already in queue
+            potentialUser?.userType === 'RECEIVER'; // Must be a RECEIVER type
+        });
+    
+        logger.info(`Available RECEIVER users for call with ${userId}:`, {
           totalAvailable: allAvailableUsers.length,
           availableUserIds: allAvailableUsers,
           activeConnections: allAvailableUsers.map(id => ({
@@ -75,35 +196,41 @@ export const setupWebRTC = (io) => {
             socketCount: users[id]?.length || 0
           }))
         });
-
+    
         if (allAvailableUsers.length > 0) {
-          // Match with a random available user
+          // Match with a random available RECEIVER user
           const randomIndex = Math.floor(Math.random() * allAvailableUsers.length);
           const matchedUserId = allAvailableUsers[randomIndex];
-
+    
           // Get user details for both parties
           const [caller, receiver] = await Promise.all([
             User.findById(userId),
             User.findById(matchedUserId)
           ]);
-
+    
           if (!caller || !receiver) {
             socket.emit('callError', { message: 'Failed to match users' });
             return;
           }
-
+    
+          // Verify again that receiver is of type RECEIVER
+          if (receiver.userType !== 'RECEIVER') {
+            socket.emit('callError', { message: 'Invalid match - Receiver type mismatch' });
+            return;
+          }
+    
           // Set active call status
           activeCalls[userId] = matchedUserId;
           activeCalls[matchedUserId] = userId;
-
+    
           // Notify the caller about the match
           socket.emit('randomCallMatched', {
             matchedUserId: matchedUserId,
             matchedUsername: receiver.username,
             socketId: socket.id
           });
-
-          // Notify the matched user about incoming call
+    
+          // Notify the matched RECEIVER about incoming call
           users[matchedUserId].forEach((receiverSocketId) => {
             socket.to(receiverSocketId).emit('incomingRandomCall', {
               callerId: userId,
@@ -111,40 +238,61 @@ export const setupWebRTC = (io) => {
               socketId: socket.id
             });
           });
-
+    
           // Send push notification if receiver has a device token
           if (receiver.deviceToken) {
-            const title = 'Random Call';
+            const title = 'Incoming Call';
             const message = `${caller.username} wants to connect with you!`;
             await sendNotification(matchedUserId, title, message);
-            logger.info(`Push notification sent to User ${matchedUserId}`);
+            logger.info(`Push notification sent to RECEIVER ${matchedUserId}`);
           }
-
-          logger.info(`Random call matched: ${userId} with ${matchedUserId}`);
-
-
+    
+          logger.info(`Call matched: CALLER ${userId} with RECEIVER ${matchedUserId}`);
+    
         } else {
-          // Add user to queue if no users available
+          // Add CALLER to queue if no RECEIVER users available
           randomCallQueue.add(userId);
           socket.emit('waitingForRandomMatch', {
-            message: 'Waiting for another user to connect'
+            message: 'Waiting for a RECEIVER to become available'
           });
-          logger.info(`User ${userId} added to random call queue`);
-
+          logger.info(`CALLER ${userId} added to call queue`);
+    
           // Set a timeout for queue waiting
           setTimeout(() => {
             if (randomCallQueue.has(userId)) {
               randomCallQueue.delete(userId);
               socket.emit('randomCallTimeout', {
-                message: 'No users available for random call. Please try again later.'
+                message: 'No RECEIVER users available. Please try again later.'
               });
-              logger.info(`User ${userId} removed from queue due to timeout`);
+              logger.info(`CALLER ${userId} removed from queue due to timeout`);
             }
           }, 60000); // 60 seconds queue timeout
         }
       } catch (error) {
-        logger.error(`Error in random call handler: ${error.message}`);
-        socket.emit('callError', { message: 'Failed to process random call request' });
+        logger.error(`Error in call handler: ${error.message}`);
+        socket.emit('callError', { message: 'Failed to process call request' });
+      }
+    });
+    
+    // Add a middleware to prevent CALLER users from receiving calls
+    socket.use((packet, next) => {
+      const eventName = packet[0];
+      if (eventName === 'incomingRandomCall') {
+        const userId = socket.userId; // Assuming you store userId in socket
+        User.findById(userId)
+          .then(user => {
+            if (user && user.userType === 'CALLER') {
+              // Block the incoming call event for CALLER users
+              return;
+            }
+            next();
+          })
+          .catch(error => {
+            logger.error(`Error in socket middleware: ${error.message}`);
+            next();
+          });
+      } else {
+        next();
       }
     });
 
@@ -166,6 +314,7 @@ export const setupWebRTC = (io) => {
     //     socket.emit('callError', { message: 'Failed to accept random call' });
     //   }
     // });
+
     socket.on('acceptRandomCall', async ({ receiverId, callerId }) => {
       try {
         logger.info(`User ${receiverId} accepted random call from User ${callerId}`);
@@ -192,6 +341,7 @@ export const setupWebRTC = (io) => {
         socket.emit('callError', { message: 'Failed to accept random call' });
       }
     });
+
     // Handle random call rejection
     socket.on('rejectRandomCall', async ({ receiverId, callerId }) => {
       try {
@@ -223,6 +373,7 @@ export const setupWebRTC = (io) => {
         socket.emit('callError', { message: 'Failed to reject random call' });
       }
     });
+
     // Cancel random call request
     socket.on('cancelRandomCall', ({ userId }) => {
       if (randomCallQueue.has(userId)) {
@@ -235,61 +386,182 @@ export const setupWebRTC = (io) => {
     });
 
     // Initial call request
+
+    // socket.on('call', async ({ callerId, receiverId }) => {
+    //   try {
+    //     logger.info(`User ${callerId} is calling User ${receiverId}`);
+
+    //     // Check if either user is already in a call
+    //     if (activeCalls[receiverId] || activeCalls[callerId]) {
+    //       socket.emit('userBusy', { receiverId });
+    //       logger.warn(`User ${receiverId} or ${callerId} is already in a call`);
+    //       return;
+    //     }
+
+    //     // Get user details
+    //     const receiver = await User.findById(receiverId);
+    //     const caller = await User.findById(callerId);
+
+    //     if (!receiver) {
+    //       socket.emit('userUnavailable', { receiverId });
+    //       logger.warn(`User ${receiverId} not found`);
+    //       return;
+    //     }
+
+    //     // Initialize socket arrays if needed
+    //     if (!users[callerId]) users[callerId] = [];
+    //     if (!users[receiverId]) users[receiverId] = [];
+
+    //     // Add current socket to caller's sockets if not already present
+    //     if (!users[callerId].includes(socket.id)) {
+    //       users[callerId].push(socket.id);
+    //     }
+
+    //     if (users[receiverId].length > 0) {
+    //       // Emit incoming call to all receiver's sockets
+    //       users[receiverId].forEach((socketId) => {
+    //         socket.to(socketId).emit('incomingCall', {
+    //           callerId,
+    //           socketId: socket.id
+    //         });
+    //       });
+
+    //       socket.emit('playCallerTune', { callerId });
+
+    //       // Send push notification if available
+    //       if (receiver.deviceToken) {
+    //         const title = 'Incoming Call';
+    //         const message = `${caller.username} is calling you!`;
+    //         await sendNotification(receiverId, title, message);
+    //         logger.info(`Push notification sent to User ${receiverId}`);
+    //       }
+    //     } else {
+    //       socket.emit('userUnavailable', { receiverId });
+    //       logger.warn(`User ${receiverId} is unavailable for the call`);
+    //     }
+    //   } catch (error) {
+    //     logger.error(`Error in call handler: ${error.message}`);
+    //     socket.emit('callError', { message: 'Failed to initiate call' });
+    //   }
+    // });
+
     socket.on('call', async ({ callerId, receiverId }) => {
       try {
         logger.info(`User ${callerId} is calling User ${receiverId}`);
-
+    
         // Check if either user is already in a call
         if (activeCalls[receiverId] || activeCalls[callerId]) {
           socket.emit('userBusy', { receiverId });
           logger.warn(`User ${receiverId} or ${callerId} is already in a call`);
           return;
         }
-
+    
         // Get user details
-        const receiver = await User.findById(receiverId);
-        const caller = await User.findById(callerId);
-
+        const [caller, receiver] = await Promise.all([
+          User.findById(callerId),
+          User.findById(receiverId)
+        ]);
+    
+        // Verify caller exists and is a CALLER type
+        if (!caller || caller.userType !== 'CALLER') {
+          socket.emit('callError', { message: 'Only CALLER users can initiate calls' });
+          logger.warn(`User ${callerId} is not authorized to make calls`);
+          return;
+        }
+    
+        // Verify receiver exists and is a RECEIVER type
         if (!receiver) {
           socket.emit('userUnavailable', { receiverId });
           logger.warn(`User ${receiverId} not found`);
           return;
         }
-
+    
+        if (receiver.userType !== 'RECEIVER') {
+          socket.emit('callError', { message: 'Can only call users of type RECEIVER' });
+          logger.warn(`Target user ${receiverId} is not a RECEIVER`);
+          return;
+        }
+    
+        // Check if caller is eligible to initiate a call based on category
+        if (!['Doctor', 'Therapist', 'Healer', 'Psychologist', 'User'].includes(caller.userCategory)) {
+          socket.emit('callError', { message: 'You are not eligible to initiate a call based on your category' });
+          logger.warn(`User ${callerId} category not authorized for calls`);
+          return;
+        }
+    
         // Initialize socket arrays if needed
         if (!users[callerId]) users[callerId] = [];
         if (!users[receiverId]) users[receiverId] = [];
-
+    
         // Add current socket to caller's sockets if not already present
         if (!users[callerId].includes(socket.id)) {
           users[callerId].push(socket.id);
         }
-
+    
+        // Check if receiver is available (has active sockets)
         if (users[receiverId].length > 0) {
+          // Set active call status
+          activeCalls[callerId] = receiverId;
+          activeCalls[receiverId] = callerId;
+    
           // Emit incoming call to all receiver's sockets
           users[receiverId].forEach((socketId) => {
             socket.to(socketId).emit('incomingCall', {
               callerId,
+              callerName: caller.username,
               socketId: socket.id
             });
           });
-
-          socket.emit('playCallerTune', { callerId });
-
-          // Send push notification if available
+    
+          // Notify caller that call is ringing
+          socket.emit('playCallerTune', { 
+            receiverId,
+            receiverName: receiver.username 
+          });
+    
+          // Send push notification if receiver has a device token
           if (receiver.deviceToken) {
             const title = 'Incoming Call';
             const message = `${caller.username} is calling you!`;
             await sendNotification(receiverId, title, message);
-            logger.info(`Push notification sent to User ${receiverId}`);
+            logger.info(`Push notification sent to RECEIVER ${receiverId}`);
           }
+    
+          logger.info(`Call initiated: CALLER ${callerId} to RECEIVER ${receiverId}`);
         } else {
-          socket.emit('userUnavailable', { receiverId });
-          logger.warn(`User ${receiverId} is unavailable for the call`);
+          socket.emit('userUnavailable', { 
+            receiverId,
+            message: 'RECEIVER is currently offline'
+          });
+          logger.warn(`RECEIVER ${receiverId} is unavailable for the call`);
         }
+    
       } catch (error) {
         logger.error(`Error in call handler: ${error.message}`);
         socket.emit('callError', { message: 'Failed to initiate call' });
+      }
+    });
+    
+    // Add a middleware to prevent CALLER users from receiving calls
+    socket.use((packet, next) => {
+      const eventName = packet[0];
+      if (eventName === 'incomingCall') {
+        const userId = socket.userId; // Assuming you store userId in socket
+        User.findById(userId)
+          .then(user => {
+            if (user && user.userType === 'CALLER') {
+              // Block the incoming call event for CALLER users
+              logger.warn(`Blocked incoming call to CALLER user ${userId}`);
+              return;
+            }
+            next();
+          })
+          .catch(error => {
+            logger.error(`Error in socket middleware: ${error.message}`);
+            next();
+          });
+      } else {
+        next();
       }
     });
 
