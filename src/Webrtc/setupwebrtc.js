@@ -16,7 +16,7 @@ export const setupWebRTC = (io) => {
 
   io.on('connection', (socket) => {
     logger.http(`User connected: ${socket.id}`);
-  
+
     socket.on('join', async ({ userId }) => {
       if (!users[userId]) {
         users[userId] = [];
@@ -40,6 +40,14 @@ export const setupWebRTC = (io) => {
         // Check if user is already in queue
         if (randomCallQueue.has(userId)) {
           socket.emit('callError', { message: 'You are already in random call queue' });
+          return;
+        }
+
+        const user = await User.findById(userId);
+
+        // Check if user exists and is registered in the "user" category
+        if (!user || user.userType === 'USER') {
+          socket.emit('callError', { message: 'You are not eligible to initiate a call' });
           return;
         }
 
@@ -165,9 +173,9 @@ export const setupWebRTC = (io) => {
 
         if (users[callerId]) {
           users[callerId].forEach((socketId) => {
-            socket.to(socketId).emit('randomCallAccepted', { 
-              receiverId, 
-              socketId: socket.id 
+            socket.to(socketId).emit('randomCallAccepted', {
+              receiverId,
+              socketId: socket.id
             });
           });
         }
@@ -351,20 +359,20 @@ export const setupWebRTC = (io) => {
     //     socket.emit('callError', { message: 'Failed to accept call' });
     //   }
     // });
-    
-    
+
+
     socket.on('acceptCall', async ({ receiverId, callerId }) => {
       try {
         logger.info(`User ${receiverId} accepted call from User ${callerId}`);
-    
+
         // Store start time as a Date object
         const callKey = `${receiverId}_${callerId}`;
         logger.info(`callKey ${callKey}`);
-    
+
         callTimings[callKey] = {
           startTime: new Date() // Start time as a Date object
         };
-    
+
         // Notify the caller that the call has been accepted
         if (users[callerId]) {
           users[callerId].forEach((socketId) => {
@@ -373,7 +381,7 @@ export const setupWebRTC = (io) => {
               socketId: socket.id
             });
           });
-    
+
           // Stop the caller's tune after call acceptance
           socket.emit('stopCallerTune', { callerId });
         }
@@ -382,9 +390,9 @@ export const setupWebRTC = (io) => {
         socket.emit('callError', { message: 'Failed to accept call' });
       }
     });
-    
-    
-    
+
+
+
     // Handle call rejection
     socket.on('rejectCall', async ({ receiverId, callerId }) => {
       try {
@@ -459,7 +467,7 @@ export const setupWebRTC = (io) => {
     socket.on('endCall', async ({ receiverId, callerId }) => {
       try {
         logger.info(`Call ended between ${callerId} and ${receiverId}`);
-    
+
         if (activeCalls[callerId] === receiverId) {
           // Notify the other party
           if (users[receiverId]) {
@@ -467,14 +475,14 @@ export const setupWebRTC = (io) => {
               socket.to(socketId).emit('callEnded', { callerId });
             });
           }
-    
+
           // Calculate call duration
           const callerCallKey = `${callerId}_${receiverId}`;
           const receiverCallKey = `${receiverId}_${callerId}`;
           const startTime = callTimings[callerCallKey]?.startTime || callTimings[receiverCallKey]?.startTime;
           const endTime = new Date();
           const duration = (endTime - startTime) / 1000; // Calculate duration in seconds
-    
+
           // Log the call with duration
           await CallLog.create({
             caller: new mongoose.Types.ObjectId(callerId),
@@ -484,7 +492,7 @@ export const setupWebRTC = (io) => {
             duration,
             status: 'completed'
           });
-    
+
           // Clean up call status
           delete activeCalls[callerId];
           delete activeCalls[receiverId];
@@ -494,9 +502,9 @@ export const setupWebRTC = (io) => {
         logger.error(`Error in endCall handler: ${error.message}`);
       }
     });
- 
+
     // Update disconnect handler to handle call timings cleanup
-   
+
     socket.on('disconnect', () => {
       logger.info(`Socket disconnected: ${socket.id}`);
 
