@@ -3,18 +3,24 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid'; // Import uuid
 import { CallRate } from '../../models/Wallet/AdminCharges.js';
 
-
 export const deductPerMinute = async (req, res) => {
   const session = await mongoose.startSession(); // Start a session for atomic transactions
   session.startTransaction();
 
   try {
-    // const adminCommissionPercent=
-    // const ratePerMinute=
     const { callerId, receiverId, durationInMinutes } = req.body;
-  
 
-    const callRateData = await CallRate.findOne(); // Fetch the first or latest CallRate document
+    // Validate the request body
+    if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid input. Caller ID, receiver ID, and valid duration are required.',
+      });
+    }
+
+    // Fetch the call rate configuration
+    const callRateData = await CallRate.findOne().session(session); 
+    
     if (!callRateData) {
       await session.abortTransaction();
       return res.status(500).json({
@@ -22,22 +28,33 @@ export const deductPerMinute = async (req, res) => {
         message: 'Call rate configuration not found',
       });
     }
-    const { adminCommissionPercent, ratePerMinute } = callRateData; 
 
-   // Get values from the DB
-   if (ratePerMinute <= 0 || durationInMinutes <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Rate per minute and duration must be greater than 0',
-    });
-  }
+    const { adminCommissionPercent, ratePerMinute } = callRateData;
+    
+    console.log("pre:",adminCommissionPercent, "pre:",ratePerMinute );
+
+    // Validate the rate per minute
+    if (isNaN(ratePerMinute) || ratePerMinute <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rate per minute must be a valid number greater than 0',
+      });
+    }
 
     // Calculate total deduction and receiver's earnings
     const totalDeduction = ratePerMinute * durationInMinutes;
     const commission = (adminCommissionPercent / 100) * totalDeduction;
     const amountForReceiver = totalDeduction - commission;
 
-    // Find the caller's wallet
+    // Ensure that the calculations do not result in NaN
+    if (isNaN(totalDeduction) || isNaN(amountForReceiver)) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error calculating amounts. Please try again.',
+      });
+    }
+
+    // Fetch the caller's wallet
     const callerWallet = await Wallet.findOne({ userId: callerId }).session(session);
     if (!callerWallet) {
       await session.abortTransaction();
@@ -68,7 +85,7 @@ export const deductPerMinute = async (req, res) => {
       createdAt: new Date(),
     });
 
-    // Find the receiver's wallet
+    // Fetch the receiver's wallet
     const receiverWallet = await Wallet.findOne({ userId: receiverId }).session(session);
     if (!receiverWallet) {
       await session.abortTransaction();
@@ -107,6 +124,7 @@ export const deductPerMinute = async (req, res) => {
     });
   } catch (error) {
     console.error('Transaction error:', error);
+    // Ensure the session is aborted if an error occurs
     await session.abortTransaction();
     session.endSession();
     res.status(500).json({
@@ -116,6 +134,7 @@ export const deductPerMinute = async (req, res) => {
     });
   }
 };
+
 
 
 
