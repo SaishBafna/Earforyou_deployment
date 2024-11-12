@@ -12,13 +12,7 @@ export const deductPerMinute = async (req, res) => {
     // const adminCommissionPercent=
     // const ratePerMinute=
     const { callerId, receiverId, durationInMinutes } = req.body;
-    const { adminCommissionPercent, ratePerMinute } = callRateData; 
-    if (ratePerMinute <= 0 || durationInMinutes <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Rate per minute and duration must be greater than 0',
-      });
-    }
+  
 
     const callRateData = await CallRate.findOne(); // Fetch the first or latest CallRate document
     if (!callRateData) {
@@ -28,9 +22,15 @@ export const deductPerMinute = async (req, res) => {
         message: 'Call rate configuration not found',
       });
     }
+    const { adminCommissionPercent, ratePerMinute } = callRateData; 
 
    // Get values from the DB
-
+   if (ratePerMinute <= 0 || durationInMinutes <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Rate per minute and duration must be greater than 0',
+    });
+  }
 
     // Calculate total deduction and receiver's earnings
     const totalDeduction = ratePerMinute * durationInMinutes;
