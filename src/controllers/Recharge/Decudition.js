@@ -1,6 +1,7 @@
 import Wallet from '../../models/Wallet/Wallet.js';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid'; // Import uuid
+import { CallRate } from '../../models/Wallet/AdminCharges.js';
 
 
 export const deductPerMinute = async (req, res) => {
@@ -8,7 +9,9 @@ export const deductPerMinute = async (req, res) => {
   session.startTransaction();
 
   try {
-    const { callerId, receiverId, ratePerMinute, durationInMinutes } = req.body;
+    // const adminCommissionPercent=
+    // const ratePerMinute=
+    const { callerId, receiverId, durationInMinutes } = req.body;
 
     if (ratePerMinute <= 0 || durationInMinutes <= 0) {
       return res.status(400).json({
@@ -17,7 +20,17 @@ export const deductPerMinute = async (req, res) => {
       });
     }
 
-    const adminCommissionPercent = 10; // Example: 10% commission for admin
+    const callRateData = await CallRate.findOne(); // Fetch the first or latest CallRate document
+    if (!callRateData) {
+      await session.abortTransaction();
+      return res.status(500).json({
+        success: false,
+        message: 'Call rate configuration not found',
+      });
+    }
+
+    const { adminCommissionPercent, ratePerMinute } = callRateData; // Get values from the DB
+
 
     // Calculate total deduction and receiver's earnings
     const totalDeduction = ratePerMinute * durationInMinutes;
