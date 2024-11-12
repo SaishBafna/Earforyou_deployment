@@ -12,7 +12,7 @@ export const deductPerMinute = async (req, res) => {
     // const adminCommissionPercent=
     // const ratePerMinute=
     const { callerId, receiverId, durationInMinutes } = req.body;
-
+    const { adminCommissionPercent, ratePerMinute } = callRateData; 
     if (ratePerMinute <= 0 || durationInMinutes <= 0) {
       return res.status(400).json({
         success: false,
@@ -29,7 +29,7 @@ export const deductPerMinute = async (req, res) => {
       });
     }
 
-    const { adminCommissionPercent, ratePerMinute } = callRateData; // Get values from the DB
+   // Get values from the DB
 
 
     // Calculate total deduction and receiver's earnings
