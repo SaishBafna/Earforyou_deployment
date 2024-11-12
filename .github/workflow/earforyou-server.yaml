@@ -1,0 +1,42 @@
+name: EAR_FOR_YOU_SERVER
+
+on:
+  push:
+    branches:
+      - main  
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build Docker images
+        run: |
+          docker build -t earforyouserver:v1 .
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0.2.0
+        with:
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          export_default_credentials: true
+
+      - name: SSH into GCP VM and deploy
+        env:
+          VM_IP: ${{ secrets.VM_IP }}  # External IP of your GCP VM
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # SSH private key
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ssh_key
+          chmod 600 ssh_key
+
+          # SSH into the VM and run Docker Compose commands
+          ssh -i ssh_key -o StrictHostKeyChecking=no user@$VM_IP << 'EOF'
+            pwd
+            docker-compose up -d
+          EOF
