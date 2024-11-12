@@ -22,7 +22,7 @@ jobs:
 
       - name: Authenticate Docker to Google Artifact Registry
         run: |
-          gcloud auth configure-docker ${REGION}-docker.pkg.dev
+          gcloud auth configure-docker asia-south1-docker.pkg.dev
 
       - name: Build Docker images
         run: |
