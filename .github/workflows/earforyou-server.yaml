@@ -26,7 +26,7 @@ jobs:
 
       - name: Build Docker images
         run: |
-          docker build -t asia-south1-docker.pkg.dev/leafy-flash-441005-g2/earforyou/earforyouserver:v1 .
+          docker build --no-cache -t asia-south1-docker.pkg.dev/leafy-flash-441005-g2/earforyou/earforyouserver:v1 .
 
       - name: Push Docker images to Google Artifact Registry
         run: |
