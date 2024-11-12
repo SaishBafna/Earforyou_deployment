@@ -173,7 +173,7 @@ export const setupWebRTC = (io) => {
         }
     
         // Check if user is eligible to initiate a call based on category
-        if (['Doctor', 'Therapist', 'Healer', 'Psychologist', 'User'].includes(user.userCategory)) {
+        if (['Doctor', 'Therapist', 'Healer', 'Psychologist'].includes(user.userCategory)) {
           socket.emit('callError', { message: 'You are not eligible to initiate a call based on your category' });
           return;
         }

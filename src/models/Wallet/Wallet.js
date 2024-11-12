@@ -1,3 +1,4 @@
+
 import mongoose from 'mongoose';
 
 const walletSchema = new mongoose.Schema({
@@ -15,6 +16,9 @@ const walletSchema = new mongoose.Schema({
     type: String,
     required: true,
     default: 'inr',
+  },
+  adminCommissionPercent:{
+    type: Number,
   },
   recharges: [
     {
