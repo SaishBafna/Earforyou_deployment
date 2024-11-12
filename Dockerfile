@@ -25,4 +25,4 @@ EXPOSE 8080
 RUN npm run build
 
 # Start the application using npx babel-node
-CMD ["nodemon" "src/index.js"]
+CMD ["nodemon", "src/index.js"]
