@@ -17,9 +17,7 @@ const walletSchema = new mongoose.Schema({
     required: true,
     default: 'inr',
   },
-  adminCommissionPercent:{
-    type: Number,
-  },
+ 
   recharges: [
     {
       amount: {

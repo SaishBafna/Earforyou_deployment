@@ -11,7 +11,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose'
 import admin from 'firebase-admin';
 import Wallet from "../models/Wallet/Wallet.js";
-
+import {CallRate} from '../models/Wallet/AdminCharges.js'
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -240,11 +240,22 @@ export const initiateRegistration = async (req, res) => {
       otpExpires,
     });
 
+    const callRateData = await CallRate.findOne(); // Fetch the first or latest CallRate document
+    if (!callRateData) {
+      await session.abortTransaction();
+      return res.status(500).json({
+        success: false,
+        message: 'Call rate configuration not found',
+      });
+    }
+
+    const {free } = callRateData; // Get values from the DB
+
 
      // Create a wallet with a balance of 15 rupees for the new user
      const wallet = await Wallet.create({
       userId: newUser._id, // Use the ID of the newly created user
-      balance: 15,         // Set the initial balance to 15 rupees
+      balance: free,         // Set the initial balance to 15 rupees
       currency: 'inr',     // Set currency to INR (Indian Rupees)
       recharges: [],
       deductions: [],
