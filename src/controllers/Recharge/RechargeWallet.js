@@ -6,7 +6,7 @@ import sha256 from "sha256";
 import uniqid from "uniqid";
 import admin from 'firebase-admin';
 import firebaseConfig from '../../config/firebaseConfig.js';
-
+import SubscriptionPlan from '../../models/Subscription/Subscription.js';
 
 
 export const initiatePayment = async (req, res) => {

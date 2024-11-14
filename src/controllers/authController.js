@@ -206,11 +206,11 @@ export const verifyOtp = async (req, res) => {
 
 export const initiateRegistration = async (req, res) => {
   const { email } = req.body;
-
+    console.log("eamil:",email)
   try {
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
-
+    console.log(existingUser)
     if (existingUser) {
       return await initiateLogin(req, res);
     }
@@ -324,7 +324,7 @@ export const initiateLogin = async (req, res) => {
 
 export const verifyLoginOtp = async (req, res) => {
   const { email, otp, deviceToken, platform } = req.body;
-
+    console.log({ email, otp, deviceToken, platform })
   try {
     // Find user by email
     const user = await User.findOne({ email });
