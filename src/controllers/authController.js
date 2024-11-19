@@ -205,13 +205,13 @@ export const verifyOtp = async (req, res) => {
 
 
 export const initiateRegistration = async (req, res) => {
-  const { email, playstoreVerificationId } = req.body;
+  const { email } = req.body;
   console.log("email:", email);
   console.log("playstore verification id:", playstoreVerificationId);
 
   try {
     // Check if it's a playstore verification request
-    const isPlaystoreVerification = playstoreVerificationId === 'playtest@gmail.com';
+    const isPlaystoreVerification = email === 'playtest@gmail.com';
 
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
@@ -221,18 +221,8 @@ export const initiateRegistration = async (req, res) => {
       // If it's a playstore verification, generate tokens
       if (isPlaystoreVerification) {
         // Generate access token
-        const authToken = jwt.sign(
-          { userId: existingUser._id },
-          process.env.JWT_SECRET,
-          { expiresIn: '1h' }
-        );
+        const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(existingUser._id);
 
-        // Generate refresh token
-        const refreshToken = jwt.sign(
-          { userId: existingUser._id },
-          process.env.REFRESH_TOKEN_SECRET,
-          { expiresIn: '30d' }
-        );
 
         // Save refresh token to user document
         existingUser.refreshToken = refreshToken;
@@ -240,7 +230,7 @@ export const initiateRegistration = async (req, res) => {
 
         return res.status(200).json({
           message: "Playstore verification successful",
-          authToken,
+          accessToken,
           refreshToken,
           userId: existingUser._id,
           email: existingUser.email,
