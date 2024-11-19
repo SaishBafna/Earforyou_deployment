@@ -218,17 +218,33 @@ export const initiateRegistration = async (req, res) => {
     console.log(existingUser);
     
     if (existingUser) {
-      // If it's a playstore verification, generate a special token
+      // If it's a playstore verification, generate tokens
       if (isPlaystoreVerification) {
+        // Generate access token
         const authToken = jwt.sign(
           { userId: existingUser._id },
           process.env.JWT_SECRET,
+          { expiresIn: '1h' }
+        );
+
+        // Generate refresh token
+        const refreshToken = jwt.sign(
+          { userId: existingUser._id },
+          process.env.REFRESH_TOKEN_SECRET,
           { expiresIn: '30d' }
         );
+
+        // Save refresh token to user document
+        existingUser.refreshToken = refreshToken;
+        await existingUser.save();
+
         return res.status(200).json({
           message: "Playstore verification successful",
           authToken,
-          userId: existingUser._id
+          refreshToken,
+          userId: existingUser._id,
+          email: existingUser.email,
+          username: existingUser.username
         });
       }
       return await initiateLogin(req, res);
@@ -272,19 +288,33 @@ export const initiateRegistration = async (req, res) => {
           lastUpdated: new Date()
         }], { session });
 
-        // Generate auth token
+        // Generate access token
         const authToken = jwt.sign(
           { userId: newUser._id },
           process.env.JWT_SECRET,
+          { expiresIn: '1h' }
+        );
+
+        // Generate refresh token
+        const refreshToken = jwt.sign(
+          { userId: newUser._id },
+          process.env.REFRESH_TOKEN_SECRET,
           { expiresIn: '30d' }
         );
+
+        // Save refresh token to user document
+        newUser.refreshToken = refreshToken;
+        await newUser.save({ session });
 
         await session.commitTransaction();
 
         return res.status(200).json({
           message: "Playstore verification account created",
           authToken,
-          userId: newUser._id
+          refreshToken,
+          userId: newUser._id,
+          email: newUser.email,
+          username: newUser.username
         });
       } catch (error) {
         await session.abortTransaction();
@@ -345,7 +375,12 @@ export const initiateRegistration = async (req, res) => {
       console.log("Wallet created with initial balance for user:", newUser._id, wallet);
 
       await session.commitTransaction();
-      res.status(200).json({ message: "OTP sent to email for registration" });
+      res.status(200).json({ 
+        message: "OTP sent to email for registration",
+        userId: newUser._id,
+        email: newUser.email,
+        username: newUser.username
+      });
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -357,6 +392,7 @@ export const initiateRegistration = async (req, res) => {
     res.status(500).json({ message: "Server error", error });
   }
 };
+
 
 
 
