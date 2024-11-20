@@ -11,12 +11,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: false,
       lowercase: true,
-      trim: true, 
+      trim: true,
       index: true,
     },
     phone: {
       type: String,
-      required:false,
+      required: false,
       required: false, // phone is optional
       sparse: true,
       trim: true,
@@ -25,12 +25,12 @@ const userSchema = new mongoose.Schema(
       type: Date, // Use Date type for date of birth
       required: false,
     },
-    password:{
-      type:String,
+    password: {
+      type: String,
     },
-    referalCode:{
-      type : String,
-      unique:true,
+    referalCode: {
+      type: String,
+      unique: true,
       required: false,
     },
 
@@ -39,17 +39,18 @@ const userSchema = new mongoose.Schema(
       enum: ['male', 'female', 'other'], // Enum for gender values
       required: false,
     },
-    Language:{
+    Language: {
       type: String,
       required: false,
     },
     userCategory: {
       type: String,
-       enum: [ "Therapist",  "Psychologist","Profisnal_listner",'User'],
+      enum: ["Therapist", "Psychologist", "Profisnal_listner", 'User'],
+      default: 'User'
     },
-    email:{
+    email: {
       type: String,
-      unique:true
+      unique: true
     },
     userType: {
       type: String,
@@ -84,7 +85,7 @@ const userSchema = new mongoose.Schema(
 );
 
 // Create a compound index for the phone field
- 
+
 
 // Hash the password before saving
 userSchema.pre("save", async function (next) {

@@ -298,6 +298,7 @@ export const setupWebRTC = (io) => {
             await sendNotification(receiverId, title, message);
             logger.info(`Push notification sent to User ${receiverId}`);
           }
+          
         } else {
           socket.emit('userUnavailable', { receiverId });
           logger.warn(`User ${receiverId} is unavailable for the call`);

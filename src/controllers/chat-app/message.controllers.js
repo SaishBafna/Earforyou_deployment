@@ -19,6 +19,7 @@ import {
  * @description Utility function which returns the pipeline stages to structure the chat message schema with common lookups
  * @returns {mongoose.PipelineStage[]}
  */
+
 const chatMessageCommonAggregation = () => {
   return [
     {
