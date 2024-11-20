@@ -139,177 +139,168 @@ export const deductPerMinute = async (req, res) => {
 
 
 
+// // Deduct minutes from the active subscription plan
+// export const deductPlanMinutes = async (req, res) => {
+//   const { userId, planId, minutesToDeduct } = req.body;
 
-// server/socketHandlers/callPaymentHandler.js
-// import Wallet from '../../models/Wallet/Wallet.js';
-// import mongoose from 'mongoose';
-// import { v4 as uuidv4 } from 'uuid';
+//   try {
+//     // Find the user's wallet
+//     const wallet = await Wallet.findOne({ userId });
 
-// class CallPaymentHandler {
-//   constructor(io) {
-//     this.io = io;
-//     this.activeDeductions = new Map(); // Store active call deductions
-//   }
-
-//   // Initialize socket handlers
-//   initialize(socket) {
-//     socket.on('startCall', this.handleStartCall.bind(this, socket));
-//     socket.on('endCall', this.handleEndCall.bind(this, socket));
-//     socket.on('disconnect', () => this.handleDisconnect(socket));
-//   }
-
-//   // Start processing deductions for a call
-//   async handleStartCall(socket, { callerId, receiverId,  ratePerMinute }) {
-//     try {
-//       // Validate input
-//       if (ratePerMinute <= 0) {
-//         socket.emit('callError', {
-//           message: 'Invalid rate per minute',
-//           callId
-//         });
-//         return;
-//       }
-
-//       // Initial balance check
-//       const callerWallet = await Wallet.findOne({ userId: callerId });
-//       if (!callerWallet || callerWallet.balance < ratePerMinute) {
-//         socket.emit('callError', {
-//           message: 'Insufficient balance to start call',
-//           callId
-//         });
-//         return;
-//       }
-
-//       // Store deduction info
-//       this.activeDeductions.set(callId, {
-//         callerId,
-//         receiverId,
-//         ratePerMinute,
-//         lastDeductionTime: Date.now(),
-//         socket,
-//         intervalId: null
-//       });
-
-//       // Start periodic deduction
-//       const intervalId = setInterval(
-//         () => this.processMinuteDeduction(callId),
-//         60000 // Run every minute
-//       );
-
-//       this.activeDeductions.get(callId).intervalId = intervalId;
-
-//       socket.emit('callStarted', {
-//         message: 'Call payment processing started',
-//         callId
-//       });
-//     } catch (error) {
-//       console.error('Error starting call payment:', error);
-//       socket.emit('callError', {
-//         message: 'Failed to start call payment processing',
-//         callId
-//       });
+//     // If the wallet does not exist, return an error
+//     if (!wallet) {
+//       return res.status(404).json({ error: 'Wallet not found for this user' });
 //     }
-//   }
 
-//   // Process deduction for one minute
-//   async processMinuteDeduction(callId) {
-//     const deductionInfo = this.activeDeductions.get(callId);
-//     if (!deductionInfo) return;
+//     // Find the active plan in the user's wallet
+//     const plan = wallet.plans.find(p => p.planId.toString() === planId.toString() && p.status === 'active');
 
-//     const session = await mongoose.startSession();
-//     session.startTransaction();
-
-//     try {
-//       const { callerId, receiverId, ratePerMinute, socket } = deductionInfo;
-//       const adminCommissionPercent = 10;
-//       const commission = (adminCommissionPercent / 100) * ratePerMinute;
-//       const amountForReceiver = ratePerMinute - commission;
-//       const transactionId = uuidv4();
-
-//       // Find and update caller's wallet
-//       const callerWallet = await Wallet.findOne({ userId: callerId }).session(session);
-//       if (!callerWallet || callerWallet.balance < ratePerMinute) {
-//         throw new Error('Insufficient balance');
-//       }
-
-//       callerWallet.balance -= ratePerMinute;
-//       callerWallet.deductions.push({
-//         amount: ratePerMinute,
-//         deductionReason: 'call',
-//         callId,
-//         transactionId,
-//         createdAt: new Date()
-//       });
-
-//       // Find and update receiver's wallet
-//       const receiverWallet = await Wallet.findOne({ userId: receiverId }).session(session);
-//       if (!receiverWallet) {
-//         throw new Error('Receiver wallet not found');
-//       }
-
-//       receiverWallet.balance += amountForReceiver;
-//       receiverWallet.recharges.push({
-//         amount: amountForReceiver,
-//         rechargeMethod: 'CALL',
-//         transactionId,
-//         createdAt: new Date()
-//       });
-
-//       // Save changes
-//       await callerWallet.save({ session });
-//       await receiverWallet.save({ session });
-//       await session.commitTransaction();
-
-//       // Emit updates to relevant clients
-//       this.io.to(callerId).emit('balanceUpdate', {
-//         newBalance: callerWallet.balance,
-//         callId,
-//         transactionId
-//       });
-//       this.io.to(receiverId).emit('balanceUpdate', {
-//         newBalance: receiverWallet.balance,
-//         callId,
-//         transactionId
-//       });
-
-//     } catch (error) {
-//       await session.abortTransaction();
-//       console.error('Minute deduction error:', error);
-      
-//       if (error.message === 'Insufficient balance') {
-//         // End call if balance is insufficient
-//         this.handleEndCall(deductionInfo.socket, { callId });
-//         deductionInfo.socket.emit('callEnded', {
-//           message: 'Call ended due to insufficient balance',
-//           callId
-//         });
-//       }
-//     } finally {
-//       session.endSession();
+//     // If no active plan is found, return an error
+//     if (!plan) {
+//       return res.status(404).json({ error: 'Active plan not found' });
 //     }
-//   }
 
-//   // Handle call end
-//   handleEndCall(socket, { callId }) {
-//     const deductionInfo = this.activeDeductions.get(callId);
-//     if (deductionInfo) {
-//       clearInterval(deductionInfo.intervalId);
-//       this.activeDeductions.delete(callId);
-//       socket.emit('callEnded', {
-//         message: 'Call payment processing stopped',
-//         callId
-//       });
+//     // Check if there are enough minutes in the plan to deduct
+//     if (plan.minutesLeft < minutesToDeduct) {
+//       return res.status(400).json({ error: 'Not enough minutes in the plan to deduct' });
 //     }
-//   }
 
-//   // Clean up on disconnect
-//   handleDisconnect(socket) {
-//     for (const [callId, deductionInfo] of this.activeDeductions.entries()) {
-//       if (deductionInfo.socket === socket) {
-//         this.handleEndCall(socket, { callId });
-//       }
-//     }
-//   }
-// }
+//     // Deduct the minutes from the plan
+//     plan.minutesLeft -= minutesToDeduct;
 
-// export default CallPaymentHandler;
+//     // Save the updated wallet document
+//     await wallet.save();
+
+//     // Return success response with the remaining minutes
+//     return res.status(200).json({
+//       message: `Successfully deducted ${minutesToDeduct} minutes from the plan.`,
+//       remainingMinutes: plan.minutesLeft
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     return res.status(500).json({ error: 'An error occurred while deducting minutes from the plan' });
+//   }
+// };
+
+export const deductPlanMinutes = async (req, res) => {
+  const session = await mongoose.startSession(); // Start a session for atomic transactions
+  session.startTransaction();
+
+  try {
+    const { userId, planId, minutesToDeduct } = req.body;
+
+    // Validate input
+    if (!userId || !planId || minutesToDeduct <= 0 || isNaN(minutesToDeduct)) {
+      return res.status(400).json({ success: false, message: 'Invalid input parameters.' });
+    }
+
+    // Fetch the call rate configuration
+    const callRateData = await CallRate.findOne().session(session);
+    if (!callRateData) {
+      await session.abortTransaction();
+      return res.status(500).json({
+        success: false,
+        message: 'Call rate configuration not found',
+      });
+    }
+
+    const { adminCommissionPercent, ratePerMinute } = callRateData;
+
+    // Validate rate per minute
+    if (isNaN(ratePerMinute) || ratePerMinute <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rate per minute must be a valid number greater than 0',
+      });
+    }
+
+    // Fetch the user's wallet
+    const wallet = await Wallet.findOne({ userId }).session(session);
+    if (!wallet) {
+      await session.abortTransaction();
+      return res.status(404).json({ success: false, message: 'Wallet not found for this user' });
+    }
+
+    // Find the active plan in the user's wallet
+    const plan = wallet.plans.find(p => p.planId.toString() === planId.toString() && p.status === 'active');
+    if (!plan) {
+      await session.abortTransaction();
+      return res.status(404).json({ success: false, message: 'Active plan not found' });
+    }
+
+    // Check if there are enough minutes in the plan to deduct
+    if (plan.minutesLeft < minutesToDeduct) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'Not enough minutes in the plan to deduct' });
+    }
+
+    // Calculate total deduction and receiver's earnings based on rate per minute
+    const totalDeduction = ratePerMinute * minutesToDeduct;
+    const commission = (adminCommissionPercent / 100) * totalDeduction;
+    const amountForReceiver = totalDeduction - commission;
+
+    // Ensure the calculations do not result in NaN
+    if (isNaN(totalDeduction) || isNaN(amountForReceiver)) {
+      await session.abortTransaction();
+      return res.status(500).json({
+        success: false,
+        message: 'Error calculating amounts. Please try again.',
+      });
+    }
+
+    // Deduct minutes from the active plan and wallet balance
+    plan.minutesLeft -= minutesToDeduct;
+
+    // Deduct from the user's wallet
+    wallet.balance -= totalDeduction;
+    wallet.deductions.push({
+      amount: totalDeduction,
+      deductionReason: 'plan_usage',
+      transactionId: uuidv4(), // Generate unique transaction ID
+      createdAt: new Date(),
+    });
+
+    // Fetch the receiver's wallet (assuming you have a receiverId passed in)
+    const receiverWallet = await Wallet.findOne({ userId: req.body.receiverId }).session(session);
+    if (!receiverWallet) {
+      await session.abortTransaction();
+      return res.status(404).json({ success: false, message: 'Receiver wallet not found' });
+    }
+
+    // Add the amount (minus commission) to the receiver's wallet
+    receiverWallet.balance += amountForReceiver;
+    receiverWallet.recharges.push({
+      amount: amountForReceiver,
+      rechargeMethod: 'CALL', // Indicate income source
+      transactionId: uuidv4(), // Use the same transaction ID for consistency
+      createdAt: new Date(),
+      responseCode: 'SUCCESS',
+      state: 'COMPLETED',
+      merchantTransactionId: uuidv4(),
+    });
+
+    // Save the updated wallets and plans
+    await wallet.save({ session });
+    await receiverWallet.save({ session });
+    await session.commitTransaction();
+    session.endSession();
+
+    // Return success response with updated balances
+    res.status(200).json({
+      success: true,
+      message: `Successfully deducted ${minutesToDeduct} minutes from the plan.`,
+      remainingMinutes: plan.minutesLeft,
+      callerBalance: wallet.balance,
+      receiverBalance: receiverWallet.balance,
+    });
+  } catch (error) {
+    console.error('Transaction error:', error);
+    await session.abortTransaction();
+    session.endSession();
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process the transaction',
+      error: error.message,
+    });
+  }
+};
