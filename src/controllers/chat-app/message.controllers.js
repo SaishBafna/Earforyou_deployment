@@ -275,10 +275,10 @@ async function sendNotification(userId, title, message, chatId, messageId, sende
     data: {
       screen: 'Chat', // The screen name you want to navigate to
       params: JSON.stringify({
-        chatId: chatId.toString(),
-        messageId: messageId.toString(),
+        chatId: chatId,
+        messageId: messageId,
         type: 'chat_message',
-        AgentID: senderId.toString(),
+        AgentID: senderId,
         friendName: sendername,
         imageurl: senderavatar || '', // Add sender's avatar if available
       // Include any other parameters your Chat screen needs
