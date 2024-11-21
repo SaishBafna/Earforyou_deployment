@@ -165,7 +165,7 @@ const sendMessage = asyncHandler(async (req, res) => {
     const notificationTitle = `New message from ${senderName}`;
     const notificationMessage = content || 'You received an attachment';
 
-    await sendNotification(participant, notificationTitle, notificationMessage, chatId, message._id);
+    await sendNotification(participant, notificationTitle, notificationMessage, chatId, message._id, sender._id, senderName, sender.avatarUrl);
 
 
 
@@ -257,7 +257,7 @@ export { getAllMessages, sendMessage, deleteMessage };
 
 
 
-async function sendNotification(userId, title, message, chatId, messageId) {
+async function sendNotification(userId, title, message, chatId, messageId, senderId, sendername, senderavatar) {
   // Assuming you have the FCM device token stored in your database
   const user = await User.findById(userId);
   const deviceToken = user.deviceToken;
@@ -273,9 +273,17 @@ async function sendNotification(userId, title, message, chatId, messageId) {
       body: message,
     },
     data: {
-      chatId: chatId.toString(),
-      messageId: messageId.toString(),
-      type: 'chat_message'
+      screen: 'Chat', // The screen name you want to navigate to
+      params: JSON.stringify({
+        chatId: chatId.toString(),
+        messageId: messageId.toString(),
+        type: 'chat_message',
+        senderId: senderId.toString(),
+        senderName: sendername,
+        senderImage: senderavatar || '', // Add sender's avatar if available
+      // Include any other parameters your Chat screen needs
+    })
+     
     },
     token: deviceToken,
   };
