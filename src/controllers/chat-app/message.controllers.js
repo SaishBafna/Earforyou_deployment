@@ -163,11 +163,10 @@ const sendMessage = asyncHandler(async (req, res) => {
       ChatEventEnum.MESSAGE_RECEIVED_EVENT,
       receivedMessage
     );
-
-
-    const notificationTitle = `New message from ${senderName}`;
-    const notificationMessage = content || 'You received an attachment';
-
+    const notificationTitle = `💬 Hey, ${senderName} sent you a message! ✨`;
+    const notificationMessage = content 
+      ? `📨 "${content}"` 
+      : '📎 You’ve got an attachment waiting for you! Tap to check it out!';
     await sendNotification(participant, notificationTitle, notificationMessage, chatId, message._id, sender._id, senderName, senderurl);
 
 
