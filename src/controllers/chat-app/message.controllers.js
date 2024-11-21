@@ -278,9 +278,9 @@ async function sendNotification(userId, title, message, chatId, messageId, sende
         chatId: chatId.toString(),
         messageId: messageId.toString(),
         type: 'chat_message',
-        senderId: senderId.toString(),
-        senderName: sendername,
-        senderImage: senderavatar || '', // Add sender's avatar if available
+        AgentID: senderId.toString(),
+        friendName: sendername,
+        imageurl: senderavatar || '', // Add sender's avatar if available
       // Include any other parameters your Chat screen needs
     })
      
