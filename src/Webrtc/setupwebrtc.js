@@ -418,19 +418,19 @@ export const setupWebRTC = (io) => {
             const senderName = caller.username || 'Unknown Caller';
             const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
 
-            await sendNotification( title, message, type, callerId, receiverId, senderName, senderAvatar);
+            await sendNotification(callerId, title, message, receiverId, senderName, senderAvatar);
             logger.info(`Push notification sent to User ${receiverId}`);
           }
         } else {
 
-          if (receiver.deviceToken) {
+            if (receiver.deviceToken) {
             const title = 'Incoming Call';
             const message = `${caller.username} is calling you!`;
             const type = 'Incoming_Call';
             const senderName = caller.username || 'Unknown Caller';
             const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
 
-            await sendNotification(callerId ,title, message, receiverId, senderName, senderAvatar);
+            await sendNotification(callerId, title, message, receiverId, senderName, senderAvatar);
             logger.info(`Push notification sent to User ${receiverId}`);
           }
 
@@ -464,7 +464,7 @@ export const setupWebRTC = (io) => {
                 const senderName = receiver.username || 'Unknown Receiver';
                 const senderAvatar = receiver.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
 
-                await sendNotification(callerId, title, message, type, callerId, receiverId, senderName, senderAvatar);
+                await sendNotification(callerId, title, message, receiverId, senderName, senderAvatar);
                 logger.info(`Missed call notification sent to User ${callerId}`);
               }
 
@@ -475,7 +475,7 @@ export const setupWebRTC = (io) => {
                 const senderName = caller.username || 'Unknown Caller';
                 const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
 
-                await sendNotification(receiverId, title, message, type, callerId, receiverId, senderName, senderAvatar);
+                await sendNotification(callerId, title, message, receiverId, senderName, senderAvatar);
                 logger.info(`Missed call notification sent to User ${receiverId}`);
               }
             }
@@ -919,6 +919,7 @@ async function sendNotification(userId, title, message, receiverId, senderName, 
         screen: 'incoming_Call', // Target screen
         params: JSON.stringify({
           user_id: userId, // Include Call ID
+          type: type, // Type of call
           agent_id: receiverId, // Receiver ID
           username: senderName, // Sender name
           imageurl: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png', // Sender avatar with default fallback
