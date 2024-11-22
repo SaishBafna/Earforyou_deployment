@@ -426,17 +426,6 @@ export const setupWebRTC = (io) => {
         // Start a 45-second timer for the call
         const callTimeout = setTimeout(async () => {
           if (!activeCalls[callerId] && !activeCalls[receiverId]) {
-
-            if (receiver.deviceToken) {
-              const title = 'Incoming Call';
-              const message = `${caller.username} is calling you!`;
-              const type = 'Incoming_Call';
-              const senderName = caller.username || 'Unknown Caller';
-              const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
-      
-              await sendNotification(receiverId, title, message, type, callerId, receiverId, senderName, senderAvatar);
-              logger.info(`Push notification sent to User ${receiverId}`);
-            }
             // Notify both users that the call was not received
             socket.emit('callNotReceived', { receiverId });
             users[receiverId]?.forEach((socketId) => {
@@ -453,28 +442,28 @@ export const setupWebRTC = (io) => {
     
             logger.warn(`Call from User ${callerId} to User ${receiverId} was not received`);
     
-            // // Send notifications to both users
-            // if (caller.deviceToken) {
-            //   const title = 'Call Missed';
-            //   const message = `Your call to ${receiver.username} was not answered.`;
-            //   const type = 'Missed_Call';
-            //   const senderName = receiver.username || 'Unknown Receiver';
-            //   const senderAvatar = receiver.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
+            // Send notifications to both users
+            if (caller.deviceToken) {
+              const title = 'Call Missed';
+              const message = `Your call to ${receiver.username} was not answered.`;
+              const type = 'Missed_Call';
+              const senderName = receiver.username || 'Unknown Receiver';
+              const senderAvatar = receiver.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
     
-            //   await sendNotification(callerId, title, message, type, callerId, receiverId, senderName, senderAvatar);
-            //   logger.info(`Missed call notification sent to User ${callerId}`);
-            // }
+              await sendNotification(callerId, title, message, type, callerId, receiverId, senderName, senderAvatar);
+              logger.info(`Missed call notification sent to User ${callerId}`);
+            }
     
-            // if (receiver.deviceToken) {
-            //   const title = 'Missed Call';
-            //   const message = `You missed a call from ${caller.username}.`;
-            //   const type = 'Missed_Call';
-            //   const senderName = caller.username || 'Unknown Caller';
-            //   const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
+            if (receiver.deviceToken) {
+              const title = 'Missed Call';
+              const message = `You missed a call from ${caller.username}.`;
+              const type = 'Missed_Call';
+              const senderName = caller.username || 'Unknown Caller';
+              const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
     
-            //   await sendNotification(receiverId, title, message, type, callerId, receiverId, senderName, senderAvatar);
-            //   logger.info(`Missed call notification sent to User ${receiverId}`);
-            // }
+              await sendNotification(receiverId, title, message, type, callerId, receiverId, senderName, senderAvatar);
+              logger.info(`Missed call notification sent to User ${receiverId}`);
+            }
           }
         }, 45000);
     
@@ -893,15 +882,13 @@ export const setupWebRTC = (io) => {
 
 
 
-// Make sure Firebase Admin SDK is initialized
-
 
 async function sendNotification(userId, title, message, type, receiverId, senderName, senderAvatar) {
   try {
     // Fetch the user from the database
     const user = await User.findById(userId);
     if (!user || !user.deviceToken) {
-      console.warn("No device token found for user:", userId);
+      console.error("No device token found for user:", userId);
       return;
     }
 
@@ -910,40 +897,27 @@ async function sendNotification(userId, title, message, type, receiverId, sender
     // Construct the payload for FCM
     const payload = {
       notification: {
-        title,
+        title: title,
         body: message,
-        sound: 'default', // Optionally, add sound to the notification
       },
       data: {
-        screen: 'incoming_Call', // Target screen identifier
+        screen: 'incoming_Call', // Target screen
         params: JSON.stringify({
-          user_id: userId, // Caller ID
-          type, // Type of notification
+          user_id: userId, // Include Call ID
+          type: type, // Type of call
           agent_id: receiverId, // Receiver ID
           username: senderName, // Sender name
-          imageurl: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png', // Sender avatar
+          imageurl: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png', // Sender avatar with default fallback
         }),
-        timestamp: new Date().toISOString(), // Add a timestamp for reference
+        // Add any additional parameters if needed
       },
+      token: deviceToken,
     };
 
-    // Options for high-priority notifications
-    const options = {
-      priority: 'high', // Ensures notification wakes up the device
-      timeToLive: 60 * 60 * 24, // Keep notification valid for 24 hours
-    };
-
-    // Send the notification via FCM
-    const response = await admin.messaging().sendToDevice(deviceToken, payload, options);
-    
-    if (response.failureCount > 0) {
-      console.error("Failed to send notification:", response.results);
-    } else {
-      console.info("Notification sent successfully:", response);
-    }
+    // Send the notification
+    const response = await admin.messaging().send(payload);
+    console.log("Notification sent successfully:", response);
   } catch (error) {
-    console.error("Error sending notification:", error, { userId, title, message, type });
+    console.error("Error sending notification:", error);
   }
 }
-
-
