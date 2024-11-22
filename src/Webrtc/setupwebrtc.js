@@ -364,40 +364,40 @@ export const setupWebRTC = (io) => {
     socket.on('call', async ({ callerId, receiverId }) => {
       try {
         logger.info(`User ${callerId} is calling User ${receiverId}`);
-
+    
         // Check if either user is already in a call
         if (activeCalls[receiverId] || activeCalls[callerId]) {
           socket.emit('userBusy', { receiverId });
           logger.warn(`User ${receiverId} or ${callerId} is already in a call`);
           return;
         }
-
+    
         // Fetch user details
         const [receiver, caller] = await Promise.all([
           User.findById(receiverId),
           User.findById(callerId),
         ]);
-
+    
         if (!receiver) {
           socket.emit('receiverUnavailable', { receiverId });
           logger.warn(`User ${receiverId} not found`);
           return;
         }
-
+    
         if (!caller) {
           socket.emit('callerUnavailable', { callerId });
           logger.warn(`User ${callerId} not found`);
           return;
         }
-
+    
         // Initialize socket arrays if needed
         if (!users[callerId]) users[callerId] = [];
         if (!users[receiverId]) users[receiverId] = [];
-
+    
         if (!users[callerId].includes(socket.id)) {
           users[callerId].push(socket.id);
         }
-
+    
         if (users[receiverId].length > 0) {
           // Notify all receiver's sockets about the incoming call
           users[receiverId].forEach((socketId) => {
@@ -406,10 +406,10 @@ export const setupWebRTC = (io) => {
               callerSocketId: socket.id,
             });
           });
-
+    
           // Notify the caller to play caller tune
           socket.emit('playCallerTune', { callerId });
-
+    
           // Send push notification if receiver has a device token
           if (receiver.deviceToken) {
             const title = 'Incoming Call';
@@ -417,35 +417,32 @@ export const setupWebRTC = (io) => {
             const type = 'Incoming_Call';
             const senderName = caller.username || 'Unknown Caller';
             const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
-
-            await sendNotification(receiverId, title, message,type, callerId, receiverId, senderName, senderAvatar);
+    
+            await sendNotification(receiverId, title, message, type, callerId, receiverId, senderName, senderAvatar);
             logger.info(`Push notification sent to User ${receiverId}`);
           }
         } else {
-
-            if (receiver.deviceToken) {
+          // Receiver offline, send push notification
+          if (receiver.deviceToken) {
             const title = 'Incoming Call';
             const message = `${caller.username} is calling you!`;
             const type = 'Incoming_Call';
             const senderName = caller.username || 'Unknown Caller';
             const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
-
-            await sendNotification(receiverId, title, message, type,callerId,receiverId, senderName, senderAvatar);
+    
+            await sendNotification(receiverId, title, message, type, callerId, receiverId, senderName, senderAvatar);
             logger.info(`Push notification sent to User ${receiverId}`);
           }
-
+    
           // Start a 45-second timer for the call
           const callTimeout = setTimeout(async () => {
-
             if (!activeCalls[callerId] && !activeCalls[receiverId]) {
               // Notify both users that the call was not received
-
-
               socket.emit('callNotReceived', { receiverId });
               users[receiverId]?.forEach((socketId) => {
                 socket.to(socketId).emit('callMissed', { callerId });
               });
-
+    
               // Log missed call in the database
               await CallLog.create({
                 caller: callerId,
@@ -453,40 +450,17 @@ export const setupWebRTC = (io) => {
                 startTime: new Date(),
                 status: 'missed',
               });
-
+    
               logger.warn(`Call from User ${callerId} to User ${receiverId} was not received`);
-
-              // Send notifications to both users
-              if (caller.deviceToken) {
-                const title = 'Call Missed';
-                const message = `Your call to ${receiver.username} was not answered.`;
-                const type = 'Missed_Call';
-                const senderName = receiver.username || 'Unknown Receiver';
-                const senderAvatar = receiver.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
-
-                await sendNotification(receiverId, title, type,message,callerId, receiverId, senderName, senderAvatar);
-                logger.info(`Missed call notification sent to User ${callerId}`);
-              }
-
-              if (receiver.deviceToken) {
-                const title = 'Missed Call';
-                const message = `You missed a call from ${caller.username}.`;
-                const type = 'Missed_Call';
-                const senderName = caller.username || 'Unknown Caller';
-                const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
-
-                await sendNotification(receiverId, title, message,callerId, receiverId, senderName, senderAvatar);
-                logger.info(`Missed call notification sent to User ${receiverId}`);
-              }
             }
           }, 45000);
-
+    
           // Cleanup timeout if the call is accepted or rejected
           socket.on('acceptCall', () => {
             clearTimeout(callTimeout);
             logger.info(`Call accepted by User ${receiverId}`);
           });
-
+    
           socket.on('rejectCall', () => {
             clearTimeout(callTimeout);
             logger.info(`Call rejected by User ${receiverId}`);
@@ -497,7 +471,7 @@ export const setupWebRTC = (io) => {
         socket.emit('callError', { message: 'Failed to initiate call' });
       }
     });
-
+    
     // Handle WebRTC offer
     socket.on('offer', async ({ offer, callerId, receiverId }) => {
       try {
@@ -898,7 +872,7 @@ export const setupWebRTC = (io) => {
 
 
 
-async function sendNotification(userId, title, message,callerId, receiverId, senderName, senderAvatar) {
+async function sendNotification(userId, title, message, type, callerId, receiverId, senderName, senderAvatar) {
   try {
     // Fetch the user from the database
     const user = await User.findById(userId);
@@ -914,18 +888,18 @@ async function sendNotification(userId, title, message,callerId, receiverId, sen
       notification: {
         title: title,
         body: message,
+        sound: 'default', // Ensure a sound plays for the notification
       },
       data: {
         screen: 'incoming_Call', // Target screen
         params: JSON.stringify({
           user_id: userId,
-          callerId:callerId,
+          callerId: callerId,
           type: type, // Type of call
           agent_id: receiverId, // Receiver ID
           username: senderName, // Sender name
           imageurl: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png', // Sender avatar with default fallback
         }),
-        // Add any additional parameters if needed
       },
       token: deviceToken,
     };
@@ -934,6 +908,7 @@ async function sendNotification(userId, title, message,callerId, receiverId, sen
     const response = await admin.messaging().send(payload);
     console.log("Notification sent successfully:", response);
   } catch (error) {
-    console.error("Error sending notification:", error);
+    console.error("Error sending notification:", error.message);
   }
 }
+
