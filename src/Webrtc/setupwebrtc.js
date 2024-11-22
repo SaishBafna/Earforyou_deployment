@@ -741,7 +741,7 @@ async function sendNotification(userId, title, message, type, CallId, receiverId
         body: message,
       },
       data: {
-        screen: 'Incoming_Call', // Target screen
+        screen: 'incoming_Call', // Target screen
         params: JSON.stringify({
           CallId: CallId, // Include Call ID
           type: type, // Type of call
