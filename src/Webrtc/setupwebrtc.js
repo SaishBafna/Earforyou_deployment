@@ -250,7 +250,7 @@ export const setupWebRTC = (io) => {
 
     // Initial call request
 
-   socket.on('call', async ({ callerId, receiverId }) => {
+    socket.on('call', async ({ callerId, receiverId }) => {
       try {
         logger.info(`User ${callerId} is calling User ${receiverId}`);
     
@@ -741,7 +741,7 @@ async function sendNotification(userId, title, message, type, CallId, receiverId
         body: message,
       },
       data: {
-        screen: 'Call', // Target screen
+        screen: 'incoming_Call', // Target screen
         params: JSON.stringify({
           CallId: CallId, // Include Call ID
           type: type, // Type of call
