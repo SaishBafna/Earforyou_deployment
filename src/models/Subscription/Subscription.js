@@ -3,10 +3,6 @@ import mongoose from 'mongoose';
 // Define the structure for a subscription plan
 const subscriptionPlanSchema = new mongoose.Schema(
   {
-    name: {
-      type: String,  // Plan name will be stored as text
-      required: true, // Make it a required field
-    },
 
     price: {
       type: Number,  // Price will be stored as a number
@@ -18,18 +14,7 @@ const subscriptionPlanSchema = new mongoose.Schema(
       required: true, // Make it a required field
     },
 
-    dailyLimit: {
-      type: Number,  // Daily usage limit in minutes
-      default: 0,    // If not specified, defaults to 0
-    },
-    validity: {
-      type: Number, // Validity in days
-      required: true,
-    },
-    description: {
-      type: String,  // Description of the plan
-      default: '',   // If not specified, defaults to an empty string
-    },
+   
   },
   {
     timestamps: true, // Automatically create createdAt and updatedAt fields

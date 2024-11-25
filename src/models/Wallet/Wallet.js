@@ -72,33 +72,11 @@ const walletSchema = new mongoose.Schema({
       },
     },
   ],
-  plans: [ // Now an array of plan details
-    {
-      planId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'SubscriptionPlan',
-        required: true,
-      },
-      validity: {
-        type: Number, // Validity in days
-        required: true,
-      },
-      expirationDate: {
-        type: Date,
-        required: true,
-      },
-      status: {
-        type: String,
-        enum: ['active', 'expired', 'inactive'], // Status of the plan
-        default: 'active',
-      },
-      minutesLeft: {
-        type: Number, // Store remaining minutes in the plan
-        required: true,
-        default: 0,  // Default to 0 minutes or set to the original allocated minutes
-      },
-    },
-  ],
+  planId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SubscriptionPlan',
+    required: true,
+  },
   lastUpdated: {
     type: Date,
     default: Date.now,
