@@ -121,7 +121,9 @@ walletSchema.methods.deductBalanceAndMinutes = async function (amount, minutes, 
 };
 
 // Create a method to check and clean expired wallets periodically (optional, can be run in background)
-
+// walletSchema.statics.cleanExpiredWallets = async function () {
+//   await this.deleteMany({ 'plans.status': 'expired' });
+// };
 
 const Wallet = mongoose.model('Wallet', walletSchema);
 

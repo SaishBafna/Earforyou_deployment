@@ -9,6 +9,52 @@ import { ApiResponse } from "../../../src/utils/ApiResponse.js";
 import { asyncHandler } from "../../../src/utils/asyncHandler.js";
 import { removeLocalFile } from "../../../src/utils/helpers.js";
 
+
+/**
+ * @description Marks a message as read and updates the seen status
+ * @route POST /api/v1/messages/:messageId/read
+ */
+
+const markMessageAsRead = asyncHandler(async (req, res) => {
+  const { messageId } = req.params;
+
+  // Find the message by ID
+  const message = await ChatMessage.findById(messageId);
+
+  if (!message) {
+    throw new ApiError(404, "Message not found");
+  }
+
+  // Check if the user has already read the message
+  if (message.seenBy && message.seenBy.includes(req.user._id)) {
+    return res.status(200).json(new ApiResponse(200, {}, "Message already marked as read"));
+  }
+
+  // Update the message's seenBy and isRead fields with the current user's ID
+  message.seenBy = [req.user._id]; // Ensure only one user is recorded
+  message.isRead = true;  // Mark the message as read
+
+  await message.save();
+
+  // Emit a MESSAGE_READ_EVENT for real-time notification
+  emitSocketEvent(
+    req,
+    message.chat.toString(), // Target chat room or specific identifier
+    ChatEventEnum.MESSAGE_READ_EVENT, // Event type
+    {
+      messageId,
+      seenBy: message.seenBy, // Only the user who marked it as read
+    }
+  );
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, { messageId, seenBy: message.seenBy }, "Message marked as read successfully")
+    );
+});
+
+
 /**
  * @description Utility function which returns the pipeline stages to structure the chat schema with common lookups
  * @returns {mongoose.PipelineStage[]}
@@ -109,6 +155,8 @@ const deleteCascadeChatMessages = async (chatId) => {
     chat: new mongoose.Types.ObjectId(chatId),
   });
 };
+
+
 
 const searchAvailableUsers = asyncHandler(async (req, res) => {
   const users = await User.aggregate([
@@ -339,4 +387,5 @@ export {
   deleteOneOnOneChat,
   getAllChats,
   searchAvailableUsers,
+  markMessageAsRead
 };
