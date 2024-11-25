@@ -17,29 +17,29 @@ export const setupWebRTC = (io) => {
   io.on('connection', (socket) => {
     logger.http(`User connected: ${socket.id}`);
 
-    socket.on('registerUser', async (userId) => {
-      try {
-        if (!userId) {
-          throw new Error('User ID is required');
-        }
+    // socket.on('registerUser', async (userId) => {
+    //   try {
+    //     if (!userId) {
+    //       throw new Error('User ID is required');
+    //     }
 
-        // Use an in-memory reference (if applicable) or limit the database call.
-        socket.userId = userId; // Associate the userId with the socket
+    //     // Use an in-memory reference (if applicable) or limit the database call.
+    //     socket.userId = userId; // Associate the userId with the socket
 
-        // Update user status to online in the background without awaiting
-        User.findByIdAndUpdate(userId, { status: 'online' }).exec();
+    //     // Update user status to online in the background without awaiting
+    //     User.findByIdAndUpdate(userId, { status: 'online' }).exec();
 
-        // Immediately broadcast the online status
-        socket.broadcast.emit('userStatusChanged', {
-          userId,
-          status: 'online',
-        });
+    //     // Immediately broadcast the online status
+    //     socket.broadcast.emit('userStatusChanged', {
+    //       userId,
+    //       status: 'online',
+    //     });
 
-        console.log(`User ${userId} is now online`);
-      } catch (error) {
-        console.error(`Error updating user online status: ${error.message}`);
-      }
-    });
+    //     console.log(`User ${userId} is now online`);
+    //   } catch (error) {
+    //     console.error(`Error updating user online status: ${error.message}`);
+    //   }
+    // });
 
     socket.on('join', async ({ userId }) => {
       if (!users[userId]) {
