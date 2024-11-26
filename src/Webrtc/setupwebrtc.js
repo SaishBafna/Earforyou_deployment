@@ -30,7 +30,7 @@ export const setupWebRTC = (io) => {
         logger.info(`User ${userId} joined with socket ID ${socket.id}`);
     
         // Update user's status in the database
-        await UserModel.findByIdAndUpdate(
+        await User.findByIdAndUpdate(
           userId,
           { status: 'online' }, // Assuming `status` is the field
           { new: true } // Returns the updated document
