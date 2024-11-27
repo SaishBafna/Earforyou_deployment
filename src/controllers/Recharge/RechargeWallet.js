@@ -286,7 +286,7 @@ export const validatePayment = async (req, res) => {
 
   try {
     const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
-    const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
+    const stringToHash = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
     const sha256Hash = sha256(stringToHash);
     const xVerifyChecksum = `${sha256Hash}###${process.env.SALT_INDEX}`;
 
