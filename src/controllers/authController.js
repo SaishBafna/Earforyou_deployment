@@ -22,15 +22,12 @@ const generateAccessAndRefreshTokens = async (userId) => {
     }
 
     // Generate tokens
-    const accessToken = user.generateAccessToken(); // Short-lived token
-    const refreshToken = user.generateRefreshToken(); // Long-lived token
+    const accessToken = user.generateAccessToken(); // Optional: Short-lived or no expiry
+    const refreshToken = user.generateRefreshToken(); // No expiry
 
-    // Set token expiry (180 days for refresh token)
-    const refreshTokenExpires = Date.now() + 180 * 24 * 60 * 60 * 1000; // 180 days
-
-    // Save refresh token and expiry in the user document
+    // Save refresh token and its issued timestamp
     user.refreshToken = refreshToken;
-    user.refreshTokenExpires = refreshTokenExpires;
+    user.refreshTokenIssuedAt = new Date();
 
     await user.save({ validateBeforeSave: false });
 
@@ -40,6 +37,7 @@ const generateAccessAndRefreshTokens = async (userId) => {
     throw new Error("Error while generating tokens");
   }
 };
+
 
 
 export const registerUser = async (req, res) => {
