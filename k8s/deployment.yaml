@@ -4,7 +4,7 @@ metadata:
   name: earforyouserver
   namespace: prod
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: earforyouserver
@@ -19,6 +19,20 @@ spec:
         ports:
         - containerPort: 8080
         env:
+        - name: CORS_ORIGIN
+          value: http://localhost:3000,http://localhost:8081,http://localhost:8080,https://demo-virid-five.vercel.app//https://earforyou-server.onrender.com
+        - name: EMAIL_USER
+          value: kumarrupees507@gmail.com
+        - name: EMAIL_PASS
+          value: ztto pfxx jolh belu
+        - name: FAST2SMS_API_KEY
+          value: https://www.fast2sms.com/dev/bulkV2
+        - name: ACCESS_TOKEN_SECRET
+          value: LD9cv1kBfgRHVIg9GG_OGzh9TUkcyqgZAaM0o3DmVkx08MCFRSzMocyO3UtNdDNtoCJ0X0-5nLwK7fdO
+        - name: EXPRESS_SESSION_SECRET
+          value: 7fdOMCFRSLD9cv1k-5n3Dz5n3DmVmVHVIg9GG_OGTUkBfLNdgZAwKDNtoCJ0X0cyqaM0ogR80-zh9kx0Mkx.
+        - name: PORT
+          value: "8080"
         - name: REFRESH_TOKEN_SECRET
           value: "CMdDNtowK7fX0-5D9cv0oJ008MCFRSLHVTUkcyqgZAaIg9GG_OGzh9zMocyO3UtN1kBfLRn3DmVkxdO"
         - name: REFRESH_TOKEN_EXPIRY
