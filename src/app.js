@@ -105,7 +105,7 @@ import CallRoute from './routes/CallRoute.js'
 import RechargeRoute from './routes/Recharge/RechargeRoute.js'
 import msg91Routes from './routes/OTP/msg91Routes.js'
 import appRatingRoutes from './routes/LeaderBoard/apprateRoute.js'
-import { watchUserChanges } from "./servises/Stream.js";
+// import { watchUserChanges } from "./servises/Stream.js";
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");
@@ -114,7 +114,7 @@ app.get("/", (req, res) => {
     logger.error(error);
   }
 });
-watchUserChanges()
+// watchUserChanges()
 
 +app.use("/api/", apiLimiter);
 

@@ -16,18 +16,18 @@ export const setupWebRTC = (io) => {
   const CALL_TIMEOUT = 60000; // 1 minute in milliseconds
 
   // Queue to store connected users
-const userQueue = [];
+  const userQueue = [];
 
-// Function to add user to the queue
-const addUserToQueue = (userId, socketId) => {
+  // Function to add user to the queue
+  const addUserToQueue = (userId, socketId) => {
     userQueue.push({ userId, socketId });
-};
+  };
 
-// Function to remove user from the queue
-const removeUserFromQueue = (socketId) => {
+  // Function to remove user from the queue
+  const removeUserFromQueue = (socketId) => {
     const index = userQueue.findIndex(user => user.socketId === socketId);
     if (index !== -1) userQueue.splice(index, 1);
-};
+  };
 
 
   io.on('connection', (socket) => {
@@ -68,7 +68,7 @@ const removeUserFromQueue = (socketId) => {
     // Listen for `statusUpdated` event
     socket.on('statusUpdated', ({ userId, status }) => {
       try {
-        
+
         // Validate the incoming data
         if (!userId || !status) {
           throw new Error('Invalid data: userId and status are required.');
@@ -78,11 +78,11 @@ const removeUserFromQueue = (socketId) => {
         io.emit('statusUpdated', { userId, status });
 
         // Provide a response to the sender (acknowledgment)
-     
+
       } catch (error) {
         console.error('Error handling statusUpdated event:', error.message);
 
-        
+
       }
     });
 
@@ -93,7 +93,7 @@ const removeUserFromQueue = (socketId) => {
 
       // Emit the current queue to all connected clients
       io.emit('updateQueue', userQueue);
-  });
+    });
 
     socket.on('requestRandomCall', async ({ userId }) => {
       try {
@@ -1075,12 +1075,85 @@ const removeUserFromQueue = (socketId) => {
     // });
 
 
+    // socket.on('disconnect', async () => {
+    //   logger.info(`Socket disconnected: ${socket.id}`);
+    //   removeUserFromQueue(socket.id);
+    //   console.log('Current queue:', userQueue);
+
+    //   let disconnectedUserId;
+    //   for (const [userId, socketIds] of Object.entries(users)) {
+    //     const index = socketIds.indexOf(socket.id);
+    //     if (index !== -1) {
+    //       socketIds.splice(index, 1);
+    //       disconnectedUserId = userId;
+
+    //       if (socketIds.length === 0) {
+    //         delete users[userId];
+    //         try {
+    //           const updatedUser = await User.findOneAndUpdate(
+    //             { _id: disconnectedUserId, userType: 'CALLER' },
+    //             { status: 'offline' },
+    //             { new: true }
+    //           );
+    //           if (updatedUser) {
+    //             io.emit('userStatusChanged', { userId: disconnectedUserId, status: 'offline' });
+    //           }
+
+    //         } catch (error) {
+    //           logger.error(`Failed to update offline status for user ${disconnectedUserId}: ${error.message}`);
+    //         }
+    //       }
+    //       break;
+    //     }
+    //   }
+
+    //   if (disconnectedUserId && activeCalls[disconnectedUserId]) {
+    //     const otherUserId = activeCalls[disconnectedUserId];
+    //     const callKey = `${disconnectedUserId}_${otherUserId}`;
+    //     const reverseCallKey = `${otherUserId}_${disconnectedUserId}`;
+    //     const callStartTime = callTimings[callKey]?.startTime || callTimings[reverseCallKey]?.startTime;
+
+    //     if (callStartTime) {
+    //       const endTime = new Date();
+    //       const duration = Math.floor((endTime - callStartTime) / 1000);
+
+    //       try {
+    //         await CallLog.create({
+    //           caller: new mongoose.Types.ObjectId(disconnectedUserId),
+    //           receiver: new mongoose.Types.ObjectId(otherUserId),
+    //           startTime: callStartTime,
+    //           endTime,
+    //           duration,
+    //           status: 'disconnected',
+    //         });
+    //       } catch (error) {
+    //         logger.error(`Failed to log call for disconnected user ${disconnectedUserId}: ${error.message}`);
+    //       }
+
+    //       delete callTimings[callKey];
+    //       delete callTimings[reverseCallKey];
+    //     }
+
+    //     if (users[otherUserId]) {
+    //       users[otherUserId].forEach((socketId) => {
+    //         socket.to(socketId).emit('callEnded', { callerId: disconnectedUserId });
+    //       });
+    //     }
+
+    //     delete activeCalls[disconnectedUserId];
+    //     delete activeCalls[otherUserId];
+    //   }
+    // });
+
+
     socket.on('disconnect', async () => {
       logger.info(`Socket disconnected: ${socket.id}`);
       removeUserFromQueue(socket.id);
       console.log('Current queue:', userQueue);
 
       let disconnectedUserId;
+
+      // Find and remove the socket ID from the user's list
       for (const [userId, socketIds] of Object.entries(users)) {
         const index = socketIds.indexOf(socket.id);
         if (index !== -1) {
@@ -1089,16 +1162,17 @@ const removeUserFromQueue = (socketId) => {
 
           if (socketIds.length === 0) {
             delete users[userId];
+
+            // Update user status to offline
             try {
               const updatedUser = await User.findOneAndUpdate(
-                { _id: disconnectedUserId, userType: 'CALLER' },
+                { _id: disconnectedUserId },
                 { status: 'offline' },
                 { new: true }
               );
               if (updatedUser) {
                 io.emit('userStatusChanged', { userId: disconnectedUserId, status: 'offline' });
               }
-
             } catch (error) {
               logger.error(`Failed to update offline status for user ${disconnectedUserId}: ${error.message}`);
             }
@@ -1107,6 +1181,7 @@ const removeUserFromQueue = (socketId) => {
         }
       }
 
+      // Handle active call disconnection
       if (disconnectedUserId && activeCalls[disconnectedUserId]) {
         const otherUserId = activeCalls[disconnectedUserId];
         const callKey = `${disconnectedUserId}_${otherUserId}`;
