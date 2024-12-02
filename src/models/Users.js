@@ -85,6 +85,8 @@ const userSchema = new mongoose.Schema(
     },
     status: {
       type: String,
+      enum: ["Online", "offline", "Busy"], // Allow only specific status values
+      default: "offline", // Default t
     }
   },
   { timestamps: true }
