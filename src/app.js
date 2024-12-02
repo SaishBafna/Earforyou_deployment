@@ -109,7 +109,7 @@ import { watchUserChanges } from "./servises/Stream.js";
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");
-    // throw new Error("BROKEN");
+    throw new Error("BROKEN");
   } catch (error) {
     logger.error(error);
   }
