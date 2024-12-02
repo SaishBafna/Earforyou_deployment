@@ -668,11 +668,11 @@ export const setupWebRTC = (io) => {
       }
     });
 
-   
+
     // const cleanUpCallData = (callerId, receiverId, callKey) => {
     //   delete activeCalls[callerId];
     //   delete activeCalls[receiverId];
-      
+
     //   logger.info(`Cleaned up in-memory data for call: ${callKey}`);
     // };
 
@@ -734,7 +734,7 @@ export const setupWebRTC = (io) => {
 
 
     // Handle call rejection
-    
+
     socket.on('missedcall', async ({ receiverId, callerId }) => {
       // Input validation
       if (!receiverId || !callerId) {
@@ -1070,12 +1070,19 @@ export const setupWebRTC = (io) => {
 
           if (socketIds.length === 0) {
             delete users[userId];
-            try {
-              await User.findByIdAndUpdate(disconnectedUserId, { status: 'offline' });
-              io.emit('userStatusChanged', { userId: disconnectedUserId, status: 'offline' });
-            } catch (error) {
-              logger.error(`Failed to update offline status for user ${disconnectedUserId}: ${error.message}`);
-            }
+            // try {
+            //   const updatedUser = await User.findOneAndUpdate(
+            //     { _id: disconnectedUserId, userType: 'CALLER' },
+            //     { status: 'offline' },
+            //     { new: true }
+            //   );
+            //   if (updatedUser) {
+            //     io.emit('userStatusChanged', { userId: disconnectedUserId, status: 'offline' });
+            //   }
+
+            // } catch (error) {
+            //   logger.error(`Failed to update offline status for user ${disconnectedUserId}: ${error.message}`);
+            // }
           }
           break;
         }

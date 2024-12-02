@@ -85,6 +85,8 @@ const userSchema = new mongoose.Schema(
     },
     status: {
       type: String,
+      enum: ["Online", "offline", "Busy"], // Allow only specific status values
+      default: "offline", // Default t
     }
   },
   { timestamps: true }
@@ -111,7 +113,8 @@ userSchema.pre("save", async function (next) {
 // Update the status to "online" if userType is RECEIVER
 userSchema.pre("save", async function (next) {
   if (this.isModified("userType") && this.userType === "RECEIVER") {
-    this.status = "Online"; // Automatically set status to "online"
+    this.status = "Online";
+    console.log("Updated")
   }
   next();
 });

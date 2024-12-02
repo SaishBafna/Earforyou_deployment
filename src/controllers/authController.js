@@ -12,6 +12,7 @@ import mongoose from 'mongoose'
 import admin from 'firebase-admin';
 import Wallet from "../models/Wallet/Wallet.js";
 import { CallRate } from '../models/Wallet/AdminCharges.js'
+import emailValidator from 'email-validator';
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -219,7 +220,12 @@ export const initiateRegistration = async (req, res) => {
   try {
     // Check if it's a playstore verification request
     const isPlaystoreVerification = email === 'playtest@gmail.com';
-
+    
+    const isValidEmail = emailValidator.validate(email);
+    if (!isValidEmail) {
+      return res.status(400).json({ message: "Invalid email address" });
+    }
+    
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
     console.log(existingUser);
