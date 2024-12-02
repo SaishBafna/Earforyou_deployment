@@ -105,15 +105,16 @@ import CallRoute from './routes/CallRoute.js'
 import RechargeRoute from './routes/Recharge/RechargeRoute.js'
 import msg91Routes from './routes/OTP/msg91Routes.js'
 import appRatingRoutes from './routes/LeaderBoard/apprateRoute.js'
-
+// import { watchUserChanges } from "./servises/Stream.js";
 app.get("/", (req, res) => {
   try {
-    res.send("Driverse Server Running Smoothly");
+    res.send("Ear For You Server Running Smoothly");
     throw new Error("BROKEN");
   } catch (error) {
     logger.error(error);
   }
 });
+// watchUserChanges()
 
 +app.use("/api/", apiLimiter);
 

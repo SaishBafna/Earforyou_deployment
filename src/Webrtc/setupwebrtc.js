@@ -15,6 +15,21 @@ export const setupWebRTC = (io) => {
   const onlineUsers = new Map(); // Map to track user IDs and their socket IDs
   const CALL_TIMEOUT = 60000; // 1 minute in milliseconds
 
+  // Queue to store connected users
+  const userQueue = [];
+
+  // Function to add user to the queue
+  const addUserToQueue = (userId, socketId) => {
+    userQueue.push({ userId, socketId });
+  };
+
+  // Function to remove user from the queue
+  const removeUserFromQueue = (socketId) => {
+    const index = userQueue.findIndex(user => user.socketId === socketId);
+    if (index !== -1) userQueue.splice(index, 1);
+  };
+
+
   io.on('connection', (socket) => {
     logger.http(`User connected: ${socket.id}`);
 
@@ -51,9 +66,8 @@ export const setupWebRTC = (io) => {
 
 
     // Listen for `statusUpdated` event
-    socket.on('statusUpdated', (data, callback) => {
+    socket.on('statusUpdated', ({ userId, status }) => {
       try {
-        const { userId, status } = data;
 
         // Validate the incoming data
         if (!userId || !status) {
@@ -64,19 +78,22 @@ export const setupWebRTC = (io) => {
         io.emit('statusUpdated', { userId, status });
 
         // Provide a response to the sender (acknowledgment)
-        if (callback) {
-          callback({ success: true, message: 'Status updated successfully.' });
-        }
+
       } catch (error) {
         console.error('Error handling statusUpdated event:', error.message);
 
-        // Send error response to the sender
-        if (callback) {
-          callback({ success: false, message: error.message });
-        }
+
       }
     });
 
+    socket.on('registerUser', (userId) => {
+      addUserToQueue(userId, socket.id);
+      console.log(`User registered: ${userId}`);
+      console.log('Current queue:', userQueue);
+
+      // Emit the current queue to all connected clients
+      io.emit('updateQueue', userQueue);
+    });
 
     socket.on('requestRandomCall', async ({ userId }) => {
       try {
@@ -1058,10 +1075,85 @@ export const setupWebRTC = (io) => {
     // });
 
 
+    // socket.on('disconnect', async () => {
+    //   logger.info(`Socket disconnected: ${socket.id}`);
+    //   removeUserFromQueue(socket.id);
+    //   console.log('Current queue:', userQueue);
+
+    //   let disconnectedUserId;
+    //   for (const [userId, socketIds] of Object.entries(users)) {
+    //     const index = socketIds.indexOf(socket.id);
+    //     if (index !== -1) {
+    //       socketIds.splice(index, 1);
+    //       disconnectedUserId = userId;
+
+    //       if (socketIds.length === 0) {
+    //         delete users[userId];
+    //         try {
+    //           const updatedUser = await User.findOneAndUpdate(
+    //             { _id: disconnectedUserId, userType: 'CALLER' },
+    //             { status: 'offline' },
+    //             { new: true }
+    //           );
+    //           if (updatedUser) {
+    //             io.emit('userStatusChanged', { userId: disconnectedUserId, status: 'offline' });
+    //           }
+
+    //         } catch (error) {
+    //           logger.error(`Failed to update offline status for user ${disconnectedUserId}: ${error.message}`);
+    //         }
+    //       }
+    //       break;
+    //     }
+    //   }
+
+    //   if (disconnectedUserId && activeCalls[disconnectedUserId]) {
+    //     const otherUserId = activeCalls[disconnectedUserId];
+    //     const callKey = `${disconnectedUserId}_${otherUserId}`;
+    //     const reverseCallKey = `${otherUserId}_${disconnectedUserId}`;
+    //     const callStartTime = callTimings[callKey]?.startTime || callTimings[reverseCallKey]?.startTime;
+
+    //     if (callStartTime) {
+    //       const endTime = new Date();
+    //       const duration = Math.floor((endTime - callStartTime) / 1000);
+
+    //       try {
+    //         await CallLog.create({
+    //           caller: new mongoose.Types.ObjectId(disconnectedUserId),
+    //           receiver: new mongoose.Types.ObjectId(otherUserId),
+    //           startTime: callStartTime,
+    //           endTime,
+    //           duration,
+    //           status: 'disconnected',
+    //         });
+    //       } catch (error) {
+    //         logger.error(`Failed to log call for disconnected user ${disconnectedUserId}: ${error.message}`);
+    //       }
+
+    //       delete callTimings[callKey];
+    //       delete callTimings[reverseCallKey];
+    //     }
+
+    //     if (users[otherUserId]) {
+    //       users[otherUserId].forEach((socketId) => {
+    //         socket.to(socketId).emit('callEnded', { callerId: disconnectedUserId });
+    //       });
+    //     }
+
+    //     delete activeCalls[disconnectedUserId];
+    //     delete activeCalls[otherUserId];
+    //   }
+    // });
+
+
     socket.on('disconnect', async () => {
       logger.info(`Socket disconnected: ${socket.id}`);
+      removeUserFromQueue(socket.id);
+      console.log('Current queue:', userQueue);
 
       let disconnectedUserId;
+
+      // Find and remove the socket ID from the user's list
       for (const [userId, socketIds] of Object.entries(users)) {
         const index = socketIds.indexOf(socket.id);
         if (index !== -1) {
@@ -1070,24 +1162,26 @@ export const setupWebRTC = (io) => {
 
           if (socketIds.length === 0) {
             delete users[userId];
-            // try {
-            //   const updatedUser = await User.findOneAndUpdate(
-            //     { _id: disconnectedUserId, userType: 'CALLER' },
-            //     { status: 'offline' },
-            //     { new: true }
-            //   );
-            //   if (updatedUser) {
-            //     io.emit('userStatusChanged', { userId: disconnectedUserId, status: 'offline' });
-            //   }
 
-            // } catch (error) {
-            //   logger.error(`Failed to update offline status for user ${disconnectedUserId}: ${error.message}`);
-            // }
+            // Update user status to offline
+            try {
+              const updatedUser = await User.findOneAndUpdate(
+                { _id: disconnectedUserId },
+                { status: 'offline' },
+                { new: true }
+              );
+              if (updatedUser) {
+                io.emit('userStatusChanged', { userId: disconnectedUserId, status: 'offline' });
+              }
+            } catch (error) {
+              logger.error(`Failed to update offline status for user ${disconnectedUserId}: ${error.message}`);
+            }
           }
           break;
         }
       }
 
+      // Handle active call disconnection
       if (disconnectedUserId && activeCalls[disconnectedUserId]) {
         const otherUserId = activeCalls[disconnectedUserId];
         const callKey = `${disconnectedUserId}_${otherUserId}`;
