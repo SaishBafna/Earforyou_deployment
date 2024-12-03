@@ -1075,19 +1075,71 @@ export const getUserById = async (req, res) => {
   }
 };
 
-// getAllUsers
+// // getAllUsers
+// export const getAllUsers = async (req, res) => {
+//   try {
+//     // Get the logged-in user's ID (assuming it's stored in req.user)
+//     const loggedInUserId = req.user.id;
+
+//     // Find all users except the logged-in user, excluding password and refreshToken fields
+
+//     // const users = await User.find(
+//     //   { _id: { $ne: loggedInUserId } }, // Exclude the logged-in user
+//     //   { password: 0, refreshToken: 0 }
+//     // );
+
+//     const users = await User.find(
+//       {
+//         _id: { $ne: loggedInUserId }, // Exclude the logged-in user
+//         UserStatus: { $nin: ['inActive', 'Blocked'] } // Exclude users with these statuses
+//       },
+//       { password: 0, refreshToken: 0 } // Exclude sensitive fields
+//     );
+
+//     const userRatings = await Review.aggregate([
+//       {
+//         $group: {
+//           _id: '$reviewedUserId', // Group by reviewed user's ID
+//           avgRating: { $avg: '$rating' }, // Calculate average rating
+//         },
+//       },
+//     ]);
+
+//     // Map average ratings to users
+//     const userRatingsMap = userRatings.reduce((acc, rating) => {
+//       acc[rating._id] = rating.avgRating;
+//       return acc;
+//     }, {});
+
+//     // Attach average rating to each user
+//     const usersWithRatings = users.map((user) => ({
+//       ...user.toObject(),
+//       avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
+//     }));
+
+//     // If no other users are found, return an appropriate message
+//     if (users.length === 0) {
+//       return res.status(404).json({ message: 'No other users found' });
+//     }
+
+//     // Return the list of users
+//     res.status(200).json({
+//       message: 'Users found successfully',
+//       users: usersWithRatings,
+//     });
+//   } catch (error) {
+//     // Handle any errors that occur
+//     console.error('Error fetching users:', error);
+//     res.status(500).json({ message: 'Internal server error', error: error.message });
+//   }
+// };
+
 export const getAllUsers = async (req, res) => {
   try {
-    // Get the logged-in user's ID (assuming it's stored in req.user)
+    // Get the logged-in user's ID
     const loggedInUserId = req.user.id;
 
-    // Find all users except the logged-in user, excluding password and refreshToken fields
-
-    // const users = await User.find(
-    //   { _id: { $ne: loggedInUserId } }, // Exclude the logged-in user
-    //   { password: 0, refreshToken: 0 }
-    // );
-
+    // Find users with specific conditions
     const users = await User.find(
       {
         _id: { $ne: loggedInUserId }, // Exclude the logged-in user
@@ -1096,6 +1148,7 @@ export const getAllUsers = async (req, res) => {
       { password: 0, refreshToken: 0 } // Exclude sensitive fields
     );
 
+    // Aggregate to calculate average user ratings
     const userRatings = await Review.aggregate([
       {
         $group: {
@@ -1105,7 +1158,7 @@ export const getAllUsers = async (req, res) => {
       },
     ]);
 
-    // Map average ratings to users
+    // Create a map of user ratings
     const userRatingsMap = userRatings.reduce((acc, rating) => {
       acc[rating._id] = rating.avgRating;
       return acc;
@@ -1114,10 +1167,10 @@ export const getAllUsers = async (req, res) => {
     // Attach average rating to each user
     const usersWithRatings = users.map((user) => ({
       ...user.toObject(),
-      avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
+      avgRating: userRatingsMap[user._id] || 2, // Default to 0 if no rating exists
     }));
 
-    // If no other users are found, return an appropriate message
+    // Handle case when no users are found
     if (users.length === 0) {
       return res.status(404).json({ message: 'No other users found' });
     }
@@ -1128,7 +1181,7 @@ export const getAllUsers = async (req, res) => {
       users: usersWithRatings,
     });
   } catch (error) {
-    // Handle any errors that occur
+    // Error handling
     console.error('Error fetching users:', error);
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
