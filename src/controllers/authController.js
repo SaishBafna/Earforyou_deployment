@@ -13,6 +13,8 @@ import admin from 'firebase-admin';
 import Wallet from "../models/Wallet/Wallet.js";
 import { CallRate } from '../models/Wallet/AdminCharges.js'
 import emailValidator from 'email-validator';
+import Review from "../../models/LeaderBoard/Review.js";
+
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -220,12 +222,12 @@ export const initiateRegistration = async (req, res) => {
   try {
     // Check if it's a playstore verification request
     const isPlaystoreVerification = email === 'playtest@gmail.com';
-    
+
     const isValidEmail = emailValidator.validate(email);
     if (!isValidEmail) {
       return res.status(400).json({ message: "Invalid email address" });
     }
-    
+
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
     console.log(existingUser);
@@ -554,6 +556,28 @@ export const resetPassword = async (req, res) => {
     res.status(200).json({ message: "Password reset successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+
+// Delete User 
+export const deleteUser = async (req, res) => {
+  try {
+    const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+
+    // Check if the user exists
+    const userToDelete = await User.findById(userId);
+    if (!userToDelete) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Delete the user
+    await User.findByIdAndDelete(userId);
+
+    res.status(200).json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ success: false, message: 'Error deleting user', error: error.message });
   }
 };
 
@@ -1067,13 +1091,31 @@ export const getAllUsers = async (req, res) => {
     const users = await User.find(
       {
         _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-        userStatus: { $nin: ['inActive', 'Blocked'] } // Exclude users with these statuses
+        UserStatus: { $nin: ['inActive', 'Blocked'] } // Exclude users with these statuses
       },
       { password: 0, refreshToken: 0 } // Exclude sensitive fields
     );
 
+    const userRatings = await Review.aggregate([
+      {
+        $group: {
+          _id: '$reviewedUserId', // Group by reviewed user's ID
+          avgRating: { $avg: '$rating' }, // Calculate average rating
+        },
+      },
+    ]);
 
+    // Map average ratings to users
+    const userRatingsMap = userRatings.reduce((acc, rating) => {
+      acc[rating._id] = rating.avgRating;
+      return acc;
+    }, {});
 
+    // Attach average rating to each user
+    const usersWithRatings = users.map((user) => ({
+      ...user.toObject(),
+      avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
+    }));
 
     // If no other users are found, return an appropriate message
     if (users.length === 0) {
@@ -1083,7 +1125,7 @@ export const getAllUsers = async (req, res) => {
     // Return the list of users
     res.status(200).json({
       message: 'Users found successfully',
-      users
+      users: usersWithRatings,
     });
   } catch (error) {
     // Handle any errors that occur
@@ -1095,7 +1137,7 @@ export const getAllUsers = async (req, res) => {
 // Controller to add bio
 export const addBio = async (req, res) => {
   try {
-    const userId = req.user._id; 
+    const userId = req.user._id;
     const { bio } = req.body; // Bio data is passed in the request body
 
     if (!bio || !Array.isArray(bio)) {
@@ -1125,24 +1167,64 @@ export const addBio = async (req, res) => {
 };
 
 
-// Delete User 
 
-export const deleteUser = async (req, res) => {
+
+// Edit a bio entry
+export const editBio = async (req, res) => {
   try {
     const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+    const { index, newBio } = req.body; // Pass index and new bio data in the request body
 
-    // Check if the user exists
-    const userToDelete = await User.findById(userId);
-    if (!userToDelete) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    if (typeof index !== "number" || !newBio) {
+      return res.status(400).json({ message: "Invalid input. Provide index and newBio." });
     }
 
-    // Delete the user
-    await User.findByIdAndDelete(userId);
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
 
-    res.status(200).json({ success: true, message: 'User deleted successfully' });
+    if (index < 0 || index >= user.Bio.length) {
+      return res.status(400).json({ message: "Invalid index." });
+    }
+
+    // Update the specific bio entry
+    user.Bio[index] = newBio;
+    await user.save();
+
+    res.status(200).json({ message: "Bio updated successfully.", bio: user.Bio });
   } catch (error) {
-    console.error('Error deleting user:', error);
-    res.status(500).json({ success: false, message: 'Error deleting user', error: error.message });
+    console.error(error);
+    res.status(500).json({ message: "An error occurred while editing the bio.", error });
+  }
+};
+
+// Delete a bio entry
+export const deleteBio = async (req, res) => {
+  try {
+    const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+    const { index } = req.body; // Pass index of the bio to delete in the request body
+
+    if (typeof index !== "number") {
+      return res.status(400).json({ message: "Invalid input. Provide index." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (index < 0 || index >= user.Bio.length) {
+      return res.status(400).json({ message: "Invalid index." });
+    }
+
+    // Remove the specific bio entry
+    user.Bio.splice(index, 1);
+    await user.save();
+
+    res.status(200).json({ message: "Bio deleted successfully.", bio: user.Bio });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "An error occurred while deleting the bio.", error });
   }
 };

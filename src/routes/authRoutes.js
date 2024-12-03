@@ -32,7 +32,8 @@ router.post('/logout', protect, logoutUser);
 // Route for updating user profile
 
 router.post('/update-device-token', protect, updateDeviceToken);
-router.post('/update-device-token', protect, addBio);
+router.post('/addBio', protect, addBio);
+
 
 
 router.put('/category/:userId', updateOrCreateUserCategory);
