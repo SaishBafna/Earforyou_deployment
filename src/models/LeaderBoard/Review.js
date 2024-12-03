@@ -18,9 +18,7 @@ const reviewSchema = new mongoose.Schema(
       min: 1,
       max: 5
     }, // Rating (1-5 stars)
-    review: {
-      type: String
-    }, // Optional text review
+  
     comments: [ 
       {
         text: {

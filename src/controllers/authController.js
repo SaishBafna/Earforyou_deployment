@@ -13,7 +13,7 @@ import admin from 'firebase-admin';
 import Wallet from "../models/Wallet/Wallet.js";
 import { CallRate } from '../models/Wallet/AdminCharges.js'
 import emailValidator from 'email-validator';
-import Review from "../models/LeaderBoard/Review.js";
+  import Review from "../models/LeaderBoard/Review.js";
 
 
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -1152,9 +1152,9 @@ export const getAllUsers = async (req, res) => {
     const userRatings = await Review.aggregate([
       {
         $group: {
-          _id: '$reviewedUserId', // Group by reviewed user's ID
+          $match: '$user' ,
           avgRating: { $avg: '$rating' }, // Calculate average rating
-        },
+        }
       },
     ]);
 
@@ -1167,7 +1167,7 @@ export const getAllUsers = async (req, res) => {
     // Attach average rating to each user
     const usersWithRatings = users.map((user) => ({
       ...user.toObject(),
-      avgRating: userRatingsMap[user._id] || 2, // Default to 0 if no rating exists
+      avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
     }));
 
     // Handle case when no users are found
