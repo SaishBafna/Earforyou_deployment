@@ -3,8 +3,7 @@ import User from "../../models/Users.js";
 export const checkUserStatus = async (req, res, next) => {
     try {
         // Extract the userId from the request object (assumes user is authenticated)
-        const userId = req.user?.id;
-
+        const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
         // If userId is missing, respond with an unauthorized error
         if (!userId) {
             return res.status(401).json({ message: "Unauthorized: User ID is missing." });
