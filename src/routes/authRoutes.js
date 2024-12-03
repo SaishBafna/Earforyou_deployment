@@ -14,7 +14,8 @@ import {
     registerUser,
     initiateRegistration,
     verifyLoginOtp,
-    updateStatus
+    updateStatus,
+    addBio
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -31,6 +32,7 @@ router.post('/logout', protect, logoutUser);
 // Route for updating user profile
 
 router.post('/update-device-token', protect, updateDeviceToken);
+router.post('/update-device-token', protect, addBio);
 
 
 router.put('/category/:userId', updateOrCreateUserCategory);

@@ -57,7 +57,11 @@ const userSchema = new mongoose.Schema(
       enum: ['CALLER', 'RECEIVER'], // Define the enum values
       default: 'CALLER', // Set default value
     },
-
+    Bio: {
+      type: [String],
+      
+    },
+    
     password: {
       type: String,
       required: false,
@@ -83,6 +87,7 @@ const userSchema = new mongoose.Schema(
       enum: ['Active', 'inActive', 'Blocked'],
       default: 'inActive'
     },
+
     status: {
       type: String,
       enum: ["Online", "offline", "Busy"], // Allow only specific status values

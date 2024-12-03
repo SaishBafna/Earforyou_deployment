@@ -1092,6 +1092,37 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
+// Controller to add bio
+export const addBio = async (req, res) => {
+  try {
+    const userId = req.user._id; 
+    const { bio } = req.body; // Bio data is passed in the request body
+
+    if (!bio || !Array.isArray(bio)) {
+      return res.status(400).json({ message: "Invalid bio data. Must be an array of strings." });
+    }
+
+    // Find the user by ID and add new bio entries
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    // Add new bio entries to the existing ones
+    user.Bio.push(...bio);
+
+    // Save the updated user
+    await user.save();
+
+    res.status(200).json({
+      message: "Bio updated successfully.",
+      bio: user.Bio,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "An error occurred while updating the bio.", error });
+  }
+};
 
 
 // Delete User 
