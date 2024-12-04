@@ -48,7 +48,8 @@ app.use(
 );
 
 app.use(requestIp.mw());
-app.set('trust proxy', true);
+
+app.set('trust proxy', 1)
 
 // Rate limiter to avoid misuse of the service and avoid cost spikes
 const limiter = rateLimit({
