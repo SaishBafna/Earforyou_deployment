@@ -7,7 +7,7 @@ import uniqid from "uniqid";
 import admin from 'firebase-admin';
 import firebaseConfig from '../../config/firebaseConfig.js';
 import SubscriptionPlan from '../../models/Subscription/Subscription.js';
-
+import EarningWallet from '../../models/Wallet/EarningWallet.js';
 
 
 // export const initiatePayment = async (req, res) => {
@@ -581,6 +581,114 @@ export const getAllPlans = async (req, res) => {
 
 
 
+export const transferEarningsToWallet = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { userId, amount } = req.body;
+
+    // Validate input
+    if (!userId || !amount || amount <= 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid transfer parameters' 
+      });
+    }
+
+    // Find earning wallet
+    const earningWallet = await EarningWallet.findOne({ userId }).session(session);
+    if (!earningWallet) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Earning wallet not found' 
+      });
+    }
+
+    // Check if sufficient balance exists
+    if (earningWallet.balance < amount) {
+      await session.abortTransaction();
+      session.endSession();
+
+      const title="Insufficient earnings balance"
+      const message=`Your Blance is Low`
+      await sendNotification(userId, title, message)
+      
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Insufficient earnings balance' 
+      });
+    }
+
+    // Find or create main wallet
+    let wallet = await Wallet.findOne({ userId }).session(session);
+    if (!wallet) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Wallet Not found' 
+      });
+    }
+
+    // Add transfer to earning wallet deductions
+    earningWallet.deductions.push({
+      amount,
+      reason: 'wallet_transfer',
+      createdAt: new Date()
+    });
+
+    // Add transfer to main wallet recharges
+    wallet.recharges.push({
+      amount,
+      merchantTransactionId: `EARNINGS_TRANSFER_${Date.now()}`,
+      state: 'completed',
+      responseCode: '200',
+      rechargeMethod: 'INTERNAL',
+      transactionId: `EARNINGS_TRANSFER_${Date.now()}`,
+      rechargeDate: new Date()
+    });
+
+    // Save both wallets
+    await earningWallet.save({ session });
+    await wallet.save({ session });
+
+    // Commit transaction
+    await session.commitTransaction();
+    session.endSession();
+
+    const title="Balance transferred successfully"
+    const message=`Balance Added in Calling Wallet ${amount}`
+    await sendNotification(userId, title, message)
+
+
+    return res.status(200).json({
+      success: true,
+      message: 'Balance transferred successfully',
+      transferredAmount: amount,
+      newEarningsBalance: earningWallet.balance,
+      newWalletBalance: wallet.balance
+    });
+
+  } catch (error) {
+    // Rollback transaction in case of error
+    await session.abortTransaction();
+    session.endSession();
+
+    console.error('Transfer error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error during transfer',
+      error: error.message 
+    });
+  }
+};
+
+
+
+
 
 async function sendNotification(userId, title, message) {
   // Assuming you have the FCM device token stored in your database
@@ -607,5 +715,6 @@ async function sendNotification(userId, title, message) {
     console.error("Error sending notification:", error);
   }
 }
+
 
 

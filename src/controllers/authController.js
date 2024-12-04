@@ -15,7 +15,7 @@ import { CallRate } from '../models/Wallet/AdminCharges.js'
 import emailValidator from 'email-validator';
 import Review from "../models/LeaderBoard/Review.js";
 import { title } from "process";
-
+import EarningWallet from "../models/Wallet/EarningWallet.js";
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -294,6 +294,16 @@ export const initiateRegistration = async (req, res) => {
           lastUpdated: new Date()
         }], { session });
 
+        // Create wallet with transaction
+        const EarningWallet = await EarningWallet.create([{
+          userId: newUser._id,
+          balance: 0,
+          currency: 'inr',
+          earnings: [],
+          deductions: [],
+          lastUpdated: new Date()
+        }], { session });
+
         // Generate access token
         const authToken = jwt.sign(
           { userId: newUser._id },
@@ -374,6 +384,15 @@ export const initiateRegistration = async (req, res) => {
         balance: free,
         currency: 'inr',
         recharges: [],
+        deductions: [],
+        lastUpdated: new Date()
+      }], { session });
+      
+      const EarningWallet = await EarningWallet.create([{
+        userId: newUser._id,
+        balance: 0,
+        currency: 'inr',
+        earnings: [],
         deductions: [],
         lastUpdated: new Date()
       }], { session });
@@ -473,6 +492,7 @@ export const initiateLogin = async (req, res) => {
       accessToken,
       refreshToken,
     });
+    
   } catch (error) {
     console.error("Error in initiateLogin:", error);
     res.status(500).json({ message: "Server error", error });

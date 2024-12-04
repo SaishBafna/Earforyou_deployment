@@ -1,6 +1,6 @@
 import express from 'express';
 // import { verifyPayment } from '../../controllers/Recharge/RechargeWallet.js'
-import { initiatePayment,validatePayment,getRechargeHistory,getAllPlans} from '../../controllers/Recharge/RechargeWallet.js'
+import { initiatePayment,validatePayment,getRechargeHistory,getAllPlans,transferEarningsToWallet} from '../../controllers/Recharge/RechargeWallet.js'
 import { deductPerMinute } from '../../controllers/Recharge/Decudition.js'
 import { protect } from '../../middlewares/auth/authMiddleware.js'
 const router = express.Router();
@@ -19,6 +19,9 @@ router.post('/recharges/:userId', getRechargeHistory);
 
 // router.post('/verify-payment', verifyPayment);
 router.post('/deductPerMinute', deductPerMinute);
+
+
+router.post('/transferEarningsToWallet',protect, transferEarningsToWallet);
 // router.get('/balance/:userId', getWalletAmount);
 
 export default router;
