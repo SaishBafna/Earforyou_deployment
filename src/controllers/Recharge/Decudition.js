@@ -2,6 +2,7 @@ import Wallet from '../../models/Wallet/Wallet.js';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid'; // Import uuid
 import { CallRate } from '../../models/Wallet/AdminCharges.js';
+import EarningWallet from '../../models/Wallet/EarningWallet.js';
 
 export const deductPerMinute = async (req, res) => {
   const session = await mongoose.startSession(); // Start a session for atomic transactions
@@ -86,20 +87,23 @@ export const deductPerMinute = async (req, res) => {
     });
 
     // Fetch the receiver's wallet
-    const receiverWallet = await Wallet.findOne({ userId: receiverId }).session(session);
+    const receiverWallet = await EarningWallet.findOne({ userId: receiverId }).session(session);
     if (!receiverWallet) {
-      await session.abortTransaction();
-      return res.status(404).json({
-        success: false,
-        message: 'Receiver wallet not found',
+      receiverWallet = new EarningWallet({
+        userId: receiverId,
+        balance: 0, // Default balance
+        totalDeductions: 0, // Default total deductions
+        currency: "INR",
+        deductions: [],
+        earnings: [],
       });
     }
 
     // Add the amount (minus commission) to the receiver's wallet
     receiverWallet.balance += amountForReceiver;
-    receiverWallet.recharges.push({
+    receiverWallet.earnings.push({
       amount: amountForReceiver,
-      rechargeMethod: 'CALL', // Indicate income source
+      source: 'CALL', // Indicate income source
       transactionId, // Use the same transaction ID for consistency
       createdAt: new Date(),
       responseCode: 'SUCCESS', // Assuming a success response from the transaction

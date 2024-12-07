@@ -14,7 +14,9 @@ import {
     registerUser,
     initiateRegistration,
     verifyLoginOtp,
-    updateStatus
+    updateStatus,
+    addBio,
+    Reporte_User
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -31,6 +33,8 @@ router.post('/logout', protect, logoutUser);
 // Route for updating user profile
 
 router.post('/update-device-token', protect, updateDeviceToken);
+router.post('/addBio', protect, addBio);
+
 
 
 router.put('/category/:userId', updateOrCreateUserCategory);
@@ -45,6 +49,7 @@ router.put('/users/:userId', changeUserType);
 router.post('/request-otp', requestOTP);
 // Route to verify OTP and log in
 router.post('/verify-otp', verifyOTP);
+router.post('/Reporte_User', Reporte_User);
 
 
 // Update userType route

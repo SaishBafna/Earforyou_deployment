@@ -13,6 +13,9 @@ import admin from 'firebase-admin';
 import Wallet from "../models/Wallet/Wallet.js";
 import { CallRate } from '../models/Wallet/AdminCharges.js'
 import emailValidator from 'email-validator';
+import Review from "../models/LeaderBoard/Review.js";
+import { title } from "process";
+import EarningWallet from "../models/Wallet/EarningWallet.js";
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -220,12 +223,12 @@ export const initiateRegistration = async (req, res) => {
   try {
     // Check if it's a playstore verification request
     const isPlaystoreVerification = email === 'playtest@gmail.com';
-    
+
     const isValidEmail = emailValidator.validate(email);
     if (!isValidEmail) {
       return res.status(400).json({ message: "Invalid email address" });
     }
-    
+
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
     console.log(existingUser);
@@ -287,6 +290,16 @@ export const initiateRegistration = async (req, res) => {
           balance: free,
           currency: 'inr',
           recharges: [],
+          deductions: [],
+          lastUpdated: new Date()
+        }], { session });
+
+        // Create wallet with transaction
+        const EarningWallet = await EarningWallet.create([{
+          userId: newUser._id,
+          balance: 0,
+          currency: 'inr',
+          earnings: [],
           deductions: [],
           lastUpdated: new Date()
         }], { session });
@@ -371,6 +384,15 @@ export const initiateRegistration = async (req, res) => {
         balance: free,
         currency: 'inr',
         recharges: [],
+        deductions: [],
+        lastUpdated: new Date()
+      }], { session });
+      
+      const EarningWallet = await EarningWallet.create([{
+        userId: newUser._id,
+        balance: 0,
+        currency: 'inr',
+        earnings: [],
         deductions: [],
         lastUpdated: new Date()
       }], { session });
@@ -470,6 +492,7 @@ export const initiateLogin = async (req, res) => {
       accessToken,
       refreshToken,
     });
+    
   } catch (error) {
     console.error("Error in initiateLogin:", error);
     res.status(500).json({ message: "Server error", error });
@@ -554,6 +577,28 @@ export const resetPassword = async (req, res) => {
     res.status(200).json({ message: "Password reset successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+
+// Delete User 
+export const deleteUser = async (req, res) => {
+  try {
+    const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+
+    // Check if the user exists
+    const userToDelete = await User.findById(userId);
+    if (!userToDelete) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Delete the user
+    await User.findByIdAndDelete(userId);
+
+    res.status(200).json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ success: false, message: 'Error deleting user', error: error.message });
   }
 };
 
@@ -1051,31 +1096,108 @@ export const getUserById = async (req, res) => {
   }
 };
 
-// getAllUsers
+// // getAllUsers
+// export const getAllUsers = async (req, res) => {
+//   try {
+//     // Get the logged-in user's ID (assuming it's stored in req.user)
+//     const loggedInUserId = req.user.id;
+
+//     // Find all users except the logged-in user, excluding password and refreshToken fields
+
+//     // const users = await User.find(
+//     //   { _id: { $ne: loggedInUserId } }, // Exclude the logged-in user
+//     //   { password: 0, refreshToken: 0 }
+//     // );
+
+//     const users = await User.find(
+//       {
+//         _id: { $ne: loggedInUserId }, // Exclude the logged-in user
+//         UserStatus: { $nin: ['inActive', 'Blocked'] } // Exclude users with these statuses
+//       },
+//       { password: 0, refreshToken: 0 } // Exclude sensitive fields
+//     );
+
+//     const userRatings = await Review.aggregate([
+//       {
+//         $group: {
+//           _id: '$reviewedUserId', // Group by reviewed user's ID
+//           avgRating: { $avg: '$rating' }, // Calculate average rating
+//         },
+//       },
+//     ]);
+
+//     // Map average ratings to users
+//     const userRatingsMap = userRatings.reduce((acc, rating) => {
+//       acc[rating._id] = rating.avgRating;
+//       return acc;
+//     }, {});
+
+//     // Attach average rating to each user
+//     const usersWithRatings = users.map((user) => ({
+//       ...user.toObject(),
+//       avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
+//     }));
+
+//     // If no other users are found, return an appropriate message
+//     if (users.length === 0) {
+//       return res.status(404).json({ message: 'No other users found' });
+//     }
+
+//     // Return the list of users
+//     res.status(200).json({
+//       message: 'Users found successfully',
+//       users: usersWithRatings,
+//     });
+//   } catch (error) {
+//     // Handle any errors that occur
+//     console.error('Error fetching users:', error);
+//     res.status(500).json({ message: 'Internal server error', error: error.message });
+//   }
+// };
+
 export const getAllUsers = async (req, res) => {
   try {
-    // Get the logged-in user's ID (assuming it's stored in req.user)
+    // Get the logged-in user's ID
     const loggedInUserId = req.user.id;
 
-    // Find all users except the logged-in user, excluding password and refreshToken fields
-
-    // const users = await User.find(
-    //   { _id: { $ne: loggedInUserId } }, // Exclude the logged-in user
-    //   { password: 0, refreshToken: 0 }
-    // );
-
+    // Find users with specific conditions
     const users = await User.find(
       {
         _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-        userStatus: { $nin: ['inActive', 'Blocked'] } // Exclude users with these statuses
+        UserStatus: { $nin: ['inActive', 'Blocked','InActive'] } // Exclude users with these statuses
       },
       { password: 0, refreshToken: 0 } // Exclude sensitive fields
     );
 
+    // Aggregate to calculate average user ratings
+    // Aggregate to calculate average ratings for all users
+    const userRatings = await Review.aggregate([
+      {
+        $match: {
+          user: { $in: users.map((u) => u._id) }, // Filter reviews for the found users
+        },
+      },
+      {
+        $group: {
+          _id: '$user', // Group by the `user` field in the Review schema
+          avgRating: { $avg: '$rating' }, // Calculate average rating
+        },
+      },
+    ])
 
+    // Create a map of user ratings
+    const userRatingsMap = userRatings.reduce((acc, rating) => {
+      acc[rating._id] = rating.avgRating;
+      return acc;
+    }, {});
 
+    // Attach average rating to each user
+    const usersWithRatings = users.map((user) => ({
+      ...user.toObject(),
+      avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
+    }));
 
-    // If no other users are found, return an appropriate message
+    // Handle case when no users are found
     if (users.length === 0) {
       return res.status(404).json({ message: 'No other users found' });
     }
@@ -1083,35 +1205,231 @@ export const getAllUsers = async (req, res) => {
     // Return the list of users
     res.status(200).json({
       message: 'Users found successfully',
-      users
+      users: usersWithRatings,
     });
   } catch (error) {
-    // Handle any errors that occur
+    // Error handling
     console.error('Error fetching users:', error);
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 
-
-
-// Delete User 
-
-export const deleteUser = async (req, res) => {
+// Controller to add bio
+export const addBio = async (req, res) => {
   try {
-    const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+    const userId = req.user._id;
+    const { bio } = req.body; // Bio data is passed in the request body
 
-    // Check if the user exists
-    const userToDelete = await User.findById(userId);
-    if (!userToDelete) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    if (!bio || !Array.isArray(bio)) {
+      return res.status(400).json({ message: "Invalid bio data. Must be an array of strings." });
     }
 
-    // Delete the user
-    await User.findByIdAndDelete(userId);
+    // Find the user by ID and add new bio entries
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
 
-    res.status(200).json({ success: true, message: 'User deleted successfully' });
+    // Add new bio entries to the existing ones
+    user.Bio.push(...bio);
+
+    // Save the updated user
+    await user.save();
+
+    res.status(200).json({
+      message: "Bio updated successfully.",
+      bio: user.Bio,
+    });
   } catch (error) {
-    console.error('Error deleting user:', error);
-    res.status(500).json({ success: false, message: 'Error deleting user', error: error.message });
+    console.error(error);
+    res.status(500).json({ message: "An error occurred while updating the bio.", error });
   }
 };
+
+
+
+
+// Edit a bio entry
+export const editBio = async (req, res) => {
+  try {
+    const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+    const { index, newBio } = req.body; // Pass index and new bio data in the request body
+
+    if (typeof index !== "number" || !newBio) {
+      return res.status(400).json({ message: "Invalid input. Provide index and newBio." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (index < 0 || index >= user.Bio.length) {
+      return res.status(400).json({ message: "Invalid index." });
+    }
+
+    // Update the specific bio entry
+    user.Bio[index] = newBio;
+    await user.save();
+
+    res.status(200).json({ message: "Bio updated successfully.", bio: user.Bio });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "An error occurred while editing the bio.", error });
+  }
+};
+
+// Delete a bio entry
+export const deleteBio = async (req, res) => {
+  try {
+    const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+    const { index } = req.body; // Pass index of the bio to delete in the request body
+
+    if (typeof index !== "number") {
+      return res.status(400).json({ message: "Invalid input. Provide index." });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (index < 0 || index >= user.Bio.length) {
+      return res.status(400).json({ message: "Invalid index." });
+    }
+
+    // Remove the specific bio entry
+    user.Bio.splice(index, 1);
+    await user.save();
+
+    res.status(200).json({ message: "Bio deleted successfully.", bio: user.Bio });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "An error occurred while deleting the bio.", error });
+  }
+};
+// Reporte_User
+export const Reporte_User = async (req, res) => {
+  const { reporterId, reportedUserId, reportType } = req.body;
+
+  // Validate the input
+  if (!reporterId || !reportedUserId || !reportType) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing required fields: reporterId, reportedUserId, or reportType.',
+    });
+  }
+
+  try {
+    // Fetch the reporter and reported user to ensure they exist
+    const [reporter, reportedUser] = await Promise.all([
+      User.findById(reporterId),
+      User.findById(reportedUserId),
+    ]);
+
+    // Validate users
+    if (!reporter || !reportedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Reporter or reported user not found.',
+      });
+    }
+
+    // Prevent self-reporting
+    if (reporterId === reportedUserId) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot report yourself.',
+      });
+    }
+
+    // Check if the reported user is already blocked
+    if (reportedUser.UserStatus === 'Blocked') {
+      return res.status(400).json({
+        success: false,
+        message: 'User is already blocked.',
+      });
+    }
+
+    // Add the `reportType` to the reported user's `report` array
+    reportedUser.report.push(reportType);
+    // reportedUser.report.push(reportType);
+
+    const title = "Warning..";
+    let message = "";
+
+    switch (reportedUser.report.length) {
+      case 1:
+        message = `Someone reported your account because of the ${reportType}. This is your 1st report. Please ensure compliance with our community guidelines.`;
+        break;
+      case 2:
+        message = `Your account has been reported again for ${reportType}. This is your 2nd report. Continued violations may lead to account suspension.`;
+        break;
+      case 3:
+        message = `Your account has been reported for the 3rd time due to ${reportType}. Your account is now blocked. Contact support for further assistance.`;
+
+        // Add logic here to block the account, e.g., setting a `blocked` flag
+
+        break;
+      default:
+        message = `Your account has been reported ${reportedUser.report.length} times. Continued violations may lead to further action.`;
+    }
+
+    sendNotification(reportedUser, title, message);
+
+
+    // If reports reach 3 or more, block the user
+    if (reportedUser.report.length >= 3) {
+      reportedUser.UserStatus = 'Blocked';
+      console.log(
+        `User ${reportedUser.username || reportedUserId} has been blocked due to excessive reports.`
+      );
+    }
+
+    // Save the changes
+    await reportedUser.save();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        reportedUser.UserStatus === 'Blocked'
+          ? 'User has been reported and blocked due to multiple reports.'
+          : 'Report has been submitted successfully.',
+    });
+  } catch (error) {
+    console.error('Error reporting user:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while reporting the account.',
+    });
+  }
+};
+
+
+//Notification
+
+async function sendNotification(userId, title, message) {
+  // Assuming you have the FCM device token stored in your database
+  const user = await User.findById(userId);
+  const deviceToken = user.deviceToken;
+
+  if (!deviceToken) {
+    console.error("No device token found for user:", userId);
+    return;
+  }
+
+  const payload = {
+    notification: {
+      title: title,
+      body: message,
+    },
+    token: deviceToken,
+  };
+
+  try {
+    const response = await admin.messaging().send(payload);
+    console.log("Notification sent successfully:", response);
+  } catch (error) {
+    console.error("Error sending notification:", error);
+  }
+}
