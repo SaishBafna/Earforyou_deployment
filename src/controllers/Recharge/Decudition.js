@@ -89,14 +89,24 @@ export const deductPerMinute = async (req, res) => {
     // Fetch the receiver's wallet
     const receiverWallet = await EarningWallet.findOne({ userId: receiverId }).session(session);
     if (!receiverWallet) {
-      receiverWallet = new EarningWallet({
-        userId: receiverId,
-        balance: 0, // Default balance
-        totalDeductions: 0, // Default total deductions
-        currency: "INR",
-        deductions: [],
+      //  new EarningWallet({
+      //   userId: receiverId,
+      //   balance: 0, // Default balance
+      //   totalDeductions: 0, // Default total deductions
+      //   currency: "INR",
+      //   deductions: [],
+      //   earnings: [],
+      // });
+      
+      await EarningWallet.create([{
+        userId: newUser._id,
+        balance: 0,
+        currency: 'inr',
         earnings: [],
-      });
+        deductions: [],
+        lastUpdated: new Date()
+      }]);
+   
     }
 
     // Add the amount (minus commission) to the receiver's wallet
