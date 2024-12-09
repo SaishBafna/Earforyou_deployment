@@ -1302,7 +1302,7 @@ export const getAllUsers1 = async (req, res) => {
     const loggedInUserGender = req.user.gender;
 
     const page = parseInt(req.query.page) || 1;
-    const limit = 10;
+    const limit = 20;
     const skip = (page - 1) * limit;
 
     const sortBy = req.query.sortBy || 'rating'; // Allow dynamic sorting preferences
