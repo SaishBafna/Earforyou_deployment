@@ -16,7 +16,8 @@ import {
     verifyLoginOtp,
     updateStatus,
     addBio,
-    Reporte_User
+    Reporte_User,
+    getAllUsers1
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -57,6 +58,7 @@ router.post('/Reporte_User', Reporte_User);
 router.get('/user/:userId', getUserById);
 
 router.get('/users', protect, getAllUsers);
+router.get('/users1', protect, getAllUsers1);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
 
