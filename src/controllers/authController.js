@@ -1215,69 +1215,172 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
+// export const getAllUsers1 = async (req, res) => {
+//   try {
+//     // Get the logged-in user's ID and gender
+//     const loggedInUserId = req.user.id;
+//     const loggedInUserGender = req.user.gender; // Assuming gender is available in the `req.user`
+
+//     // Parse page and limit from the query parameters
+//     const page = parseInt(req.query.page) || 1; // Default to page 1 if not provided
+//     const limit = 10; // Fixed limit of 10 users per page
+//     const skip = (page - 1) * limit; // Calculate the number of documents to skip
+
+//     // Find users with specific conditions
+//     const users = await User.find(
+//       {
+//         _id: { $ne: loggedInUserId }, // Exclude the logged-in user
+//         UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude users with these statuses
+//       },
+//       { password: 0, refreshToken: 0 } // Exclude sensitive fields
+//     );
+
+//     // Count total users matching the criteria for pagination metadata
+//     const totalUsers = users.length;
+
+//     // Aggregate to calculate global average ratings
+//     const globalRatings = await Review.aggregate([
+//       {
+//         $group: {
+//           _id: null, // Group globally
+//           avgRating: { $avg: '$rating' }, // Calculate global average rating
+//         },
+//       },
+//     ]);
+//     const globalAvgRating = globalRatings.length > 0 ? globalRatings[0].avgRating : 0;
+
+//     // Attach average rating to each user
+//     const usersWithRatings = users.map((user) => ({
+//       ...user.toObject(),
+//       avgRating: globalAvgRating, // Attach the global average rating
+//     }));
+
+//     // Separate users by opposite gender
+//     const oppositeGenderUsers = usersWithRatings.filter(
+//       (user) => user.gender && user.gender !== loggedInUserGender
+//     );
+//     const sameGenderUsers = usersWithRatings.filter(
+//       (user) => user.gender && user.gender === loggedInUserGender
+//     );
+
+//     // Combine the sorted users, opposite gender users on top
+//     const sortedUsers = [...oppositeGenderUsers, ...sameGenderUsers];
+
+//     // Apply pagination
+//     const paginatedUsers = sortedUsers.slice(skip, skip + limit);
+
+//     // Handle case when no users are found
+//     if (paginatedUsers.length === 0) {
+//       return res.status(404).json({ message: 'No other users found' });
+//     }
+
+//     // Return the list of users with pagination metadata
+//     res.status(200).json({
+//       message: 'Users found successfully',
+//       users: paginatedUsers,
+//       pagination: {
+//         totalUsers,
+//         currentPage: page,
+//         totalPages: Math.ceil(totalUsers / limit),
+//         limit,
+//       },
+//     });
+//   } catch (error) {
+//     // Error handling
+//     console.error('Error fetching users:', error);
+//     res.status(500).json({ message: 'Internal server error', error: error.message });
+//   }
+// };
+
+
+// Controller to add bio
+
+
 export const getAllUsers1 = async (req, res) => {
   try {
-    // Get the logged-in user's ID and gender
     const loggedInUserId = req.user.id;
-    const loggedInUserGender = req.user.gender; // Assuming gender is available in the `req.user`
+    const loggedInUserGender = req.user.gender;
 
-    // Parse page and limit from the query parameters
-    const page = parseInt(req.query.page) || 1; // Default to page 1 if not provided
-    const limit = 10; // Fixed limit of 10 users per page
-    const skip = (page - 1) * limit; // Calculate the number of documents to skip
+    const page = parseInt(req.query.page) || 1;
+    const limit = 10;
+    const skip = (page - 1) * limit;
 
-    // Find users with specific conditions
-    const users = await User.find(
+    const sortBy = req.query.sortBy || 'rating'; // Allow dynamic sorting preferences
+    const sortCriteria =
+      sortBy === 'activity'
+        ? { lastActive: -1 } // Sort by last activity (descending)
+        : { avgRating: -1 }; // Default: Sort by average rating (descending)
+
+    // Mongoose Aggregation for optimized querying
+    const pipeline = [
       {
-        _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-        UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude users with these statuses
-      },
-      { password: 0, refreshToken: 0 } // Exclude sensitive fields
-    );
-
-    // Count total users matching the criteria for pagination metadata
-    const totalUsers = users.length;
-
-    // Aggregate to calculate global average ratings
-    const globalRatings = await Review.aggregate([
-      {
-        $group: {
-          _id: null, // Group globally
-          avgRating: { $avg: '$rating' }, // Calculate global average rating
+        $match: {
+          _id: { $ne: loggedInUserId },
+          UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] },
         },
       },
-    ]);
-    const globalAvgRating = globalRatings.length > 0 ? globalRatings[0].avgRating : 0;
+      {
+        $lookup: {
+          from: 'reviews', // Review collection
+          localField: '_id',
+          foreignField: 'user',
+          as: 'ratings',
+        },
+      },
+      {
+        $addFields: {
+          avgRating: { $avg: '$ratings.rating' }, // Calculate average rating
+          reviewCount: { $size: '$ratings' }, // Count the number of reviews
+        },
+      },
+      {
+        $addFields: {
+          sortWeight: {
+            $cond: [
+              { $eq: ['$gender', loggedInUserGender] },
+              0, // Same gender gets lower priority
+              1, // Opposite gender gets higher priority
+            ],
+          },
+        },
+      },
+      {
+        $sort: {
+          sortWeight: -1, // Opposite gender first
+          ...sortCriteria, // Apply sorting criteria
+        },
+      },
+      {
+        $skip: skip,
+      },
+      {
+        $limit: limit,
+      },
+      {
+        $project: {
+          password: 0,
+          refreshToken: 0,
+          ratings: 0, // Exclude unnecessary fields
+        },
+      },
+    ];
 
-    // Attach average rating to each user
-    const usersWithRatings = users.map((user) => ({
-      ...user.toObject(),
-      avgRating: globalAvgRating, // Attach the global average rating
-    }));
+    // Run aggregation pipeline
+    const users = await User.aggregate(pipeline);
 
-    // Separate users by opposite gender
-    const oppositeGenderUsers = usersWithRatings.filter(
-      (user) => user.gender && user.gender !== loggedInUserGender
-    );
-    const sameGenderUsers = usersWithRatings.filter(
-      (user) => user.gender && user.gender === loggedInUserGender
-    );
-
-    // Combine the sorted users, opposite gender users on top
-    const sortedUsers = [...oppositeGenderUsers, ...sameGenderUsers];
-
-    // Apply pagination
-    const paginatedUsers = sortedUsers.slice(skip, skip + limit);
-
-    // Handle case when no users are found
-    if (paginatedUsers.length === 0) {
+    if (users.length === 0) {
       return res.status(404).json({ message: 'No other users found' });
     }
 
-    // Return the list of users with pagination metadata
+    // Count total users for pagination metadata
+    const totalUsers = await User.countDocuments({
+      _id: { $ne: loggedInUserId },
+      UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] },
+    });
+
     res.status(200).json({
       message: 'Users found successfully',
-      users: paginatedUsers,
+      users,
       pagination: {
         totalUsers,
         currentPage: page,
@@ -1286,14 +1389,12 @@ export const getAllUsers1 = async (req, res) => {
       },
     });
   } catch (error) {
-    // Error handling
     console.error('Error fetching users:', error);
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
 
 
-// Controller to add bio
 export const addBio = async (req, res) => {
   try {
     const userId = req.user._id;
