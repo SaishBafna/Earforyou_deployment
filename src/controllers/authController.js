@@ -1299,29 +1299,23 @@ export const getAllUsers = async (req, res) => {
 export const getAllUsers1 = async (req, res) => {
   try {
     const loggedInUserId = req.user.id;
-    const loggedInUserGender = req.user.gender;
+    const loggedInUserGender = req.user.gender; // Assuming gender is part of `req.user`
 
     const page = parseInt(req.query.page) || 1;
-    const limit = 20;
+    const limit = 10;
     const skip = (page - 1) * limit;
 
-    const sortBy = req.query.sortBy || 'rating'; // Allow dynamic sorting preferences
-    const sortCriteria =
-      sortBy === 'activity'
-        ? { lastActive: -1 } // Sort by last activity (descending)
-        : { avgRating: -1 }; // Default: Sort by average rating (descending)
-
-    // Mongoose Aggregation for optimized querying
+    // Mongoose Aggregation Pipeline
     const pipeline = [
       {
         $match: {
-          _id: { $ne: loggedInUserId },
-          UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] },
+          _id: { $ne: loggedInUserId }, // Exclude the logged-in user
+          UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude specific statuses
         },
       },
       {
         $lookup: {
-          from: 'reviews', // Review collection
+          from: 'reviews', // Reference to the Review collection
           localField: '_id',
           foreignField: 'user',
           as: 'ratings',
@@ -1331,23 +1325,19 @@ export const getAllUsers1 = async (req, res) => {
         $addFields: {
           avgRating: { $avg: '$ratings.rating' }, // Calculate average rating
           reviewCount: { $size: '$ratings' }, // Count the number of reviews
-        },
-      },
-      {
-        $addFields: {
-          sortWeight: {
-            $cond: [
-              { $eq: ['$gender', loggedInUserGender] },
-              0, // Same gender gets lower priority
-              1, // Opposite gender gets higher priority
-            ],
+          isOppositeGender: {
+            $cond: {
+              if: { $ne: ['$gender', loggedInUserGender] },
+              then: 1, // Mark as opposite gender
+              else: 0, // Mark as same gender
+            },
           },
         },
       },
       {
         $sort: {
-          sortWeight: -1, // Opposite gender first
-          ...sortCriteria, // Apply sorting criteria
+          isOppositeGender: -1, // Prioritize opposite gender first
+          avgRating: -1, // Then sort by average rating
         },
       },
       {
@@ -1360,16 +1350,16 @@ export const getAllUsers1 = async (req, res) => {
         $project: {
           password: 0,
           refreshToken: 0,
-          ratings: 0, // Exclude unnecessary fields
+          ratings: 0, // Exclude sensitive fields and unnecessary data
         },
       },
     ];
 
-    // Run aggregation pipeline
+    // Execute the aggregation pipeline
     const users = await User.aggregate(pipeline);
 
     if (users.length === 0) {
-      return res.status(404).json({ message: 'No other users found' });
+      return res.status(404).json({ message: 'No users found' });
     }
 
     // Count total users for pagination metadata
@@ -1378,8 +1368,9 @@ export const getAllUsers1 = async (req, res) => {
       UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] },
     });
 
+    // Response with sorted users and pagination details
     res.status(200).json({
-      message: 'Users found successfully',
+      message: 'Users fetched successfully',
       users,
       pagination: {
         totalUsers,
@@ -1393,6 +1384,7 @@ export const getAllUsers1 = async (req, res) => {
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
+
 
 
 export const addBio = async (req, res) => {
