@@ -57,8 +57,8 @@ router.post('/Reporte_User', Reporte_User);
 
 router.get('/user/:userId', getUserById);
 
-router.get('/users', protect, getAllUsers);
-router.get('/users1', protect, getAllUsers1);
+// router.get('/users', protect, getAllUsers);
+router.get('/users', protect, getAllUsers1);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
 

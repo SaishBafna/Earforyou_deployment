@@ -1156,230 +1156,60 @@ export const getUserById = async (req, res) => {
 //   }
 // };
 
-export const getAllUsers = async (req, res) => {
-  try {
-    // Get the logged-in user's ID
-    const loggedInUserId = req.user.id;
-
-    // Find users with specific conditions
-    const users = await User.find(
-      {
-        _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-        UserStatus: { $nin: ['inActive', 'Blocked','InActive'] } // Exclude users with these statuses
-      },
-      { password: 0, refreshToken: 0 } // Exclude sensitive fields
-    );
-
-    // Aggregate to calculate average user ratings
-    // Aggregate to calculate average ratings for all users
-    const userRatings = await Review.aggregate([
-      {
-        $match: {
-          user: { $in: users.map((u) => u._id) }, // Filter reviews for the found users
-        },
-      },
-      {
-        $group: {
-          _id: '$user', // Group by the `user` field in the Review schema
-          avgRating: { $avg: '$rating' }, // Calculate average rating
-        },
-      },
-    ])
-
-    // Create a map of user ratings
-    const userRatingsMap = userRatings.reduce((acc, rating) => {
-      acc[rating._id] = rating.avgRating;
-      return acc;
-    }, {});
-
-    // Attach average rating to each user
-    const usersWithRatings = users.map((user) => ({
-      ...user.toObject(),
-      avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
-    }));
-
-    // Handle case when no users are found
-    if (users.length === 0) {
-      return res.status(404).json({ message: 'No other users found' });
-    }
-
-    // Return the list of users
-    res.status(200).json({
-      message: 'Users found successfully',
-      users: usersWithRatings,
-    });
-  } catch (error) {
-    // Error handling
-    console.error('Error fetching users:', error);
-    res.status(500).json({ message: 'Internal server error', error: error.message });
-  }
-};
-
-// export const getAllUsers1 = async (req, res) => {
+// export const getAllUsers = async (req, res) => {
 //   try {
-//     // Get the logged-in user's ID and gender
+//     // Get the logged-in user's ID
 //     const loggedInUserId = req.user.id;
-//     const loggedInUserGender = req.user.gender; // Assuming gender is available in the `req.user`
-
-//     // Parse page and limit from the query parameters
-//     const page = parseInt(req.query.page) || 1; // Default to page 1 if not provided
-//     const limit = 10; // Fixed limit of 10 users per page
-//     const skip = (page - 1) * limit; // Calculate the number of documents to skip
 
 //     // Find users with specific conditions
 //     const users = await User.find(
 //       {
 //         _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-//         UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude users with these statuses
+//         UserStatus: { $nin: ['inActive', 'Blocked','InActive'] } // Exclude users with these statuses
 //       },
 //       { password: 0, refreshToken: 0 } // Exclude sensitive fields
 //     );
 
-//     // Count total users matching the criteria for pagination metadata
-//     const totalUsers = users.length;
-
-//     // Aggregate to calculate global average ratings
-//     const globalRatings = await Review.aggregate([
+//     // Aggregate to calculate average user ratings
+//     // Aggregate to calculate average ratings for all users
+//     const userRatings = await Review.aggregate([
 //       {
-//         $group: {
-//           _id: null, // Group globally
-//           avgRating: { $avg: '$rating' }, // Calculate global average rating
+//         $match: {
+//           user: { $in: users.map((u) => u._id) }, // Filter reviews for the found users
 //         },
 //       },
-//     ]);
-//     const globalAvgRating = globalRatings.length > 0 ? globalRatings[0].avgRating : 0;
+//       {
+//         $group: {
+//           _id: '$user', // Group by the `user` field in the Review schema
+//           avgRating: { $avg: '$rating' }, // Calculate average rating
+//         },
+//       },
+//     ])
+
+//     // Create a map of user ratings
+//     const userRatingsMap = userRatings.reduce((acc, rating) => {
+//       acc[rating._id] = rating.avgRating;
+//       return acc;
+//     }, {});
 
 //     // Attach average rating to each user
 //     const usersWithRatings = users.map((user) => ({
 //       ...user.toObject(),
-//       avgRating: globalAvgRating, // Attach the global average rating
+//       avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
 //     }));
 
-//     // Separate users by opposite gender
-//     const oppositeGenderUsers = usersWithRatings.filter(
-//       (user) => user.gender && user.gender !== loggedInUserGender
-//     );
-//     const sameGenderUsers = usersWithRatings.filter(
-//       (user) => user.gender && user.gender === loggedInUserGender
-//     );
-
-//     // Combine the sorted users, opposite gender users on top
-//     const sortedUsers = [...oppositeGenderUsers, ...sameGenderUsers];
-
-//     // Apply pagination
-//     const paginatedUsers = sortedUsers.slice(skip, skip + limit);
-
 //     // Handle case when no users are found
-//     if (paginatedUsers.length === 0) {
+//     if (users.length === 0) {
 //       return res.status(404).json({ message: 'No other users found' });
 //     }
 
-//     // Return the list of users with pagination metadata
+//     // Return the list of users
 //     res.status(200).json({
 //       message: 'Users found successfully',
-//       users: paginatedUsers,
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
+//       users: usersWithRatings,
 //     });
 //   } catch (error) {
 //     // Error handling
-//     console.error('Error fetching users:', error);
-//     res.status(500).json({ message: 'Internal server error', error: error.message });
-//   }
-// };
-
-
-// Controller to add bio
-
-
-// export const getAllUsers1 = async (req, res) => {
-//   try {
-//     const loggedInUserId = req.user.id;
-//     const loggedInUserGender = req.user.gender; // Assuming gender is part of `req.user`
-
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = 10;
-//     const skip = (page - 1) * limit;
-
-//     // Mongoose Aggregation Pipeline
-//     const pipeline = [
-//       {
-//         $match: {
-//           _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-//           UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude specific statuses
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: 'reviews', // Reference to the Review collection
-//           localField: '_id',
-//           foreignField: 'user',
-//           as: 'ratings',
-//         },
-//       },
-//       {
-//         $addFields: {
-//           avgRating: { $avg: '$ratings.rating' }, // Calculate average rating
-//           reviewCount: { $size: '$ratings' }, // Count the number of reviews
-//           isOppositeGender: {
-//             $cond: {
-//               if: { $ne: ['$gender', loggedInUserGender] },
-//               then: 1, // Mark as opposite gender
-//               else: 0, // Mark as same gender
-//             },
-//           },
-//         },
-//       },
-//       {
-//         $sort: {
-//           isOppositeGender: -1, // Prioritize opposite gender first
-//           avgRating: -1, // Then sort by average rating
-//         },
-//       },
-//       {
-//         $skip: skip,
-//       },
-//       {
-//         $limit: limit,
-//       },
-//       {
-//         $project: {
-//           password: 0,
-//           refreshToken: 0,
-//           ratings: 0, // Exclude sensitive fields and unnecessary data
-//         },
-//       },
-//     ];
-
-//     // Execute the aggregation pipeline
-//     const users = await User.aggregate(pipeline);
-
-//     if (users.length === 0) {
-//       return res.status(404).json({ message: 'No users found' });
-//     }
-
-//     // Count total users for pagination metadata
-//     const totalUsers = await User.countDocuments({
-//       _id: { $ne: loggedInUserId },
-//       UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] },
-//     });
-
-//     // Response with sorted users and pagination details
-//     res.status(200).json({
-//       message: 'Users fetched successfully',
-//       users,
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
-//     });
-//   } catch (error) {
 //     console.error('Error fetching users:', error);
 //     res.status(500).json({ message: 'Internal server error', error: error.message });
 //   }
