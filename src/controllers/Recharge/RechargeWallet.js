@@ -8,6 +8,8 @@ import admin from 'firebase-admin';
 import firebaseConfig from '../../config/firebaseConfig.js';
 import SubscriptionPlan from '../../models/Subscription/Subscription.js';
 import EarningWallet from '../../models/Wallet/EarningWallet.js';
+import mongoose from 'mongoose'; // If using ES modules
+
 
 
 // export const initiatePayment = async (req, res) => {
@@ -508,7 +510,7 @@ export const validatePayment = async (req, res) => {
 //       message: "An error occurred during payment validation",
 //       error: error.message,
 //     });
-//   }
+// }
 
 
 
@@ -646,6 +648,7 @@ export const getAllPlans = async (req, res) => {
 
 
 export const transferEarningsToWallet = async (req, res) => {
+  
   const session = await mongoose.startSession();
   session.startTransaction();
 

@@ -25,6 +25,7 @@ router.post('/deductPerMinute', deductPerMinute);
 
 
 router.post('/transferEarningsToWallet',protect, transferEarningsToWallet);
+
 // router.get('/balance/:userId', getWalletAmount);
 
 export default router;
