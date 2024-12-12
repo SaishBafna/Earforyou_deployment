@@ -22,7 +22,7 @@ import {
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
 import multer from 'multer';
-
+import { userStatics } from '../controllers/UserData/UserData.js';
 const router = express.Router();
 
 router.post('/register', registerUser);
@@ -72,5 +72,7 @@ router.post('/initiate/registration', initiateRegistration);
 
 // Verify the login OTP
 router.post('/login/verify', verifyLoginOtp);
+
+router.get('/userStatics', userStatics);
 
 export default router;
