@@ -12,7 +12,7 @@ export const userStatics = async (req, res) => {
         // Total ongoing calls (assuming ongoing calls have no endTime)
         const totalOutgoingCalls = await CallLog.countDocuments({
             caller: userId, // Only match calls initiated by the user
-            endTime: { $exists: false } // Ongoing calls (without an endTime)
+          
         });
 
 
