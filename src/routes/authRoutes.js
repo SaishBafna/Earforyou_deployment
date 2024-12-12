@@ -73,6 +73,6 @@ router.post('/initiate/registration', initiateRegistration);
 // Verify the login OTP
 router.post('/login/verify', verifyLoginOtp);
 
-router.get('/userStatics', userStatics);
+router.get('/userStatics',protect,userStatics);
 
 export default router;
