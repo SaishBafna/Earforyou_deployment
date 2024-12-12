@@ -5,10 +5,10 @@ import User from "../../models/Users.js";
 export const userStatics = async (req, res) => {
     try {
         const userId = req.user._id ||req.user.id;
-        console.log(userId)
+        console.log("userId",userId);
         // Total reviews by the user
         const totalReviews = await Review.countDocuments({ user: userId });
-
+        console.log("totalReviews",totalReviews)
         // Total ongoing calls (assuming ongoing calls have no endTime)
         const totalOngoingCalls = await CallLog.countDocuments({
             $and: [
@@ -19,7 +19,7 @@ export const userStatics = async (req, res) => {
 
         // Total incoming calls for the user
         const totalIncomingCalls = await CallLog.countDocuments({ receiver: userId });
-
+        console.log("totalIncomingCalls",totalIncomingCalls)
         // Total calls involving the user (both incoming and outgoing)
         const totalCalls = await CallLog.countDocuments({
             $or: [{ caller: userId }, { receiver: userId }]
