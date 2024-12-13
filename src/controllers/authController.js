@@ -1,4 +1,5 @@
 import User from "../models/Users.js";
+import callLog from '.././models/Talk-to-friend/callLogModel.js'
 import jwt from "jsonwebtoken";
 import ROLES_LIST from "../config/Roles_list.js";
 import crypto from "crypto";
@@ -16,7 +17,6 @@ import emailValidator from 'email-validator';
 import Review from "../models/LeaderBoard/Review.js";
 import { title } from "process";
 import EarningWallet from "../models/Wallet/EarningWallet.js";
-
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -388,7 +388,7 @@ export const initiateRegistration = async (req, res) => {
         deductions: [],
         lastUpdated: new Date()
       }], { session });
-      
+
       await EarningWallet.create([{
         userId: newUser._id,
         balance: 0,
@@ -494,7 +494,7 @@ export const initiateLogin = async (req, res) => {
       accessToken,
       refreshToken,
     });
-    
+
   } catch (error) {
     console.error("Error in initiateLogin:", error);
     res.status(500).json({ message: "Server error", error });
@@ -1157,69 +1157,13 @@ export const getUserById = async (req, res) => {
 //   }
 // };
 
-// export const getAllUsers = async (req, res) => {
-//   try {
-//     // Get the logged-in user's ID
-//     const loggedInUserId = req.user.id;
 
-//     // Find users with specific conditions
-//     const users = await User.find(
-//       {
-//         _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-//         UserStatus: { $nin: ['inActive', 'Blocked','InActive'] } // Exclude users with these statuses
-//       },
-//       { password: 0, refreshToken: 0 } // Exclude sensitive fields
-//     );
 
-//     // Aggregate to calculate average user ratings
-//     // Aggregate to calculate average ratings for all users
-//     const userRatings = await Review.aggregate([
-//       {
-//         $match: {
-//           user: { $in: users.map((u) => u._id) }, // Filter reviews for the found users
-//         },
-//       },
-//       {
-//         $group: {
-//           _id: '$user', // Group by the `user` field in the Review schema
-//           avgRating: { $avg: '$rating' }, // Calculate average rating
-//         },
-//       },
-//     ])
-
-//     // Create a map of user ratings
-//     const userRatingsMap = userRatings.reduce((acc, rating) => {
-//       acc[rating._id] = rating.avgRating;
-//       return acc;
-//     }, {});
-
-//     // Attach average rating to each user
-//     const usersWithRatings = users.map((user) => ({
-//       ...user.toObject(),
-//       avgRating: userRatingsMap[user._id] || 0, // Default to 0 if no rating exists
-//     }));
-
-//     // Handle case when no users are found
-//     if (users.length === 0) {
-//       return res.status(404).json({ message: 'No other users found' });
-//     }
-
-//     // Return the list of users
-//     res.status(200).json({
-//       message: 'Users found successfully',
-//       users: usersWithRatings,
-//     });
-//   } catch (error) {
-//     // Error handling
-//     console.error('Error fetching users:', error);
-//     res.status(500).json({ message: 'Internal server error', error: error.message });
-//   }
-// };
 
 
 // export const getAllUsers1 = async (req, res) => {
 //   try {
-//     const loggedInUserId = req.user.id;
+//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id); // Ensure it's a proper ObjectId
 //     const loggedInUserGender = req.user.gender;
 
 //     const page = parseInt(req.query.page) || 1;
@@ -1308,10 +1252,6 @@ export const getUserById = async (req, res) => {
 //   }
 // };
 
-
-
-
-
 export const getAllUsers1 = async (req, res) => {
   try {
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id); // Ensure it's a proper ObjectId
@@ -1327,6 +1267,37 @@ export const getAllUsers1 = async (req, res) => {
         $match: {
           _id: { $ne: loggedInUserId }, // Exclude the logged-in user
           UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude specific statuses
+        },
+      },
+      {
+        $lookup: {
+          from: 'calllogs', // Reference to the CallLog collection
+          let: { userId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: ['$caller', loggedInUserId] }, // User made the call
+                    { $eq: ['$receiver', loggedInUserId] }, // User received the call
+                  ],
+                },
+              },
+            },
+            { $sort: { startTime: -1 } }, // Sort by most recent call
+            { $limit: 1 }, // Get the most recent call
+          ],
+          as: 'recentCall',
+        },
+      },
+      {
+        $addFields: {
+          hasRecentCall: {
+            $cond: { if: { $gt: [{ $size: '$recentCall' }, 0] }, then: 1, else: 0 },
+          },
+          recentCallTime: {
+            $ifNull: [{ $arrayElemAt: ['$recentCall.startTime', 0] }, null],
+          },
         },
       },
       {
@@ -1353,9 +1324,11 @@ export const getAllUsers1 = async (req, res) => {
       },
       {
         $sort: {
-          isOnline: -1, // Online users first
+          hasRecentCall: -1, // Users with recent calls first
+          recentCallTime: -1, // Most recent calls
+          isOnline: -1, // Online users next
           isOppositeGender: -1, // Opposite gender prioritization
-          avgRating: -1, // Higher ratings first
+          avgRating: -1, // Higher ratings next
         },
       },
       {
@@ -1369,6 +1342,7 @@ export const getAllUsers1 = async (req, res) => {
           password: 0,
           refreshToken: 0,
           ratings: 0, // Exclude sensitive fields and unnecessary data
+          recentCall: 0, // Hide detailed call log data
         },
       },
     ];
@@ -1402,8 +1376,6 @@ export const getAllUsers1 = async (req, res) => {
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
-
-
 
 export const addBio = async (req, res) => {
   try {
