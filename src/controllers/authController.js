@@ -1161,97 +1161,6 @@ export const getUserById = async (req, res) => {
 
 
 
-// export const getAllUsers1 = async (req, res) => {
-//   try {
-//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id); // Ensure it's a proper ObjectId
-//     const loggedInUserGender = req.user.gender;
-
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = 31;
-//     const skip = (page - 1) * limit;
-
-//     // Mongoose Aggregation Pipeline
-//     const pipeline = [
-//       {
-//         $match: {
-//           _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-//           UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude specific statuses
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: 'reviews', // Reference to the Review collection
-//           localField: '_id',
-//           foreignField: 'user',
-//           as: 'ratings',
-//         },
-//       },
-//       {
-//         $addFields: {
-//           avgRating: { $avg: '$ratings.rating' }, // Calculate average rating
-//           reviewCount: { $size: '$ratings' }, // Count the number of reviews
-//         },
-//       },
-//       {
-//         $addFields: {
-//           isOppositeGender: {
-//             $cond: { if: { $ne: ['$gender', loggedInUserGender] }, then: 1, else: 0 },
-//           },
-//           isOnline: { $cond: { if: { $eq: ['$status', 'Online'] }, then: 1, else: 0 } }, // Assuming `status` field indicates online/offline
-//         },
-//       },
-//       {
-//         $sort: {
-//           isOnline: -1, // Online users first
-//           isOppositeGender: -1, // Opposite gender prioritization
-//           avgRating: -1, // Higher ratings first
-//         },
-//       },
-//       {
-//         $skip: skip,
-//       },
-//       {
-//         $limit: limit,
-//       },
-//       {
-//         $project: {
-//           password: 0,
-//           refreshToken: 0,
-//           ratings: 0, // Exclude sensitive fields and unnecessary data
-//         },
-//       },
-//     ];
-
-//     // Execute the aggregation pipeline
-//     const users = await User.aggregate(pipeline);
-
-//     if (users.length === 0) {
-//       return res.status(404).json({ message: 'No users found' });
-//     }
-
-//     // Count total users for pagination metadata
-//     const totalUsers = await User.countDocuments({
-//       _id: { $ne: loggedInUserId },
-//       UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] },
-//     });
-
-//     // Response with sorted users and pagination details
-//     res.status(200).json({
-//       message: 'Users fetched successfully',
-//       users,
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
-//     });
-//   } catch (error) {
-//     console.error('Error fetching users:', error);
-//     res.status(500).json({ message: 'Internal server error', error: error.message });
-//   }
-// };
-
 export const getAllUsers1 = async (req, res) => {
   try {
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id); // Ensure it's a proper ObjectId
@@ -1261,7 +1170,7 @@ export const getAllUsers1 = async (req, res) => {
     const limit = 31;
     const skip = (page - 1) * limit;
 
-    // Mongoose Aggregation Pipeline
+    // Optimized Mongoose Aggregation Pipeline
     const pipeline = [
       {
         $match: {
@@ -1277,24 +1186,36 @@ export const getAllUsers1 = async (req, res) => {
             {
               $match: {
                 $expr: {
-                  $or: [
-                    { $eq: ['$caller', loggedInUserId] }, // User made the call
-                    { $eq: ['$receiver', loggedInUserId] }, // User received the call
+                  $and: [
+                    {
+                      $or: [
+                        { $eq: ['$caller', loggedInUserId] }, // Logged-in user made the call
+                        { $eq: ['$receiver', loggedInUserId] }, // Logged-in user received the call
+                      ],
+                    },
+                    {
+                      $or: [
+                        { $eq: ['$caller', '$$userId'] }, // Other user made the call
+                        { $eq: ['$receiver', '$$userId'] }, // Other user received the call
+                      ],
+                    },
                   ],
                 },
               },
             },
             { $sort: { startTime: -1 } }, // Sort by most recent call
             { $limit: 1 }, // Get the most recent call
+            {
+              $project: {
+                startTime: 1, // Only retrieve the necessary field
+              },
+            },
           ],
           as: 'recentCall',
         },
       },
       {
         $addFields: {
-          hasRecentCall: {
-            $cond: { if: { $gt: [{ $size: '$recentCall' }, 0] }, then: 1, else: 0 },
-          },
           recentCallTime: {
             $ifNull: [{ $arrayElemAt: ['$recentCall.startTime', 0] }, null],
           },
@@ -1312,10 +1233,6 @@ export const getAllUsers1 = async (req, res) => {
         $addFields: {
           avgRating: { $avg: '$ratings.rating' }, // Calculate average rating
           reviewCount: { $size: '$ratings' }, // Count the number of reviews
-        },
-      },
-      {
-        $addFields: {
           isOppositeGender: {
             $cond: { if: { $ne: ['$gender', loggedInUserGender] }, then: 1, else: 0 },
           },
@@ -1324,41 +1241,39 @@ export const getAllUsers1 = async (req, res) => {
       },
       {
         $sort: {
-          hasRecentCall: -1, // Users with recent calls first
-          recentCallTime: -1, // Most recent calls
+          recentCallTime: -1, // Most recent calls first
           isOnline: -1, // Online users next
           isOppositeGender: -1, // Opposite gender prioritization
           avgRating: -1, // Higher ratings next
         },
       },
       {
-        $skip: skip,
-      },
-      {
-        $limit: limit,
-      },
-      {
-        $project: {
-          password: 0,
-          refreshToken: 0,
-          ratings: 0, // Exclude sensitive fields and unnecessary data
-          recentCall: 0, // Hide detailed call log data
+        $facet: {
+          metadata: [{ $count: 'totalUsers' }], // Get total user count
+          users: [
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                password: 0,
+                refreshToken: 0,
+                ratings: 0, // Exclude sensitive fields and unnecessary data
+                recentCall: 0, // Hide detailed call log data
+              },
+            },
+          ],
         },
       },
     ];
 
     // Execute the aggregation pipeline
-    const users = await User.aggregate(pipeline);
+    const results = await User.aggregate(pipeline);
+    const totalUsers = results[0]?.metadata[0]?.totalUsers || 0;
+    const users = results[0]?.users || [];
 
     if (users.length === 0) {
       return res.status(404).json({ message: 'No users found' });
     }
-
-    // Count total users for pagination metadata
-    const totalUsers = await User.countDocuments({
-      _id: { $ne: loggedInUserId },
-      UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] },
-    });
 
     // Response with sorted users and pagination details
     res.status(200).json({
@@ -1376,6 +1291,7 @@ export const getAllUsers1 = async (req, res) => {
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
+
 
 export const addBio = async (req, res) => {
   try {
