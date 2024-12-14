@@ -70,7 +70,7 @@ router.get('/listener', protect, listener);
 router.get('/Category', protect, UserCategoryData);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
-router.delete('/addBankDetails', protect, addBankDetails);
+router.post('/addBankDetails', protect, addBankDetails);
 
 
 
