@@ -1527,6 +1527,7 @@ export const deleteBio = async (req, res) => {
     res.status(500).json({ message: "An error occurred while deleting the bio.", error });
   }
 };
+
 // Reporte_User
 export const Reporte_User = async (req, res) => {
   const { reporterId, reportedUserId, reportType } = req.body;

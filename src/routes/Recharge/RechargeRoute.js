@@ -3,7 +3,7 @@ import express from 'express';
 import { initiatePayment, validatePayment, getRechargeHistory, getAllPlans, transferEarningsToWallet, getEarningHistory } from '../../controllers/Recharge/RechargeWallet.js'
 import { deductPerMinute } from '../../controllers/Recharge/Decudition.js'
 import { protect } from '../../middlewares/auth/authMiddleware.js'
-import { requestWithdrawal } from '../../controllers/Withdrawal/Withdrawal.js';
+import { requestWithdrawal,getWithdrawal } from '../../controllers/Withdrawal/Withdrawal.js';
 const router = express.Router();
 
 router.post("/pay", initiatePayment);
@@ -28,6 +28,9 @@ router.post('/deductPerMinute', deductPerMinute);
 router.post('/transferEarningsToWallet', protect, transferEarningsToWallet);
 
 router.post('/requestWithdrawal', protect, requestWithdrawal);
+
+
+router.get('/getWithdrawal', protect, getWithdrawal);
 
 // router.get('/balance/:userId', getWalletAmount);
 
