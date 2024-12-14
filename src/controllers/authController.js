@@ -1972,7 +1972,7 @@ export const addBankDetails = async (req, res) => {
     ifscCode,
     accountHolderName,
   } = req.body;
-
+    console.log("req.body",req.body)
   try {
     // Validate input
     if (!bankName || !accountNumber || !ifscCode || !accountHolderName) {
@@ -1982,10 +1982,12 @@ export const addBankDetails = async (req, res) => {
     // Find the user by ID
     const user = await User.findById(userId);
 
+    console.log("user",user)
+
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
-
+      
     // Check for duplicate account numbers
     const isDuplicateAccount = user.bankDetails.some(
       (detail) => detail.accountNumber === accountNumber
