@@ -922,8 +922,8 @@ export const listener = async (req, res) => {
     const limitNumber = parseInt(limit, 10);
 
     // Query the database for users with userType 'RECEIVER' and exclude logged-in user
-    const query = { 
-      userType: 'RECEIVER', 
+    const query = {
+      userType: 'RECEIVER',
       _id: { $ne: userId } // Exclude the logged-in user's ID
     };
 
@@ -1628,6 +1628,17 @@ export const getAllUsers1 = async (req, res) => {
     if (userList.length === 0) {
       return res.status(404).json({ message: "No users found" });
     }
+
+    // Cache the response
+    myCache.set(`users:${req.user.id}`, {
+      users: userList,
+      pagination: {
+        totalUsers,
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit),
+        limit,
+      },
+    }, 3600); // Cache for 1 hour
 
     // Send response
     res.status(200).json({

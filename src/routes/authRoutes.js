@@ -17,12 +17,15 @@ import {
     updateStatus,
     addBio,
     Reporte_User,
-    getAllUsers1
+    getAllUsers1,
+    getCachedUsers
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
 import multer from 'multer';
 import { userStatics } from '../controllers/UserData/UserData.js';
+import NodeCache from 'node-cache';
+
 const router = express.Router();
 
 router.post('/register', registerUser);
@@ -58,7 +61,7 @@ router.post('/Reporte_User', Reporte_User);
 router.get('/user/:userId', getUserById);
 
 // router.get('/users', protect, getAllUsers);
-router.get('/users', protect, getAllUsers1);
+router.get('/users', protect, getCachedUsers, getAllUsers1);
 router.get('/listener', protect, listener);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
@@ -74,6 +77,6 @@ router.post('/initiate/registration', initiateRegistration);
 // Verify the login OTP
 router.post('/login/verify', verifyLoginOtp);
 
-router.get('/userStatics',protect,userStatics);
+router.get('/userStatics', protect, userStatics);
 
 export default router;
