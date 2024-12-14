@@ -1296,13 +1296,13 @@ export const getAllUsers1 = async (req, res) => {
           chatPriority: {
             $switch: {
               branches: [
-                { 
-                  case: { $eq: ['$chatDirection', 'received'] }, 
-                  then: 2 
+                {
+                  case: { $eq: ['$chatDirection', 'received'] },
+                  then: 2
                 },
-                { 
-                  case: { $eq: ['$chatDirection', 'sent'] }, 
-                  then: 1 
+                {
+                  case: { $eq: ['$chatDirection', 'sent'] },
+                  then: 1
                 }
               ],
               default: 0
@@ -1312,10 +1312,12 @@ export const getAllUsers1 = async (req, res) => {
       },
       {
         $sort: {
-          isOnline: -1, // Online users first
+
           chatPriority: -1, // Prioritize received chats, then sent chats
           recentChatTime: -1, // Sort by most recent chat time
-          recentCallTime: -1, // Then by most recent call time
+          recentCallTime: -1,
+          isOnline: -1, // Online users first
+          // Then by most recent call time
           isOppositeGender: -1, // Prioritize opposite gender
           avgRating: -1, // Then by highest average rating
         },
