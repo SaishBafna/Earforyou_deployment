@@ -960,6 +960,63 @@ export const listener = async (req, res) => {
 };
 
 
+export const UserCategoryData = async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const { Category } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: userId is required',
+      });
+    }
+
+    // Retrieve pagination parameters
+    const { page = 1, limit = 10 } = req.query;
+
+    // Convert to integers
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+
+    // Query the database for users with userType 'RECEIVER' and exclude logged-in user
+    const query = {
+      userCategory: Category,
+      _id: { $ne: userId } // Exclude the logged-in user's ID
+    };
+
+    const users = await User.find(query)
+      .skip((pageNumber - 1) * limitNumber)
+      .limit(limitNumber);
+
+    // Count total documents for this query
+    const totalUsers = await User.countDocuments(query);
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalUsers / limitNumber);
+
+    // Send response
+    res.status(200).json({
+      success: true,
+      data: users,
+      pagination: {
+        totalUsers,
+        totalPages,
+        currentPage: pageNumber,
+        limit: limitNumber,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users',
+      error: error.message,
+    });
+  }
+};
+
+
 // ------------------------userController.js---------------------------------------
 export const updateDeviceToken = async (req, res) => {
   const { deviceToken } = req.body;
