@@ -37,6 +37,8 @@ export const requestWithdrawal = async (req, res) => {
     }
 };
 
+
+
 export const getWithdrawal = async (req, res) => {
     try {
         const userId = req.user._id || req.user.id;
@@ -47,37 +49,35 @@ export const getWithdrawal = async (req, res) => {
 
         // Validate pagination parameters
         if (page <= 0 || limit <= 0) {
-            return res.status(400).json({ error: 'Invalid page or limit value.' });
+            return res.status(400).json({ error: 'Invalid page or limit value. Page and limit must be positive integers.' });
         }
 
-        // Fetch user earnings with pagination
-        const wallet = await EarningWallet.findOne({ userId });
+        // Fetch withdrawal requests with pagination
+        const totalTransactions = await WithdrawalRequest.countDocuments({ userId });
+        const totalPages = Math.ceil(totalTransactions / limit);
 
-        if (!wallet) {
-            return res.status(404).json({ error: 'Earning wallet not found.' });
+        if (totalTransactions === 0) {
+            return res.status(404).json({ message: 'No withdrawal transactions found.' });
         }
 
-        // Assuming withdrawals are stored in an array field like `transactions` in the wallet
-        const transactions = wallet;
-
-        // Paginate the transactions
-        const startIndex = (page - 1) * limit;
-        const endIndex = page * limit;
-
-        const paginatedTransactions = transactions.slice(startIndex, endIndex);
+        const withdrawals = await WithdrawalRequest.find({ userId })
+            .sort({ requestedAt: -1 }) // Sort by most recent first
+            .skip((page - 1) * limit)
+            .limit(limit);
 
         return res.status(200).json({
             message: 'Withdrawal transactions retrieved successfully.',
-            transactions: paginatedTransactions,
+            withdrawals,
             currentPage: page,
-            totalPages: Math.ceil(transactions.length / limit),
-            totalTransactions: transactions.length,
+            totalPages,
+            totalTransactions,
         });
     } catch (error) {
-        console.error(error);
+        console.error('Error fetching withdrawal transactions:', error);
         return res.status(500).json({ error: 'Internal server error.' });
     }
 };
+
 
 
 
