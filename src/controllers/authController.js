@@ -19,6 +19,26 @@ import { title } from "process";
 import EarningWallet from "../models/Wallet/EarningWallet.js";
 import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
+import NodeCache from 'node-cache';
+
+
+export const getCachedUsers = (req, res, next) => {
+  const cacheKey = `users:${req.user.id}`;
+  const cachedData = myCache.get(cacheKey);
+
+  if (cachedData) {
+    // Return cached data if available
+    return res.status(200).json(cachedData);
+  } else {
+    // Proceed to fetch data from DB and cache it in `getAllUsers1`
+    res.originalJson = res.json; // Preserve the original res.json method
+    res.json = (data) => {
+      myCache.set(cacheKey, data, 3600); // Cache the response for 1 hour
+      res.originalJson(data); // Send the response to the client
+    };
+    next();
+  }
+};
 
 
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -881,8 +901,62 @@ export const updateStatus = async (req, res) => {
 
 
 
-//--------------------------Update User Avatra-----------------------------------------
+//--------------------------Get  User Listener-----------------------------------------
 
+export const listener = async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: userId is required',
+      });
+    }
+
+    // Retrieve pagination parameters
+    const { page = 1, limit = 10 } = req.query;
+
+    // Convert to integers
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+
+    // Query the database for users with userType 'RECEIVER' and exclude logged-in user
+    const query = { 
+      userType: 'RECEIVER', 
+      _id: { $ne: userId } // Exclude the logged-in user's ID
+    };
+
+    const users = await User.find(query)
+      .skip((pageNumber - 1) * limitNumber)
+      .limit(limitNumber);
+
+    // Count total documents for this query
+    const totalUsers = await User.countDocuments(query);
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalUsers / limitNumber);
+
+    // Send response
+    res.status(200).json({
+      success: true,
+      data: users,
+      pagination: {
+        totalUsers,
+        totalPages,
+        currentPage: pageNumber,
+        limit: limitNumber,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users',
+      error: error.message,
+    });
+  }
+};
 
 
 // ------------------------userController.js---------------------------------------
@@ -1163,8 +1237,6 @@ export const getUserById = async (req, res) => {
 
 
 
-
-
 // export const getAllUsers1 = async (req, res) => {
 //   try {
 //     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
@@ -1368,214 +1440,6 @@ export const getUserById = async (req, res) => {
 
 
 
-
-// Controller function to fetch users
-
-// export const getAllUsers1 = async (req, res) => {
-//   try {
-//     // Extract logged-in user's details
-//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-//     const loggedInUserGender = req.user.gender;
-
-//     // Pagination parameters
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = 31;
-//     const skip = (page - 1) * limit;
-
-//     // Find users excluding the logged-in user and specific statuses
-//     const users = await User.aggregate([
-//       {
-//         $match: {
-//           _id: { $ne: loggedInUserId },
-//           UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
-//         },
-//       },
-//       // Lookup recent chat messages using ChatMessage model
-//       {
-//         $lookup: {
-//           from: ChatMessage.collection.name,
-//           let: { userId: "$_id" },
-//           pipeline: [
-//             {
-//               $match: {
-//                 $expr: {
-//                   $or: [
-//                     {
-//                       $and: [
-//                         { $eq: ["$sender", loggedInUserId] },
-//                         { $eq: ["$chat", "$$userId"] },
-//                       ],
-//                     },
-//                     {
-//                       $and: [
-//                         { $eq: ["$sender", "$$userId"] },
-//                         { $eq: ["$chat", loggedInUserId] },
-//                       ],
-//                     },
-//                   ],
-//                 },
-//               },
-//             },
-//             { $sort: { createdAt: -1 } },
-//             { $limit: 1 },
-//             {
-//               $project: {
-//                 createdAt: 1,
-//                 chatDirection: {
-//                   $cond: {
-//                     if: { $eq: ["$sender", loggedInUserId] },
-//                     then: "sent",
-//                     else: "received",
-//                   },
-//                 },
-//               },
-//             },
-//           ],
-//           as: "recentChat",
-//         },
-//       },
-//       // Add fields for recent chat
-//       {
-//         $addFields: {
-//           recentChatTime: {
-//             $ifNull: [{ $arrayElemAt: ["$recentChat.createdAt", 0] }, null],
-//           },
-//           chatDirection: {
-//             $ifNull: [{ $arrayElemAt: ["$recentChat.chatDirection", 0] }, null],
-//           },
-//         },
-//       },
-//       // Lookup recent call logs using callLog model
-//       {
-//         $lookup: {
-//           from: callLog.collection.name,
-//           let: { userId: "$_id" },
-//           pipeline: [
-//             {
-//               $match: {
-//                 $expr: {
-//                   $and: [
-//                     {
-//                       $or: [
-//                         { $eq: ["$caller", loggedInUserId] },
-//                         { $eq: ["$receiver", loggedInUserId] },
-//                       ],
-//                     },
-//                     {
-//                       $or: [
-//                         { $eq: ["$caller", "$$userId"] },
-//                         { $eq: ["$receiver", "$$userId"] },
-//                       ],
-//                     },
-//                   ],
-//                 },
-//               },
-//             },
-//             { $sort: { startTime: -1 } },
-//             { $limit: 1 },
-//             { $project: { startTime: 1 } },
-//           ],
-//           as: "recentCall",
-//         },
-//       },
-//       // Add field for recent call
-//       {
-//         $addFields: {
-//           recentCallTime: {
-//             $ifNull: [{ $arrayElemAt: ["$recentCall.startTime", 0] }, null],
-//           },
-//         },
-//       },
-//       // Lookup reviews for ratings
-//       {
-//         $lookup: {
-//           from: "reviews",
-//           localField: "_id",
-//           foreignField: "user",
-//           as: "ratings",
-//         },
-//       },
-//       // Add computed fields for sorting and filtering
-//       {
-//         $addFields: {
-//           avgRating: { $avg: "$ratings.rating" },
-//           reviewCount: { $size: "$ratings" },
-//           isOppositeGender: {
-//             $cond: { if: { $ne: ["$gender", loggedInUserGender] }, then: 1, else: 0 },
-//           },
-//           isOnline: {
-//             $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
-//           },
-//           chatPriority: {
-//             $switch: {
-//               branches: [
-//                 { case: { $eq: ["$chatDirection", "received"] }, then: 2 },
-//                 { case: { $eq: ["$chatDirection", "sent"] }, then: 1 },
-//               ],
-//               default: 0,
-//             },
-//           },
-//         },
-//       },
-//       // Sort users based on criteria
-//       {
-//         $sort: {
-//           recentChatTime: -1,
-//           recentCallTime: -1,
-//           chatPriority: -1,
-//           isOnline: -1,
-//           isOppositeGender: -1,
-//           avgRating: -1,
-//         },
-//       },
-//       // Pagination using $facet
-//       {
-//         $facet: {
-//           metadata: [{ $count: "totalUsers" }],
-//           users: [
-//             { $skip: skip },
-//             { $limit: limit },
-//             {
-//               $project: {
-//                 password: 0,
-//                 refreshToken: 0,
-//                 ratings: 0,
-//                 recentCall: 0,
-//                 recentChat: 0,
-//               },
-//             },
-//           ],
-//         },
-//       },
-//     ]);
-
-//     // Extract results
-//     const totalUsers = users[0]?.metadata[0]?.totalUsers || 0;
-//     const userList = users[0]?.users || [];
-
-//     // Handle no users found
-//     if (userList.length === 0) {
-//       return res.status(404).json({ message: "No users found" });
-//     }
-
-//     // Send response
-//     res.status(200).json({
-//       message: "Users fetched successfully",
-//       users: userList,
-     
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
-
-//     });
-//   } catch (error) {
-//     console.error("Error fetching users:", error);
-//     res.status(500).json({ message: "Internal server error", error: error.message });
-//   }
-// };
 
 
 export const getAllUsers1 = async (req, res) => {
@@ -1781,7 +1645,7 @@ export const getAllUsers1 = async (req, res) => {
     res.status(500).json({ message: "Internal server error", error: error.message });
   }
 };
- 
+
 
 export const addBio = async (req, res) => {
   try {

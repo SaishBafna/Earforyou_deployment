@@ -10,7 +10,7 @@ import {
     updateOrCreateUserCategory,
     deleteUser,
     authUser,
-    
+    listener,
     registerUser,
     initiateRegistration,
     verifyLoginOtp,
@@ -59,6 +59,7 @@ router.get('/user/:userId', getUserById);
 
 // router.get('/users', protect, getAllUsers);
 router.get('/users', protect, getAllUsers1);
+router.get('/listener', protect, listener);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
 
