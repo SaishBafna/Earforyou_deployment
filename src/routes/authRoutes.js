@@ -18,6 +18,7 @@ import {
     addBio,
     Reporte_User,
     addBankDetails,
+    getBankDetails,
     getAllUsers1,
     getCachedUsers,
     UserCategoryData
