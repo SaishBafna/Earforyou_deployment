@@ -25,45 +25,60 @@ const myCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 })
 
 export const getCachedUsers = (req, res, next) => {
   try {
-    const cacheKey = `users:${req.user.id}`;
+    const { page = 1, limit = 10 } = req.query; // Pagination parameters
+    const cacheKey = `users:${req.user.id}:page:${page}:limit:${limit}`;
     const cachedData = myCache.get(cacheKey);
 
     if (cachedData) {
-      // Return cached data if available
       return res.status(200).json({
         success: true,
-        data: removeDuplicates(cachedData), // Ensure no duplicates in cached data
-        message: 'Data fetched from cache.',
+        message: "Users fetched successfully from cache",
+        ...cachedData, // Spread the cached response
       });
     }
 
     // No cached data: Override res.json to cache the DB response
     const originalJson = res.json.bind(res);
+    let hasCached = false; // Ensure data is cached only once
+
     res.json = (data) => {
       try {
-        // Ensure data is cleaned before caching
-        const uniqueData = Array.isArray(data) ? removeDuplicates(data) : data;
-        myCache.set(cacheKey, uniqueData, 3600); // Cache the response for 1 hour
+        if (!hasCached) {
+          const { users: userList, totalUsers } = data;
+
+          // Prepare and cache data with pagination
+          const cachedResponse = {
+            users: Array.isArray(userList) ? removeDuplicates(userList) : userList,
+            pagination: {
+              totalUsers,
+              currentPage: page,
+              totalPages: Math.ceil(totalUsers / limit),
+              limit,
+            },
+          };
+
+          myCache.set(cacheKey, cachedResponse, 3600); // Cache for 1 hour
+          hasCached = true; // Mark as cached
+        }
       } catch (cacheError) {
-        console.error('Error setting cache:', cacheError);
+        console.error("Error setting cache:", cacheError);
       }
       originalJson(data); // Send the original response to the client
     };
 
     next(); // Proceed to the next middleware/controller
   } catch (error) {
-    console.error('Error in getCachedUsers middleware:', error);
+    console.error("Error in getCachedUsers middleware:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error while handling cache.',
+      message: "Internal server error while handling cache.",
     });
   }
 };
 
-
-const removeDuplicates = (data, uniqueKey = '_id') => {
+const removeDuplicates = (data, uniqueKey = "_id") => {
   if (!Array.isArray(data)) {
-    console.error('Expected an array in removeDuplicates, received:', data);
+    console.error("Expected an array in removeDuplicates, received:", data);
     return data; // Return as is if not an array
   }
 
@@ -77,6 +92,7 @@ const removeDuplicates = (data, uniqueKey = '_id') => {
     return true;
   });
 };
+
 
 
 
@@ -1546,7 +1562,7 @@ export const getAllUsers1 = async (req, res) => {
 
     // Pagination parameters
     const page = parseInt(req.query.page) || 1;
-    const limit = 31;
+    const limit = 21;
     const skip = (page - 1) * limit;
 
     // Find users excluding the logged-in user and specific statuses
@@ -1725,16 +1741,16 @@ export const getAllUsers1 = async (req, res) => {
       return res.status(404).json({ message: "No users found" });
     }
 
-    // Cache the response
-    myCache.set(`users:${req.user.id}`, {
-      users: userList,
-      pagination: {
-        totalUsers,
-        currentPage: page,
-        totalPages: Math.ceil(totalUsers / limit),
-        limit,
-      },
-    }, 3600); // Cache for 1 hour
+    // // Cache the response
+    // myCache.set(`users:${req.user.id}`, {
+    //   users: userList,
+    //   pagination: {
+    //     totalUsers,
+    //     currentPage: page,
+    //     totalPages: Math.ceil(totalUsers / limit),
+    //     limit,
+    //   },
+    // }, 3600); // Cache for 1 hour
 
     // Send response
     res.status(200).json({
@@ -1747,6 +1763,7 @@ export const getAllUsers1 = async (req, res) => {
         limit,
       },
     });
+
   } catch (error) {
     console.error("Error fetching users:", error);
     res.status(500).json({ message: "Internal server error", error: error.message });
