@@ -18,7 +18,8 @@ import {
     addBio,
     Reporte_User,
     getAllUsers1,
-    getCachedUsers
+    getCachedUsers,
+    UserCategoryData
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
