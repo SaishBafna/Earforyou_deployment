@@ -78,7 +78,7 @@ export const getCachedUsers = (req, res, next) => {
 
 const removeDuplicates = (data, uniqueKey = "_id") => {
   if (!Array.isArray(data)) {
-    console.error("Expected an array in removeDuplicates, received:", data);
+    
     return data; // Return as is if not an array
   }
 
