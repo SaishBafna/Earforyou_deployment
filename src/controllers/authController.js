@@ -1162,268 +1162,61 @@ export const getUserById = async (req, res) => {
 
 
 
-// export const getAllUsers1 = async (req, res) => {
-//   try {
-//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-//     const loggedInUserGender = req.user.gender;
-
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = 31;
-//     const skip = (page - 1) * limit;
-
-//     const pipeline = [
-//       {
-//         $match: {
-//           _id: { $ne: loggedInUserId }, // Exclude the logged-in user
-//           UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude specific statuses
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: 'chatmessages', // Reference to the ChatMessage collection
-//           let: { userId: '$_id' },
-//           pipeline: [
-//             {
-//               $match: {
-//                 $expr: {
-//                   $or: [
-//                     // Chat where logged-in user is sender and this user is receiver
-//                     {
-//                       $and: [
-//                         { $eq: ['$sender', loggedInUserId] },
-//                         { $eq: ['$chat', '$$userId'] }
-//                       ]
-//                     },
-//                     // Chat where this user is sender and logged-in user is receiver
-//                     {
-//                       $and: [
-//                         { $eq: ['$sender', '$$userId'] },
-//                         { $eq: ['$chat', loggedInUserId] }
-//                       ]
-//                     }
-//                   ]
-//                 },
-//               },
-//             },
-//             { $sort: { createdAt: -1 } }, // Sort by most recent message
-//             { $limit: 1 }, // Get the most recent message
-//             {
-//               $project: {
-//                 createdAt: 1, // Retrieve only the timestamp
-//                 chatDirection: {
-//                   $cond: {
-//                     if: { $eq: ['$sender', loggedInUserId] },
-//                     then: 'sent',
-//                     else: 'received'
-//                   }
-//                 }
-//               },
-//             },
-//           ],
-//           as: 'recentChat',
-//         },
-//       },
-//       {
-//         $addFields: {
-//           recentChatTime: {
-//             $ifNull: [{ $arrayElemAt: ['$recentChat.createdAt', 0] }, null],
-//           },
-//           chatDirection: {
-//             $ifNull: [{ $arrayElemAt: ['$recentChat.chatDirection', 0] }, null],
-//           }
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: 'calllogs', // Reference to the CallLog collection
-//           let: { userId: '$_id' },
-//           pipeline: [
-//             {
-//               $match: {
-//                 $expr: {
-//                   $and: [
-//                     {
-//                       $or: [
-//                         { $eq: ['$caller', loggedInUserId] }, // Logged-in user made the call
-//                         { $eq: ['$receiver', loggedInUserId] }, // Logged-in user received the call
-//                       ],
-//                     },
-//                     {
-//                       $or: [
-//                         { $eq: ['$caller', '$$userId'] }, // Other user made the call
-//                         { $eq: ['$receiver', '$$userId'] }, // Other user received the call
-//                       ],
-//                     },
-//                   ],
-//                 },
-//               },
-//             },
-//             { $sort: { startTime: -1 } }, // Sort by most recent call
-//             { $limit: 1 }, // Get the most recent call
-//             {
-//               $project: {
-//                 startTime: 1, // Only retrieve the necessary field
-//               },
-//             },
-//           ],
-//           as: 'recentCall',
-//         },
-//       },
-//       {
-//         $addFields: {
-//           recentCallTime: {
-//             $ifNull: [{ $arrayElemAt: ['$recentCall.startTime', 0] }, null],
-//           },
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: 'reviews', // Reference to the Review collection
-//           localField: '_id',
-//           foreignField: 'user',
-//           as: 'ratings',
-//         },
-//       },
-//       {
-//         $addFields: {
-//           avgRating: { $avg: '$ratings.rating' }, // Calculate average rating
-//           reviewCount: { $size: '$ratings' }, // Count the number of reviews
-//           isOppositeGender: {
-//             $cond: { if: { $ne: ['$gender', loggedInUserGender] }, then: 1, else: 0 },
-//           },
-//           isOnline: { $cond: { if: { $eq: ['$status', 'Online'] }, then: 1, else: 0 } },
-//           // Prioritization score for chats
-//           chatPriority: {
-//             $switch: {
-//               branches: [
-//                 {
-//                   case: { $eq: ['$chatDirection', 'received'] },
-//                   then: 2
-//                 },
-//                 {
-//                   case: { $eq: ['$chatDirection', 'sent'] },
-//                   then: 1
-//                 }
-//               ],
-//               default: 0
-//             }
-//           }
-//         },
-//       },
-//       {
-//         $sort: {
-
-//           chatPriority: -1, // Prioritize received chats, then sent chats
-//           isOnline: -1, // Online users first
-//           recentChatTime: -1, // Sort by most recent chat time
-//           recentCallTime: -1,
-          
-//           isOppositeGender: -1, // Prioritize opposite gender
-//           avgRating: -1, // Then by highest average rating
-//         },
-//       },
-//       {
-//         $facet: {
-//           metadata: [{ $count: 'totalUsers' }], // Get total user count
-//           users: [
-//             { $skip: skip },
-//             { $limit: limit },
-//             {
-//               $project: {
-//                 password: 0,
-//                 refreshToken: 0,
-//                 ratings: 0, // Exclude sensitive fields and unnecessary data
-//                 recentCall: 0, // Hide detailed call log data
-//                 recentChat: 0, // Hide detailed chat log data
-//               },
-//             },
-//           ],
-//         },
-//       },
-//     ];
-
-//     // Execute the aggregation pipeline
-//     const results = await User.aggregate(pipeline);
-//     const totalUsers = results[0]?.metadata[0]?.totalUsers || 0;
-//     const users = results[0]?.users || [];
-
-//     if (users.length === 0) {
-//       return res.status(404).json({ message: 'No users found' });
-//     }
-
-//     // Response with sorted users and pagination details
-//     res.status(200).json({
-//       message: 'Users fetched successfully',
-//       users,
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
-//     });
-//   } catch (error) {
-//     console.error('Error fetching users:', error);
-//     res.status(500).json({ message: 'Internal server error', error: error.message });
-//   }
-// };
-
-
-
 export const getAllUsers1 = async (req, res) => {
   try {
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
     const loggedInUserGender = req.user.gender;
 
-    // Validate and parse query parameters
-    const page = Math.max(parseInt(req.query.page) || 1, 1); // Ensure page is at least 1
-    const limit = Math.min(parseInt(req.query.limit) || 31, 100); // Limit max items per page to 100
+    const page = parseInt(req.query.page) || 1;
+    const limit = 31;
     const skip = (page - 1) * limit;
-
-    const excludedStatuses = ['inActive', 'Blocked', 'InActive']; // Could be moved to env/config
 
     const pipeline = [
       {
         $match: {
-          _id: { $ne: loggedInUserId },
-          UserStatus: { $nin: excludedStatuses },
-        },
-      },
-      {
-        $project: {
-          password: 0,
-          refreshToken: 0,
-          sensitiveField1: 0, // Exclude sensitive fields
-          sensitiveField2: 0,
+          _id: { $ne: loggedInUserId }, // Exclude the logged-in user
+          UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] }, // Exclude specific statuses
         },
       },
       {
         $lookup: {
-          from: 'chatmessages',
+          from: 'chatmessages', // Reference to the ChatMessage collection
           let: { userId: '$_id' },
           pipeline: [
             {
               $match: {
                 $expr: {
                   $or: [
-                    { $and: [{ $eq: ['$sender', loggedInUserId] }, { $eq: ['$chat', '$$userId'] }] },
-                    { $and: [{ $eq: ['$sender', '$$userId'] }, { $eq: ['$chat', loggedInUserId'] }] },
-                  ],
+                    // Chat where logged-in user is sender and this user is receiver
+                    {
+                      $and: [
+                        { $eq: ['$sender', loggedInUserId] },
+                        { $eq: ['$chat', '$$userId'] }
+                      ]
+                    },
+                    // Chat where this user is sender and logged-in user is receiver
+                    {
+                      $and: [
+                        { $eq: ['$sender', '$$userId'] },
+                        { $eq: ['$chat', loggedInUserId] }
+                      ]
+                    }
+                  ]
                 },
               },
             },
-            { $sort: { createdAt: -1 } },
-            { $limit: 1 },
+            { $sort: { createdAt: -1 } }, // Sort by most recent message
+            { $limit: 1 }, // Get the most recent message
             {
               $project: {
-                createdAt: 1,
+                createdAt: 1, // Retrieve only the timestamp
                 chatDirection: {
                   $cond: {
                     if: { $eq: ['$sender', loggedInUserId] },
                     then: 'sent',
-                    else: 'received',
-                  },
-                },
+                    else: 'received'
+                  }
+                }
               },
             },
           ],
@@ -1432,13 +1225,17 @@ export const getAllUsers1 = async (req, res) => {
       },
       {
         $addFields: {
-          recentChatTime: { $ifNull: [{ $arrayElemAt: ['$recentChat.createdAt', 0] }, null] },
-          chatDirection: { $ifNull: [{ $arrayElemAt: ['$recentChat.chatDirection', 0] }, null] },
+          recentChatTime: {
+            $ifNull: [{ $arrayElemAt: ['$recentChat.createdAt', 0] }, null],
+          },
+          chatDirection: {
+            $ifNull: [{ $arrayElemAt: ['$recentChat.chatDirection', 0] }, null],
+          }
         },
       },
       {
         $lookup: {
-          from: 'calllogs',
+          from: 'calllogs', // Reference to the CallLog collection
           let: { userId: '$_id' },
           pipeline: [
             {
@@ -1447,35 +1244,41 @@ export const getAllUsers1 = async (req, res) => {
                   $and: [
                     {
                       $or: [
-                        { $eq: ['$caller', loggedInUserId] },
-                        { $eq: ['$receiver', loggedInUserId] },
+                        { $eq: ['$caller', loggedInUserId] }, // Logged-in user made the call
+                        { $eq: ['$receiver', loggedInUserId] }, // Logged-in user received the call
                       ],
                     },
                     {
                       $or: [
-                        { $eq: ['$caller', '$$userId'] },
-                        { $eq: ['$receiver', '$$userId'] },
+                        { $eq: ['$caller', '$$userId'] }, // Other user made the call
+                        { $eq: ['$receiver', '$$userId'] }, // Other user received the call
                       ],
                     },
                   ],
                 },
               },
             },
-            { $sort: { startTime: -1 } },
-            { $limit: 1 },
-            { $project: { startTime: 1 } },
+            { $sort: { startTime: -1 } }, // Sort by most recent call
+            { $limit: 1 }, // Get the most recent call
+            {
+              $project: {
+                startTime: 1, // Only retrieve the necessary field
+              },
+            },
           ],
           as: 'recentCall',
         },
       },
       {
         $addFields: {
-          recentCallTime: { $ifNull: [{ $arrayElemAt: ['$recentCall.startTime', 0] }, null] },
+          recentCallTime: {
+            $ifNull: [{ $arrayElemAt: ['$recentCall.startTime', 0] }, null],
+          },
         },
       },
       {
         $lookup: {
-          from: 'reviews',
+          from: 'reviews', // Reference to the Review collection
           localField: '_id',
           foreignField: 'user',
           as: 'ratings',
@@ -1483,36 +1286,45 @@ export const getAllUsers1 = async (req, res) => {
       },
       {
         $addFields: {
-          avgRating: { $avg: '$ratings.rating' },
-          reviewCount: { $size: '$ratings' },
+          avgRating: { $avg: '$ratings.rating' }, // Calculate average rating
+          reviewCount: { $size: '$ratings' }, // Count the number of reviews
           isOppositeGender: {
             $cond: { if: { $ne: ['$gender', loggedInUserGender] }, then: 1, else: 0 },
           },
           isOnline: { $cond: { if: { $eq: ['$status', 'Online'] }, then: 1, else: 0 } },
+          // Prioritization score for chats
           chatPriority: {
             $switch: {
               branches: [
-                { case: { $eq: ['$chatDirection', 'received'] }, then: 2 },
-                { case: { $eq: ['$chatDirection', 'sent'] }, then: 1 },
+                {
+                  case: { $eq: ['$chatDirection', 'received'] },
+                  then: 2
+                },
+                {
+                  case: { $eq: ['$chatDirection', 'sent'] },
+                  then: 1
+                }
               ],
-              default: 0,
-            },
-          },
+              default: 0
+            }
+          }
         },
       },
       {
         $sort: {
-          chatPriority: -1,
-          isOnline: -1,
-          recentChatTime: -1,
+
+          chatPriority: -1, // Prioritize received chats, then sent chats
+          isOnline: -1, // Online users first
+          recentChatTime: -1, // Sort by most recent chat time
           recentCallTime: -1,
-          isOppositeGender: -1,
-          avgRating: -1,
+
+          isOppositeGender: -1, // Prioritize opposite gender
+          avgRating: -1, // Then by highest average rating
         },
       },
       {
         $facet: {
-          metadata: [{ $count: 'totalUsers' }],
+          metadata: [{ $count: 'totalUsers' }], // Get total user count
           users: [
             { $skip: skip },
             { $limit: limit },
@@ -1520,9 +1332,9 @@ export const getAllUsers1 = async (req, res) => {
               $project: {
                 password: 0,
                 refreshToken: 0,
-                ratings: 0,
-                recentCall: 0,
-                recentChat: 0,
+                ratings: 0, // Exclude sensitive fields and unnecessary data
+                recentCall: 0, // Hide detailed call log data
+                recentChat: 0, // Hide detailed chat log data
               },
             },
           ],
@@ -1530,14 +1342,16 @@ export const getAllUsers1 = async (req, res) => {
       },
     ];
 
+    // Execute the aggregation pipeline
     const results = await User.aggregate(pipeline);
     const totalUsers = results[0]?.metadata[0]?.totalUsers || 0;
     const users = results[0]?.users || [];
 
-    if (!users.length) {
+    if (users.length === 0) {
       return res.status(404).json({ message: 'No users found' });
     }
 
+    // Response with sorted users and pagination details
     res.status(200).json({
       message: 'Users fetched successfully',
       users,
@@ -1553,6 +1367,10 @@ export const getAllUsers1 = async (req, res) => {
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 };
+
+
+
+
 
 
 
