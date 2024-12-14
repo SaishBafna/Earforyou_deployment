@@ -58,7 +58,7 @@ export const getWithdrawal = async (req, res) => {
         }
 
         // Assuming withdrawals are stored in an array field like `transactions` in the wallet
-        const transactions = wallet.transactions || [];
+        const transactions = wallet;
 
         // Paginate the transactions
         const startIndex = (page - 1) * limit;
