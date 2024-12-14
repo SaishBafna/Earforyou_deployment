@@ -17,6 +17,7 @@ import {
     updateStatus,
     addBio,
     Reporte_User,
+    addBankDetails,
     getAllUsers1,
     getCachedUsers,
     UserCategoryData
@@ -69,6 +70,7 @@ router.get('/listener', protect, listener);
 router.get('/Category', protect, UserCategoryData);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
+router.delete('/addBankDetails', protect, addBankDetails);
 
 
 

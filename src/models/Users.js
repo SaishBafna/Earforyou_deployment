@@ -2,6 +2,28 @@ import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
+const bankDetailsSchema = new mongoose.Schema({
+  bankName: {
+    type: String,
+    required: true,
+  },
+  accountNumber: {
+    type: String,
+    required: true,
+    unique: true, // Ensures account numbers are unique across all entries
+  },
+  ifscCode: {
+    type: String,
+    required: true,
+  },
+
+  accountHolderName: {
+    type: String,
+    required: true,
+  },
+
+});
+
 const userSchema = new mongoose.Schema(
   {
     avatarUrl: {
@@ -59,12 +81,12 @@ const userSchema = new mongoose.Schema(
     },
     Bio: {
       type: [String],
-      
+
     },
-    report:{
-      type:[String],
+    report: {
+      type: [String],
     },
-    
+
     password: {
       type: String,
       required: false,
@@ -87,15 +109,20 @@ const userSchema = new mongoose.Schema(
     },
     UserStatus: {
       type: String,
-      enum: ['Active', 'inActive','InActive', 'Blocked'],
+      enum: ['Active', 'inActive', 'InActive', 'Blocked'],
       default: 'inActive'
     },
-   
+
     status: {
       type: String,
       enum: ["Online", "offline", "Busy"], // Allow only specific status values
       default: "offline", // Default t
-    }
+    },
+    bankDetails: {
+      type: [bankDetailsSchema], // Array of bank details
+      default: [], // Default to an empty array
+    },
+  
   },
   { timestamps: true }
 );

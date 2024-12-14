@@ -25,7 +25,7 @@ const myCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 })
 
 export const getCachedUsers = (req, res, next) => {
   try {
-    const { page = 1, limit = 10 } = req.query; // Pagination parameters
+    const { page = 1, limit = 50 } = req.query; // Pagination parameters
     const cacheKey = `users:${req.user.id}:page:${page}:limit:${limit}`;
     const cachedData = myCache.get(cacheKey);
 
@@ -1027,7 +1027,7 @@ export const UserCategoryData = async (req, res) => {
     }
 
     // Retrieve pagination parameters
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 20 } = req.query;
 
     // Convert to integers
     const pageNumber = parseInt(page, 10);
@@ -1962,6 +1962,59 @@ export const Reporte_User = async (req, res) => {
   }
 };
 
+
+
+export const addBankDetails = async (req, res) => {
+  const  userId  = req.user._id||req.user.id;
+  const {
+    bankName,
+    accountNumber,
+    ifscCode,
+    accountHolderName,
+  } = req.body;
+
+  try {
+    // Validate input
+    if (!bankName || !accountNumber || !ifscCode || !accountHolderName ) {
+      return res.status(400).json({ message: 'All fields are required.' });
+    }
+
+    // Find the user by ID
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // Check for duplicate account numbers
+    const isDuplicateAccount = user.bankDetails.some(
+      (detail) => detail.accountNumber === accountNumber
+    );
+
+    if (isDuplicateAccount) {
+      return res.status(400).json({ message: 'Account number already exists.' });
+    }
+
+    // Add the new bank details
+    user.bankDetails.push({
+      bankName,
+      accountNumber,
+      ifscCode,
+      accountHolderName,
+    });
+
+    // Save the updated user document
+    await user.save();
+
+    res.status(201).json({
+      message: 'Bank details added successfully.',
+      bankDetails: user.bankDetails,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
 
 //Notification
 
