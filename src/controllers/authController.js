@@ -1770,18 +1770,205 @@ export const getUserById = async (req, res) => {
 // };
 
 
-export const getAllUsers1 = async (req , res) => {
+// export const getAllUsers1 = async (req , res) => {
+//   try {
+//     // Extract logged-in user's details
+//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+//     const loggedInUserGender = req.user.gender;
+
+//     // Pagination parameters
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = 21;
+//     const skip = (page - 1) * limit;
+
+//     // Find users excluding the logged-in user and specific statuses
+//     const users = await User.aggregate([
+//       {
+//         $match: {
+//           _id: { $ne: loggedInUserId },
+//           UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+//         },
+//       },
+//       // Lookup recent chat messages
+//       {
+//         $lookup: {
+//           from: ChatMessage.collection.name,
+//           let: { userId: "$_id" },
+//           pipeline: [
+//             {
+//               $match: {
+//                 $expr: {
+//                   $or: [
+//                     {
+//                       $and: [
+//                         { $eq: ["$sender", loggedInUserId] },
+//                         { $eq: ["$chat", "$$userId"] },
+//                       ],
+//                     },
+//                     {
+//                       $and: [
+//                         { $eq: ["$sender", "$$userId"] },
+//                         { $eq: ["$chat", loggedInUserId] },
+//                       ],
+//                     },
+//                   ],
+//                 },
+//               },
+//             },
+//             { $sort: { timestamps: -1 } },
+//           ],
+//           as: "chats",
+//         },
+//       },
+//       // Lookup recent call logs
+//       {
+//         $lookup: {
+//           from: callLog.collection.name,
+//           let: { userId: "$_id" },
+//           pipeline: [
+//             {
+//               $match: {
+//                 $expr: {
+//                   $and: [
+//                     {
+//                       $or: [
+//                         { $eq: ["$caller", loggedInUserId] },
+//                         { $eq: ["$receiver", loggedInUserId] },
+//                       ],
+//                     },
+//                     {
+//                       $or: [
+//                         { $eq: ["$caller", "$$userId"] },
+//                         { $eq: ["$receiver", "$$userId"] },
+//                       ],
+//                     },
+//                   ],
+//                 },
+//               },
+//             },
+//             { $sort: { startTime: -1 } },
+//           ],
+//           as: "calls",
+//         },
+//       },
+//       // Add SortedActivities field
+//       {
+//         $addFields: {
+//           SortedActivities: {
+//             $concatArrays: [
+//               {
+//                 $map: {
+//                   input: "$chats",
+//                   as: "chat",
+//                   in: {
+//                     type: "chat",
+//                     timestamp: "$$chat.timestamps",
+//                     direction: {
+//                       $cond: {
+//                         if: { $eq: ["$$chat.sender", loggedInUserId] },
+//                         then: "sent",
+//                         else: "received",
+//                       },
+//                     },
+//                   },
+//                 },
+//               },
+//               {
+//                 $map: {
+//                   input: "$calls",
+//                   as: "call",
+//                   in: {
+//                     type: "call",
+//                     timestamp: "$$call.startTime",
+//                     direction: {
+//                       $cond: {
+//                         if: { $eq: ["$$call.caller", loggedInUserId] },
+//                         then: "outgoing",
+//                         else: "incoming",
+//                       },
+//                     },
+//                   },
+//                 },
+//               },
+//             ],
+//           },
+//         },
+//       },
+//       // Sort SortedActivities by timestamp
+//       {
+//         $addFields: {
+//           SortedActivities: {
+//             $slice: [
+//               {
+//                 $sortArray: {
+//                   input: "$SortedActivities",
+//                   sortBy: { timestamp: -1 },
+//                 },
+//               },
+//               5, 
+//             ],
+//           },
+//         },
+//       },
+//       // Pagination using $facet
+//       {
+//         $facet: {
+//           metadata: [{ $count: "totalUsers" }],
+//           users: [
+//             { $skip: skip },
+//             { $limit: limit },
+//             {
+//               $project: {
+//                 password: 0,
+//                 refreshToken: 0,
+//                 chats: 0,
+//                 calls: 0,
+//                 ratings: 0,
+//               },
+//             },
+//           ],
+//         },
+//       },
+//     ]);
+
+//     // Extract results
+//     const totalUsers = users[0]?.metadata[0]?.totalUsers || 0;
+//     const userList = users[0]?.users || [];
+
+//     // Handle no users found
+//     if (userList.length === 0) {
+//       return res.status(404).json({ message: "No users found" });
+//     }
+
+//     // Send response
+//     res.status(200).json({
+//       message: "Users fetched successfully",
+//       users: userList,
+//       pagination: {
+//         totalUsers,
+//         currentPage: page,
+//         totalPages: Math.ceil(totalUsers / limit),
+//         limit,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Error fetching users:", error);
+//     res.status(500).json({ message: "Internal server error", error: error.message });
+//   }
+// };
+
+
+
+export const getAllUsers1 = async (req, res) => {
   try {
     // Extract logged-in user's details
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-    const loggedInUserGender = req.user.gender;
 
     // Pagination parameters
     const page = parseInt(req.query.page) || 1;
     const limit = 21;
     const skip = (page - 1) * limit;
 
-    // Find users excluding the logged-in user and specific statuses
     const users = await User.aggregate([
       {
         $match: {
@@ -1802,13 +1989,13 @@ export const getAllUsers1 = async (req , res) => {
                     {
                       $and: [
                         { $eq: ["$sender", loggedInUserId] },
-                        { $eq: ["$chat", "$$userId"] },
+                        { $eq: ["$receiver", "$$userId"] },
                       ],
                     },
                     {
                       $and: [
                         { $eq: ["$sender", "$$userId"] },
-                        { $eq: ["$chat", loggedInUserId] },
+                        { $eq: ["$receiver", loggedInUserId] },
                       ],
                     },
                   ],
@@ -1851,7 +2038,7 @@ export const getAllUsers1 = async (req , res) => {
           as: "calls",
         },
       },
-      // Add SortedActivities field
+      // Combine and sort activities
       {
         $addFields: {
           SortedActivities: {
@@ -1894,23 +2081,22 @@ export const getAllUsers1 = async (req , res) => {
           },
         },
       },
-      // Sort SortedActivities by timestamp
+      // Extract latest activity timestamp
       {
         $addFields: {
-          SortedActivities: {
-            $slice: [
-              {
-                $sortArray: {
-                  input: "$SortedActivities",
-                  sortBy: { timestamp: -1 },
-                },
-              },
-              5, 
+          latestActivityTimestamp: {
+            $ifNull: [
+              { $max: "$SortedActivities.timestamp" },
+              new Date(0), // Default to the earliest date if no activities
             ],
           },
         },
       },
-      // Pagination using $facet
+      // Sort users by latest activity timestamp
+      {
+        $sort: { latestActivityTimestamp: -1 },
+      },
+      // Pagination
       {
         $facet: {
           metadata: [{ $count: "totalUsers" }],
@@ -1956,6 +2142,7 @@ export const getAllUsers1 = async (req , res) => {
     res.status(500).json({ message: "Internal server error", error: error.message });
   }
 };
+
 
 
 
