@@ -31,24 +31,10 @@ const markMessageAsRead = asyncHandler(async (req, res) => {
   }
 
   // Update the message's seenBy and isRead fields with the current user's ID
-  message.seenBy = message.seenBy || [];
-  message.seenBy.push(req.user._id); // Add the current user to the seenBy array
-  message.isRead = true;
+  message.seenBy = [req.user._id]; // Ensure only one user is recorded
+  message.isRead = true;  // Mark the message as read
 
   await message.save();
-
-  // Update the unreadMessages field in the associated chat
-  const chat = await Chat.findById(message.chat);
-
-  if (!chat) {
-    throw new ApiError(404, "Chat not found");
-  }
-
-  // Decrease the unread count for the current user in the unreadMessages map
-  const userId = req.user._id.toString();
-  chat.unreadMessages[userId] = Math.max((chat.unreadMessages[userId] || 1) - 1, 0);
-
-  await chat.save();
 
   // Emit a MESSAGE_READ_EVENT for real-time notification
   emitSocketEvent(
@@ -57,19 +43,14 @@ const markMessageAsRead = asyncHandler(async (req, res) => {
     ChatEventEnum.MESSAGE_READ_EVENT, // Event type
     {
       messageId,
-      seenBy: message.seenBy, // Include the updated seenBy list
-      unreadMessages: chat.unreadMessages, // Include the updated unreadMessages map
+      seenBy: message.seenBy, // Only the user who marked it as read
     }
   );
 
   return res
     .status(200)
     .json(
-      new ApiResponse(
-        200,
-        { messageId, seenBy: message.seenBy, unreadMessages: chat.unreadMessages },
-        "Message marked as read successfully"
-      )
+      new ApiResponse(200, { messageId, seenBy: message.seenBy }, "Message marked as read successfully")
     );
 });
 
@@ -203,58 +184,40 @@ const searchAvailableUsers = asyncHandler(async (req, res) => {
 const createOrGetAOneOnOneChat = asyncHandler(async (req, res) => {
   const { receiverId } = req.params;
 
-  // Step 1: Validate the receiver
+  // Check if it's a valid receiver
   const receiver = await User.findById(receiverId);
 
   if (!receiver) {
     throw new ApiError(404, "Receiver does not exist");
   }
-
-  // Check if the receiver is not the logged-in user
+  console.log(req.user._id);
+  // check if receiver is not the user who is requesting a chat
   if (receiver._id.toString() === req.user._id.toString()) {
     throw new ApiError(400, "You cannot chat with yourself");
   }
-
-  // Step 2: Check if a one-on-one chat already exists
+  // Check if a chat already exists between these two participants
   const existingChat = await Chat.findOne({
-    isGroupChat: false,
-    participants: { $all: [req.user._id, receiver._id] },
+    participants: { $all: [req.user._id, receiverId] },
   });
 
   if (existingChat) {
-    // Reset unread messages count for the logged-in user
-    await Chat.updateOne(
-      { _id: existingChat._id },
-      {
-        $set: {
-          [`unreadMessages.${req.user._id}`]: 0,
-        },
-      }
-    );
-
-    // Return the chat with updated unread message counts
-    const updatedChat = await Chat.aggregate([
-      {
-        $match: { _id: existingChat._id },
-      },
-      ...chatCommonAggregation(),
-    ]);
-
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(200, updatedChat[0], "Chat retrieved successfully")
-      );
+    // If chat exists, return the existing chat
+    return res.status(200).json({ data: existingChat });
   }
-
-  // Step 3: Aggregate to check for existing chats in a structured format
   const chat = await Chat.aggregate([
     {
       $match: {
-        isGroupChat: false, // Ensure this is not a group chat
+        isGroupChat: false, // This controller is responsible for one on one chats
+        // Also, filter chats with participants having receiver and logged in user only
         $and: [
-          { participants: { $elemMatch: { $eq: req.user._id } } },
-          { participants: { $elemMatch: { $eq: new mongoose.Types.ObjectId(receiverId) } } },
+          {
+            participants: { $elemMatch: { $eq: req.user._id } },
+          },
+          {
+            participants: {
+              $elemMatch: { $eq: new mongoose.Types.ObjectId(receiverId) },
+            },
+          },
         ],
       },
     },
@@ -262,64 +225,52 @@ const createOrGetAOneOnOneChat = asyncHandler(async (req, res) => {
   ]);
 
   if (chat.length) {
-    // Reset unread messages count for the logged-in user
-    await Chat.updateOne(
-      { _id: chat[0]._id },
-      {
-        $set: {
-          [`unreadMessages.${req.user._id}`]: 0,
-        },
-      }
-    );
-
+    // if we find the chat that means user already has created a chat
     return res
       .status(200)
       .json(new ApiResponse(200, chat[0], "Chat retrieved successfully"));
   }
 
-  // Step 4: Create a new one-on-one chat if it doesn't exist
+  // if not we need to create a new one on one chat
   const newChatInstance = await Chat.create({
     name: "One on one chat",
-    participants: [req.user._id, receiver._id], // Add participants
-    admin: req.user._id, // Assign the admin
-    unreadMessages: {
-      [req.user._id]: 0,
-      [receiver._id]: 0, // Initialize unread message counts
-    },
+    participants: [req.user._id, new mongoose.Types.ObjectId(receiverId)], // add receiver and logged in user as participants
+    admin: req.user._id,
   });
 
-  // Fetch the created chat with aggregation for consistency
+  // structure the chat as per the common aggregation to keep the consistency
   const createdChat = await Chat.aggregate([
     {
-      $match: { _id: newChatInstance._id },
+      $match: {
+        _id: newChatInstance._id,
+      },
     },
     ...chatCommonAggregation(),
   ]);
 
-  const payload = createdChat[0];
+  const payload = createdChat[0]; // store the aggregation result
 
   if (!payload) {
-    throw new ApiError(500, "Failed to create the chat");
+    throw new ApiError(500, "Internal server error");
   }
 
-  // Step 5: Emit a new chat event to the other participant
+  // logic to emit socket event about the new chat added to the participants
   payload?.participants?.forEach((participant) => {
-    if (participant._id.toString() === req.user._id.toString()) return;
+    if (participant._id.toString() === req.user._id.toString()) return; // don't emit the event for the logged in use as he is the one who is initiating the chat
 
+    // emit event to other participants with new chat as a payload
     emitSocketEvent(
       req,
-      participant._id.toString(),
+      participant._id?.toString(),
       ChatEventEnum.NEW_CHAT_EVENT,
       payload
     );
   });
 
-  // Step 6: Return the newly created chat
   return res
     .status(201)
-    .json(new ApiResponse(201, payload, "New chat created successfully"));
+    .json(new ApiResponse(201, payload, "Chat retrieved successfully"));
 });
-
 
 
 
