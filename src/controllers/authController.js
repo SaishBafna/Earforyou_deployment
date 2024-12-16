@@ -1372,7 +1372,7 @@ export const getAllUsers1 = async (req, res) => {
       // Lookup recent chat messages
       {
         $lookup: {
-          from: ChatMessage.collection.name,
+          from: Chat.collection.name,
           let: { userId: "$_id" },
           pipeline: [
             {
@@ -1381,14 +1381,14 @@ export const getAllUsers1 = async (req, res) => {
                   $or: [
                     {
                       $and: [
-                        { $eq: ["$sender", loggedInUserId] },
-                        { $eq: ["$receiver", "$$userId"] },
+                        { $eq: ["$admin", loggedInUserId] },
+                        { $eq: ["$participants", "$$userId"] },
                       ],
                     },
                     {
                       $and: [
-                        { $eq: ["$sender", "$$userId"] },
-                        { $eq: ["$receiver", loggedInUserId] },
+                        { $eq: ["$admin", loggedInUserId] },
+                        { $eq: ["$participants", "$$userId"] },
                       ],
                     },
                   ],
@@ -1445,9 +1445,9 @@ export const getAllUsers1 = async (req, res) => {
       // Calculate average rating
       {
         $addFields: {
-          averageRating: { 
+          averageRating: {
             $ifNull: [
-              { $avg: '$userRatings.rating' }, 
+              { $avg: '$userRatings.rating' },
               0 // Default to 0 if no ratings
             ]
           },
@@ -1469,7 +1469,7 @@ export const getAllUsers1 = async (req, res) => {
           latestActivityTimestamp: -1,
           isOnline: -1, // Online users first
           averageRating: -1, // Then by highest rating
-          
+
         }
       },
       // Pagination
@@ -1724,7 +1724,7 @@ export const addBankDetails = async (req, res) => {
     ifscCode,
     accountHolderName,
   } = req.body;
-    console.log("req.body",req.body)
+  console.log("req.body", req.body)
   try {
     // Validate input
     if (!bankName || !accountNumber || !ifscCode || !accountHolderName) {
@@ -1734,12 +1734,12 @@ export const addBankDetails = async (req, res) => {
     // Find the user by ID
     const user = await User.findById(userId);
 
-    console.log("user",user)
+    console.log("user", user)
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
-      
+
     // Check for duplicate account numbers
     const isDuplicateAccount = user.bankDetails.some(
       (detail) => detail.accountNumber === accountNumber
