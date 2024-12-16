@@ -1855,21 +1855,12 @@ export const getChatsWithLatestMessages = async (req, res) => {
 
     // Fetch chats where the user is a participant
     const chats = await Chat.find({ participants: userId })
-      .populate({
-        path: 'lastMessage',
-        select: 'text createdAt', // Include only necessary fields from messages
-        options: { sort: { createdAt: -1 } }, // Ensure the last message is sorted
-      })
+     
       .populate({
         path: 'participants',
-        select: 'name email avatar', // Fetch required user fields
-        model: User, // Explicitly mention the User model
+        model: User,
       })
-      .populate({
-        path: 'admin',
-        select: 'name email avatar', // Fetch required admin fields
-        model: User, // Explicitly mention the User model
-      })
+     
       .sort({ updatedAt: -1 }); // Sort chats by update time
 
     console.log("Chats found for user:", chats);
