@@ -1397,7 +1397,10 @@ export const getAllUsers1 = async (req, res) => {
                 },
               },
             },
-            { $sort: { createdAt: -1 } },
+            {
+              $sort: { createdAt: -1 }
+            },
+
             { $limit: 1 },
             {
               $project: {
@@ -1496,7 +1499,7 @@ export const getAllUsers1 = async (req, res) => {
           isOnline: {
             $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
           },
-        
+
         },
       },
       // Sort users based on criteria
@@ -1771,7 +1774,7 @@ export const addBankDetails = async (req, res) => {
     ifscCode,
     accountHolderName,
   } = req.body;
-    console.log("req.body",req.body)
+  console.log("req.body", req.body)
   try {
     // Validate input
     if (!bankName || !accountNumber || !ifscCode || !accountHolderName) {
@@ -1781,12 +1784,12 @@ export const addBankDetails = async (req, res) => {
     // Find the user by ID
     const user = await User.findById(userId);
 
-    console.log("user",user)
+    console.log("user", user)
 
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
-      
+
     // Check for duplicate account numbers
     const isDuplicateAccount = user.bankDetails.some(
       (detail) => detail.accountNumber === accountNumber
@@ -1839,6 +1842,84 @@ export const getBankDetails = async (req, res) => {
     res.status(500).json({ message: 'Internal server error.' });
   }
 };
+
+
+
+
+
+
+export const getUsersByLatestActivity = async (req, res) => {
+  try {
+    const loggedInUserId = req.user.id; // Assuming the logged-in user's ID is available in req.user
+
+    // Fetch latest chat messages involving the logged-in user
+    const latestChats = await ChatMessage.aggregate([
+      {
+        $match: {
+          $or: [{ sender: loggedInUserId }, { receiver: loggedInUserId }], // Filter by logged-in user involvement
+        },
+      },
+      { $sort: { timestamp: -1 } }, // Sort messages by timestamp (newest first)
+      { $group: { _id: "$userId", latestMessage: { $first: "$$ROOT" } } }, // Group by userId and pick latest
+    ]);
+
+    // Fetch latest call logs involving the logged-in user
+    const latestCalls = await callLog.aggregate([
+      {
+        $match: {
+          $or: [{ caller: loggedInUserId }, { receiver: loggedInUserId }], // Filter by logged-in user involvement
+        },
+      },
+      { $sort: { startTime: -1 } }, // Sort calls by startTime (newest first)
+      { $group: { _id: "$caller", latestCall: { $first: "$$ROOT" } } }, // Group by caller and pick latest
+    ]);
+
+    // Merge and sort the data chronologically
+    const activities = [];
+
+    // Add latest chat activities
+    latestChats.forEach(chat => {
+      activities.push({
+        userId: chat._id,
+        type: "chat",
+        timestamp: chat.latestMessage.timestamp,
+        details: chat.latestMessage,
+      });
+    });
+
+    // Add latest call activities
+    latestCalls.forEach(call => {
+      activities.push({
+        userId: call._id,
+        type: "call",
+        timestamp: call.latestCall.startTime,
+        details: call.latestCall,
+      });
+    });
+
+    // Sort by timestamp in descending order
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Fetch user details for each activity
+    const userIds = activities.map(activity => activity.userId);
+    const users = await User.find({ _id: { $in: userIds } });
+
+    // Combine user details with activities
+    const result = activities.map(activity => {
+      const user = users.find(user => user._id.toString() === activity.userId.toString());
+      return {
+        ...activity,
+        user,
+      };
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error fetching latest activities:", error);
+    res.status(500).json({ error: "Failed to fetch latest activities" });
+  }
+};
+
 
 //Notification
 

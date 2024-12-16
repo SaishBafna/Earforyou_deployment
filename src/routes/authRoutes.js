@@ -16,6 +16,7 @@ import {
     verifyLoginOtp,
     updateStatus,
     addBio,
+    getUsersByLatestActivity,
     Reporte_User,
     addBankDetails,
     getBankDetails,
@@ -88,5 +89,6 @@ router.post('/initiate/registration', initiateRegistration);
 router.post('/login/verify', verifyLoginOtp);
 
 router.get('/userStatics', protect, userStatics);
+router.get('/getUsersByLatestActivity', protect, getUsersByLatestActivity);
 
 export default router;

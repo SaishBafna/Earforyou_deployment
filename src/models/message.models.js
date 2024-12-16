@@ -23,11 +23,6 @@ const chatMessageSchema = new Schema(
     chat: {
       type: Schema.Types.ObjectId,
       ref: "Chat",
-    },
-    createdAt:{
-      type:Date,
-      default: Date.now,
-
     }
   },
   { timestamps: true }
