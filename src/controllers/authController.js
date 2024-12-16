@@ -1495,7 +1495,7 @@ export const getUserById = async (req, res) => {
 export const getAllUsers1 = async (req, res) => {
   try {
     // Extract logged-in user's details
-    const loggedInUserId = new mongoose.Types.ObjectId(req.user.id || req.user._id);
+    const loggedInUserId = req.user.id || req.user._id;
 
     // Pagination parameters
     const page = parseInt(req.query.page) || 1;
