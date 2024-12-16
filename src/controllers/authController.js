@@ -1865,32 +1865,23 @@ export const getChatsWithLatestMessages = async (req, res) => {
       .skip(skip) // Skip documents for pagination
       .limit(limit); // Limit the number of documents fetched
 
-    // Transform chats to include other participants and unread message counts
-    const sanitizedChats = await Promise.all(
-      chats.map(async (chat) => {
-        // Filter out logged-in user and create a new participants array
-        const otherParticipants = chat.participants
-          .filter(participant => participant._id.toString() !== userId.toString())
-          .map(participant => {
-            const { password, refreshToken, ...userDetails } = participant.toObject();
-            return userDetails;
-          });
-
-        // Count unread messages for the current user in this chat
-        const unreadCount = await Message.countDocuments({
-          chat: chat._id,
-          recipient: userId,
-          read: false
+    // Transform chats to include other participants
+    const sanitizedChats = chats.map(chat => {
+      // Filter out logged-in user and create a new participants array
+      const otherParticipants = chat.participants
+        .filter(participant => participant._id.toString() !== userId.toString())
+        .map(participant => {
+          // Destructure to create a new object with all fields except password and accessToken
+          const { password, refreshToken, ...userDetails } = participant.toObject();
+          return userDetails;
         });
 
-        return {
-          _id: chat._id,
-          participants: otherParticipants, // Set participants array
-          updatedAt: chat.updatedAt,
-          unreadCount // Include unread message count
-        };
-      })
-    );
+      return {
+        _id: chat._id,
+        participants: otherParticipants, // Set participants array
+        updatedAt: chat.updatedAt
+      };
+    });
 
     // Respond with sanitized chats and pagination details
     res.json({
