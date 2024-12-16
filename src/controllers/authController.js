@@ -1466,9 +1466,10 @@ export const getAllUsers1 = async (req, res) => {
       // Complex sorting stage
       {
         $sort: {
+          latestActivityTimestamp: -1,
           isOnline: -1, // Online users first
           averageRating: -1, // Then by highest rating
-          latestActivityTimestamp: -1 // Then by most recent activity
+          
         }
       },
       // Pagination
