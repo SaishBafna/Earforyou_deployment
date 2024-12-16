@@ -1861,8 +1861,8 @@ export const getUsersByLatestActivity = async (req, res) => {
       {
         $match: {
           $or: [
-            { sender: mongoose.Types.ObjectId(loggedInUserId) },
-            { chat: mongoose.Types.ObjectId(loggedInUserId) },
+            { sender:loggedInUserId },
+            { chat:loggedInUserId },
           ],
         },
       },
@@ -1874,8 +1874,8 @@ export const getUsersByLatestActivity = async (req, res) => {
       {
         $match: {
           $or: [
-            { caller: mongoose.Types.ObjectId(loggedInUserId) },
-            { receiver: mongoose.Types.ObjectId(loggedInUserId) },
+            { caller: loggedInUserId },
+            { receiver: loggedInUserId },
           ],
         },
       },
