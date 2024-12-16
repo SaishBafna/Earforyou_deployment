@@ -1397,11 +1397,11 @@ export const getAllUsers1 = async (req, res) => {
                 },
               },
             },
-            { $sort: { timestamps: -1 } },
+            { $sort: { createdAt: -1 } },
             { $limit: 1 },
             {
               $project: {
-                timestamps: 1,
+                createdAt: 1,
                 chatDirection: {
                   $cond: {
                     if: { $eq: ["$sender", loggedInUserId] },
@@ -1419,7 +1419,7 @@ export const getAllUsers1 = async (req, res) => {
       {
         $addFields: {
           recentChatTime: {
-            $ifNull: [{ $arrayElemAt: ["$recentChat.timestamps", 0] }, null],
+            $ifNull: [{ $arrayElemAt: ["$recentChat.createdAt", 0] }, null],
           },
           chatDirection: {
             $ifNull: [{ $arrayElemAt: ["$recentChat.chatDirection", 0] }, null],
