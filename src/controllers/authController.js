@@ -20,7 +20,7 @@ import EarningWallet from "../models/Wallet/EarningWallet.js";
 import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
 import NodeCache from 'node-cache';
-import { Chat} from "../models/chat.modal.js";
+import { Chat } from "../models/chat.modal.js";
 const myCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 })
 
 export const getCachedUsers = (req, res, next) => {
@@ -1850,18 +1850,28 @@ export const getBankDetails = async (req, res) => {
 
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
-    const userId = req.user.id; // Ensure userId is an ObjectId
+    const userId = req.user.id || req.user._id; // Convert user ID to ObjectId
+
     console.log("Logged-in User ID:", userId);
 
     // Fetch chats where the user is a participant
-    const chats = await Chat.find({ participants: userId }) 
+    const chats = await Chat.find({ participants: userId })
       .populate({
         path: 'lastMessage',
-        options: { sort: { createdAt: -1 } },
+        select: 'text createdAt', // Include only necessary fields from messages
+        options: { sort: { createdAt: -1 } }, // Ensure the last message is sorted
       })
-      .populate('participants', 'name') // Populate participants
-      .populate('admin', 'name')       // Populate admin
-      .sort({ updatedAt: -1 });       // Sort chats by update time
+      .populate({
+        path: 'participants',
+        select: 'name email avatar', // Fetch required user fields
+        model: User, // Explicitly mention the User model
+      })
+      .populate({
+        path: 'admin',
+        select: 'name email avatar', // Fetch required admin fields
+        model: User, // Explicitly mention the User model
+      })
+      .sort({ updatedAt: -1 }); // Sort chats by update time
 
     console.log("Chats found for user:", chats);
 
@@ -1872,7 +1882,6 @@ export const getChatsWithLatestMessages = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch chats' });
   }
 };
-
 
 
 //Notification
