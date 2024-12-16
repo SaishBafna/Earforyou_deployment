@@ -2033,7 +2033,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
             // Calculate average rating for each participant
             const reviews = await Review.find({ reviewedUser: participant._id });
             console.log("reviews",reviews)
-            const totalRatings = reviews.reduce((sum, review) => sum + review.rating, 0);
+            const totalRatings = reviews.rating.reduce((sum, review) => sum + review.rating, 0);
             console.log("totalRatings",totalRatings)
             const averageRating = reviews.length > 0 ? totalRatings / reviews.length : null;
 
