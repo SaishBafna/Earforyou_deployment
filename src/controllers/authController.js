@@ -1996,9 +1996,6 @@ export const getBankDetails = async (req, res) => {
 //Notification
 
 
-import Review from "../models/LeaderBoard/Review.js";
-import Chat from "../models/Chat.js";
-import User from "../models/User.js";
 
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
