@@ -20,7 +20,7 @@ import EarningWallet from "../models/Wallet/EarningWallet.js";
 import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
 import NodeCache from 'node-cache';
-
+import { Chat} from "../models/chat.modal.js";
 const myCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 })
 
 export const getCachedUsers = (req, res, next) => {
@@ -1848,117 +1848,28 @@ export const getBankDetails = async (req, res) => {
 
 
 
-export const getUsersByLatestActivity = async (req, res) => {
+export const getChatsWithLatestMessages = async (req, res) => {
   try {
-    const loggedInUserId = req.user.id; // Assuming the logged-in user's ID is available in req.user
+    const userId = req.user.id; // Ensure userId is an ObjectId
+    console.log("Logged-in User ID:", userId);
 
-    // Get the page and limit from query parameters, defaulting to 1 and 20 respectively
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    // Fetch chats where the user is a participant
+    const chats = await Chat.find({ participants: userId }) 
+      .populate({
+        path: 'lastMessage',
+        options: { sort: { createdAt: -1 } },
+      })
+      .populate('participants', 'name') // Populate participants
+      .populate('admin', 'name')       // Populate admin
+      .sort({ updatedAt: -1 });       // Sort chats by update time
 
-    // Fetch latest chat messages involving the logged-in user
-    const latestChats = await ChatMessage.aggregate([
-      {
-        $match: {
-          $or: [
-            { sender:loggedInUserId },
-            { chat:loggedInUserId },
-          ],
-        },
-      },
-      { $sort: { createdAt: -1 } }, // Sort messages by creation date (newest first)
-    ]);
+    console.log("Chats found for user:", chats);
 
-    // Fetch latest call logs involving the logged-in user
-    const latestCalls = await callLog.aggregate([
-      {
-        $match: {
-          $or: [
-            { caller: loggedInUserId },
-            { receiver: loggedInUserId },
-          ],
-        },
-      },
-      { $sort: { startTime: -1 } }, // Sort calls by startTime (newest first)
-    ]);
-
-    // Combine chat and call activities
-    const activities = [];
-
-    // Add chat activities
-    latestChats.forEach((chat) => {
-      const participantId =
-        chat.sender.toString() === loggedInUserId
-          ? chat.chat // If logged-in user is the sender, get the chat ID
-          : chat.sender;
-
-      if (participantId.toString() !== loggedInUserId) {
-        activities.push({
-          userId: participantId,
-          type: "chat",
-          timestamp: chat.createdAt,
-          details: chat,
-        });
-      }
-    });
-
-    // Add call activities
-    latestCalls.forEach((call) => {
-      const participantId =
-        call.caller.toString() === loggedInUserId
-          ? call.receiver
-          : call.caller;
-
-      if (participantId.toString() !== loggedInUserId) {
-        activities.push({
-          userId: participantId,
-          type: "call",
-          timestamp: call.startTime,
-          details: {
-            startTime: call.startTime,
-            endTime: call.endTime,
-            duration: call.duration,
-            status: call.status,
-          },
-        });
-      }
-    });
-
-    // Sort activities by timestamp (descending order for chronological output)
-    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-    // Extract unique user IDs involved in activities
-    const userIds = [...new Set(activities.map((activity) => activity.userId))];
-
-    // Fetch user details
-    const users = await User.find({ _id: { $in: userIds } }).select(
-      "name avatar email"
-    );
-
-    // Merge user details into the activity objects
-    const mergedActivities = activities.map((activity) => {
-      const user = users.find((user) => user._id.equals(activity.userId));
-      return {
-        ...activity,
-        user,
-      };
-    });
-
-    // Paginate the results
-    const startIndex = (page - 1) * limit;
-    const paginatedResults = mergedActivities.slice(startIndex, startIndex + limit);
-
-    // Send paginated response
-    res.status(200).json({
-      page,
-      limit,
-      totalUsers: mergedActivities.length,
-      totalPages: Math.ceil(mergedActivities.length / limit),
-      data: paginatedResults,
-    });
+    // Respond with chats
+    res.json(chats);
   } catch (error) {
-    console.error("Error fetching latest activities:", error);
-    res.status(500).json({ error: "Failed to fetch latest activities" });
+    console.error('Error fetching chats with latest messages:', error);
+    res.status(500).json({ error: 'Failed to fetch chats' });
   }
 };
 
