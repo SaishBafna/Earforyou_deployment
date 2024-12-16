@@ -1848,15 +1848,20 @@ export const getBankDetails = async (req, res) => {
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
     const userId = req.user.id || req.user._id; // Get logged-in user ID
+    const page = parseInt(req.query.page) || 1; // Get page number from query or default to 1
+    const limit = parseInt(req.query.limit) || 20; // Get limit from query or default to 20
+    const skip = (page - 1) * limit; // Calculate how many documents to skip
 
-    // Fetch chats where the user is a participant
+    // Fetch chats where the user is a participant, with pagination
     const chats = await Chat.find({ participants: userId })
       .populate({
         path: 'participants',
         model: User,
-        select: '-password -refreshToken' // Exclude password and accessToken
+        select: '-password -refreshToken' // Exclude password and refreshToken
       })
-      .sort({ updatedAt: -1 }); // Sort chats by most recently updated
+      .sort({ updatedAt: -1 }) // Sort chats by most recently updated
+      .skip(skip) // Skip documents for pagination
+      .limit(limit); // Limit number of documents
 
     // Transform chats to include other participants
     const sanitizedChats = chats.map(chat => {
@@ -1864,18 +1869,23 @@ export const getChatsWithLatestMessages = async (req, res) => {
       const otherParticipants = chat.participants
         .filter(participant => participant._id.toString() !== userId.toString())
         .map(participant => {
-          // Destructure to create a new object with all fields except password and accessToken
           const { password, refreshToken, ...userDetails } = participant.toObject();
           return userDetails;
         });
 
-      return { 
-        participants: otherParticipants // Set participants array
+      return {
+        participants: otherParticipants,
+       
       };
     });
 
-    // Respond with sanitized chats
-    res.json(sanitizedChats);
+    // Respond with sanitized chats and pagination info
+    res.json({
+      page,
+      limit,
+      totalChats: await Chat.countDocuments({ participants: userId }), // Total number of chats
+      chats: sanitizedChats,
+    });
   } catch (error) {
     console.error('Error fetching chats with latest messages:', error);
     res.status(500).json({ error: 'Failed to fetch chats' });
