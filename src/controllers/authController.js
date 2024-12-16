@@ -1572,7 +1572,6 @@ export const getUserById = async (req, res) => {
 //   }
 // };
 
-
 export const getAllUsers1 = async (req, res) => {
   try {
     // Extract logged-in user's details
@@ -2019,9 +2018,13 @@ export const getChatsWithLatestMessages = async (req, res) => {
     const seenUserIds = new Set();
 
     for (const chat of chats) {
-      const filteredParticipants = chat.participants.filter(participant => {
-        if (participant._id.toString() === userId.toString() || seenUserIds.has(participant._id.toString())) {
-          return false; // Skip logged-in user and duplicate users
+      // Filter participants to exclude logged-in user and duplicate users
+      const filteredParticipants = chat.participants.filter((participant) => {
+        if (
+          participant._id.toString() === userId.toString() ||
+          seenUserIds.has(participant._id.toString())
+        ) {
+          return false;
         }
         seenUserIds.add(participant._id.toString()); // Track unique user IDs
         return true;
@@ -2029,22 +2032,25 @@ export const getChatsWithLatestMessages = async (req, res) => {
 
       if (filteredParticipants.length > 0) {
         const participantsWithRatings = await Promise.all(
-          filteredParticipants.map(async participant => {
-            // Calculate average rating for each participant
-            const reviews = await Review.find({ reviewedUser: participant._id });
-            console.log("reviews",reviews)
-            const totalRatings = reviews.rating.reduce((sum, review) => sum + review.rating, 0);
-            console.log("totalRatings",totalRatings)
-            const averageRating = reviews.length > 0 ? totalRatings / reviews.length : null;
+          filteredParticipants.map(async (participant) => {
+            try {
+              // Fetch reviews for the participant
+              const reviews = await Review.find({ reviewedUser: participant._id });
+              const avgRating = reviews.length > 0
+                ? reviews.reduce((sum, review) => sum + (review.rating || 0), 0) / reviews.length
+                : 0; // Calculate average rating or default to 0
 
-            // Sanitize participant details
-            const { password, refreshToken, ...userDetails } = participant.toObject();
-            return {
-              ...userDetails,
-              averageRating, // Include average rating in the response,
-              
+              // Sanitize participant details
+              const { password, refreshToken, ...userDetails } = participant.toObject();
 
-            };
+              return {
+                ...userDetails,
+                averageRating: avgRating, // Include average rating in the response
+              };
+            } catch (err) {
+              console.error(`Error calculating rating for user ${participant._id}:`, err);
+              return null; // Handle errors gracefully
+            }
           })
         );
 
@@ -2052,7 +2058,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
           chatId: chat._id,
           lastMessage: chat.lastMessage || null, // Assuming there's a `lastMessage` field
           updatedAt: chat.updatedAt,
-          participants: participantsWithRatings,
+          participants: participantsWithRatings.filter(Boolean), // Exclude null participants
         });
       }
     }
