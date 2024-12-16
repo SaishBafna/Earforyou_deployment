@@ -69,7 +69,7 @@ router.get('/users', protect, getCachedUsers, getAllUsers1);
 
 router.get('/listener', protect, listener);
 
-router.get('/Category', protect, UserCategoryData);
+router.post('/Category', protect, UserCategoryData);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
 
