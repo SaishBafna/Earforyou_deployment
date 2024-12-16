@@ -1770,7 +1770,7 @@ export const getUserById = async (req, res) => {
 // };
 
 
-export const getAllUsers1 = async (req, res) => {
+export const getAllUsers1 = async (req , res) => {
   try {
     // Extract logged-in user's details
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
