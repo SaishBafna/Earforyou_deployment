@@ -1847,10 +1847,9 @@ export const getBankDetails = async (req, res) => {
 
 
 
-
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
-    const userId = req.user.id || req.user._id; // Convert user ID to ObjectId
+    const userId = req.user.id || req.user._id; // Get logged-in user ID
 
     console.log("Logged-in User ID:", userId);
 
@@ -1875,13 +1874,22 @@ export const getChatsWithLatestMessages = async (req, res) => {
 
     console.log("Chats found for user:", chats);
 
-    // Respond with chats
-    res.json(chats);
+    // Remove the logged-in user from participants
+    const sanitizedChats = chats.map(chat => {
+      const participants = chat.participants.filter(
+        participant => participant._id.toString() !== userId.toString()
+      );
+      return { ...chat.toObject(), participants }; // Convert chat to plain object and update participants
+    });
+
+    // Respond with sanitized chats
+    res.json(sanitizedChats);
   } catch (error) {
     console.error('Error fetching chats with latest messages:', error);
     res.status(500).json({ error: 'Failed to fetch chats' });
   }
 };
+
 
 
 //Notification
