@@ -19,11 +19,27 @@ const chatMessageSchema = new Schema(
       ],
       default: [],
     },
-   
+
     chat: {
       type: Schema.Types.ObjectId,
       ref: "Chat",
-    }
+    },
+    readBy: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    seenBy: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
