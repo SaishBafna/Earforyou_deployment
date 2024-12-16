@@ -1845,6 +1845,72 @@ export const getBankDetails = async (req, res) => {
 
 
 
+// export const getChatsWithLatestMessages = async (req, res) => {
+//   try {
+//     const userId = req.user.id || req.user._id; // Get logged-in user ID
+//     const page = parseInt(req.query.page) || 1; // Get page number from query or default to 1
+//     const limit = parseInt(req.query.limit) || 20; // Get limit from query or default to 20
+//     const skip = (page - 1) * limit; // Calculate how many documents to skip
+
+//     // Fetch chats where the user is a participant, with pagination
+//     const chats = await Chat.find({ participants: userId })
+//       .populate({
+//         path: 'participants',
+//         model: User,
+//         select: '-password -refreshToken', // Exclude sensitive fields
+//       })
+//       .sort({ updatedAt: -1 }) // Sort chats by most recently updated
+//       .skip(skip) // Skip documents for pagination
+//       .limit(limit); // Limit number of documents
+
+//     // Deduplicate users within each chat and filter out the logged-in user
+//     const uniqueChats = [];
+//     const seenUserIds = new Set();
+
+//     chats.forEach(chat => {
+//       const filteredParticipants = chat.participants.filter(participant => {
+//         if (participant._id.toString() === userId.toString() || seenUserIds.has(participant._id.toString())) {
+//           return false; // Skip logged-in user and duplicate users
+//         }
+//         seenUserIds.add(participant._id.toString()); // Track unique user IDs
+//         return true;
+//       });
+
+//       if (filteredParticipants.length > 0) {
+//         uniqueChats.push({
+//           chatId: chat._id,
+//           lastMessage: chat.lastMessage || null, // Assuming there's a `lastMessage` field
+//           updatedAt: chat.updatedAt,
+//           participants: filteredParticipants.map(participant => {
+//             const { password, refreshToken, ...userDetails } = participant.toObject();
+//             return userDetails; // Return sanitized participant details
+//           }),
+//         });
+//       }
+//     });
+
+//     // Respond with formatted chat data
+//     res.json({
+//       chats: uniqueChats, // Only the relevant chat details
+//     });
+//   } catch (error) {
+//     console.error('Error fetching chats with latest messages:', error);
+//     res.status(500).json({ error: 'Failed to fetch chats' });
+//   }
+// };
+
+
+
+
+
+
+//Notification
+
+
+import Review from "../models/LeaderBoard/Review.js";
+import Chat from "../models/Chat.js";
+import User from "../models/User.js";
+
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
     const userId = req.user.id || req.user._id; // Get logged-in user ID
@@ -1863,11 +1929,10 @@ export const getChatsWithLatestMessages = async (req, res) => {
       .skip(skip) // Skip documents for pagination
       .limit(limit); // Limit number of documents
 
-    // Deduplicate users within each chat and filter out the logged-in user
     const uniqueChats = [];
     const seenUserIds = new Set();
 
-    chats.forEach(chat => {
+    for (const chat of chats) {
       const filteredParticipants = chat.participants.filter(participant => {
         if (participant._id.toString() === userId.toString() || seenUserIds.has(participant._id.toString())) {
           return false; // Skip logged-in user and duplicate users
@@ -1877,17 +1942,30 @@ export const getChatsWithLatestMessages = async (req, res) => {
       });
 
       if (filteredParticipants.length > 0) {
+        const participantsWithRatings = await Promise.all(
+          filteredParticipants.map(async participant => {
+            // Calculate average rating for each participant
+            const reviews = await Review.find({ reviewedUser: participant._id });
+            const totalRatings = reviews.reduce((sum, review) => sum + review.rating, 0);
+            const averageRating = reviews.length > 0 ? totalRatings / reviews.length : null;
+
+            // Sanitize participant details
+            const { password, refreshToken, ...userDetails } = participant.toObject();
+            return {
+              ...userDetails,
+              averageRating, // Include average rating in the response
+            };
+          })
+        );
+
         uniqueChats.push({
           chatId: chat._id,
           lastMessage: chat.lastMessage || null, // Assuming there's a `lastMessage` field
           updatedAt: chat.updatedAt,
-          participants: filteredParticipants.map(participant => {
-            const { password, refreshToken, ...userDetails } = participant.toObject();
-            return userDetails; // Return sanitized participant details
-          }),
+          participants: participantsWithRatings,
         });
       }
-    });
+    }
 
     // Respond with formatted chat data
     res.json({
@@ -1899,12 +1977,6 @@ export const getChatsWithLatestMessages = async (req, res) => {
   }
 };
 
-
-
-
-
-
-//Notification
 
 async function sendNotification(userId, title, message) {
   // Assuming you have the FCM device token stored in your database
