@@ -1876,7 +1876,7 @@ export const getBankDetails = async (req, res) => {
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
     // Validate and sanitize input
-    const userId = mongoose.Types.ObjectId(req.user.id || req.user._id);
+    const userId = req.user.id || req.user._id;
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
