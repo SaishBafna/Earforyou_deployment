@@ -30,117 +30,80 @@ import User from '../../models/Users.js';
 //   };
 
 
-export const getRecentCalls = async (req, res) => {
-  try {
-    const userId = req.user._id || req.user.id;
-    const { page = 1 } = req.query; // Default page number is 1
-    const PAGE_SIZE = 20; // 20 calls per page
+export const getRecentCalls = async (req, res) => {   
+  try {     
+    const userId = req.user._id || req.user.id;          
+    const { page = 1 } = req.query; // Default page number is 1     
+    const PAGE_SIZE = 20; // 20 calls per page      
 
-    console.log('Fetching calls for userId:', userId);
+    console.log('Fetching calls for userId:', userId);      
 
-    // Validate userId
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required.' });
-    }
+    // Validate userId     
+    if (!userId) {       
+      return res.status(400).json({ message: 'User ID is required.' });     
+    }      
 
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * PAGE_SIZE;
+    // Calculate pagination     
+    const skip = (parseInt(page) - 1) * PAGE_SIZE;      
 
-    // Retrieve recent call logs with pagination
-    const recentCalls = await CallLog.find({
-      $or: [{ caller: userId }, { receiver: userId }],
-    })
-      .sort({ startTime: -1 }) // Sort by most recent calls first
-      .skip(skip) // Skip calls for previous pages
-      .limit(PAGE_SIZE) // Limit results to 20 per page
-      .populate('caller', 'username userType userCategory phone avatarUrl')
-      .populate('receiver', 'username userType userCategory phone avatarUrl')
-      .lean()
-      .exec();
+    // Retrieve recent call logs with pagination     
+    const recentCalls = await CallLog.find({       
+      $or: [{ caller: userId }, { receiver: userId }],     
+    })       
+    .sort({ startTime: 1, endTime: 1 }) // Sort chronologically     
+    .skip(skip) // Skip calls for previous pages       
+    .limit(PAGE_SIZE) // Limit results to 20 per page       
+    .populate('caller', 'username userType userCategory phone avatarUrl')       
+    .populate('receiver', 'username userType userCategory phone avatarUrl')       
+    .lean()       
+    .exec();      
 
-    // If no calls are found
-    if (!recentCalls || recentCalls.length === 0) {
-      return res.status(404).json({ message: 'No call history found for this page.' });
-    }
+    // If no calls are found     
+    if (!recentCalls || recentCalls.length === 0) {       
+      return res.status(404).json({ message: 'No call history found for this page.' });     
+    }      
 
-    // Filter invalid calls
-    const validCalls = recentCalls.filter(call => call.caller && call.receiver);
+    // Prepare calls without hiding the logged-in user     
+    const formattedCalls = recentCalls.map(call => ({
+      _id: call._id,
+      status: call.status,
+      startTime: call.startTime,
+      endTime: call.endTime,
+      duration: call.duration,
+      caller: call.caller,
+      receiver: call.receiver
+    }));     
 
-    // Remove duplicates and exclude logged-in user from the result
-    const uniqueCalls = [];
-    const seen = new Set();
+    // Total count for pagination metadata     
+    const totalCallsCount = await CallLog.countDocuments({       
+      $or: [{ caller: userId }, { receiver: userId }]     
+    });      
 
-    for (const call of validCalls) {
-      const callerId = call.caller._id.toString();
-      const receiverId = call.receiver._id.toString();
-      const callKey = [callerId, receiverId].sort().join('-');
+    // Pagination metadata     
+    const totalPages = Math.ceil(totalCallsCount / PAGE_SIZE);      
 
-      if (!seen.has(callKey)) {
-        seen.add(callKey);
+    return res.status(200).json({       
+      recentCalls: formattedCalls,       
+      totalCalls: totalCallsCount,       
+      currentPage: parseInt(page),       
+      totalPages,       
+      pageSize: PAGE_SIZE     
+    });    
+  } catch (error) {     
+    console.error('Error fetching recent call history:', error);      
 
-        uniqueCalls.push({
-          _id: call._id,
-          status: call.status, // Include the status field
-          startTime: call.startTime,
-          endTime: call.endTime,
-          duration: call.duration,
-          caller: callerId === userId
-            ? null // Hide caller details if it matches the logged-in user
-            : {
-                ...call.caller,
-                avatarUrl: call.caller.avatarUrl || null,
-                username: call.caller.username || 'Unknown User'
-              },
-          receiver: receiverId === userId
-            ? null // Hide receiver details if it matches the logged-in user
-            : {
-                ...call.receiver,
-                avatarUrl: call.receiver.avatarUrl || null,
-                username: call.receiver.username || 'Unknown User'
-              }
-        });
-      }
-    }
+    if (error.name === 'CastError') {       
+      return res.status(400).json({         
+        message: 'Invalid user ID format.',         
+        details: error.message       
+      });     
+    }      
 
-    // If no valid calls are found after filtering
-    if (uniqueCalls.length === 0) {
-      return res.status(404).json({
-        message: 'No valid call history found.',
-        details: 'All retrieved calls contained invalid or missing user references.'
-      });
-    }
-
-    // Total count for pagination metadata
-    const totalCallsCount = await CallLog.countDocuments({
-      $or: [{ caller: userId }, { receiver: userId }]
-    });
-
-    // Pagination metadata
-    const totalPages = Math.ceil(totalCallsCount / PAGE_SIZE);
-
-    return res.status(200).json({
-      recentCalls: uniqueCalls,
-      totalCalls: totalCallsCount,
-      currentPage: parseInt(page),
-      totalPages,
-      pageSize: PAGE_SIZE
-    });
-
-  } catch (error) {
-    console.error('Error fetching recent call history:', error);
-
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        message: 'Invalid user ID format.',
-        details: error.message
-      });
-    }
-
-    return res.status(500).json({
-      message: 'Server error, unable to fetch call history.',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
+    return res.status(500).json({       
+      message: 'Server error, unable to fetch call history.',       
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined     
+    });   
+  } 
 };
 
 
