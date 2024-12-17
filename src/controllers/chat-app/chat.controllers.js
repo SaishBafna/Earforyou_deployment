@@ -282,38 +282,27 @@ const createOrGetAOneOnOneChat = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid receiver ID");
   }
 
+  // Check if receiver exists
+  const receiver = await User.findById(receiverId);
+  if (!receiver) {
+    throw new ApiError(404, "Receiver does not exist");
+  }
+
   // Check if receiver is self
   if (receiverId === userId.toString()) {
     throw new ApiError(400, "You cannot chat with yourself");
   }
 
-  // Single query to find existing chat or create new one
-  const chat = await Chat.findOneAndUpdate(
-    {
-      isGroupChat: false,
-      participants: {
-        $all: [
-          userId,
-          new mongoose.Types.ObjectId(receiverId)
-        ]
-      }
-    },
-    {
-      $setOnInsert: {
-        name: "One on one chat",
-        admin: userId,
-        participants: [userId, new mongoose.Types.ObjectId(receiverId)]
-      }
-    },
-    {
-      new: true,
-      upsert: true, // Create if doesn't exist
-      runValidators: true
+  // Check for existing chat
+  let chat = await Chat.findOne({
+    participants: {
+      $all: [userId, new mongoose.Types.ObjectId(receiverId)],
+      $size: 2 // Ensures exactly two participants
     }
-  ).populate([
+  }).populate([
     {
       path: 'participants',
-      select: 'username name avatar email status' // Add fields you need
+      select: 'username name avatar email status'
     },
     {
       path: 'lastMessage',
@@ -325,29 +314,47 @@ const createOrGetAOneOnOneChat = asyncHandler(async (req, res) => {
     }
   ]);
 
-  // If this is a new chat, emit socket event to the receiver
-  if (chat.createdAt.getTime() === chat.updatedAt.getTime()) {
-    const receiverParticipant = chat.participants.find(
-      p => p._id.toString() !== userId.toString()
-    );
-
-    if (receiverParticipant) {
-      emitSocketEvent(
-        req,
-        receiverParticipant._id.toString(),
-        ChatEventEnum.NEW_CHAT_EVENT,
-        chat
-      );
-    }
-
+  // Return existing chat if found
+  if (chat) {
     return res
-      .status(201)
-      .json(new ApiResponse(201, chat, "Chat created successfully"));
+      .status(200)
+      .json(new ApiResponse(200, chat, "Chat retrieved successfully"));
   }
 
+  // Create new chat
+  const newChat = await Chat.create({
+    name: "One on one chat",
+    participants: [userId, new mongoose.Types.ObjectId(receiverId)],
+    admin: userId
+  });
+
+  // Populate and return new chat
+  chat = await Chat.findById(newChat._id).populate([
+    {
+      path: 'participants',
+      select: 'username name avatar email status'
+    },
+    {
+      path: 'lastMessage',
+      select: 'content type createdAt',
+      populate: {
+        path: 'sender',
+        select: 'username name avatar'
+      }
+    }
+  ]);
+
+  // Notify receiver about new chat
+  emitSocketEvent(
+    req,
+    receiverId,
+    ChatEventEnum.NEW_CHAT_EVENT,
+    chat
+  );
+
   return res
-    .status(200)
-    .json(new ApiResponse(200, chat, "Chat retrieved successfully"));
+    .status(201)
+    .json(new ApiResponse(201, chat, "Chat created successfully"));
 });
 
 // Helper function to format chat response (if needed)
