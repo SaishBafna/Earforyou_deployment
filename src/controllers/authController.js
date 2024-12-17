@@ -1968,7 +1968,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
       const { password, refreshToken, ...userDetails } = item.user.toObject();
 
       return {
-        user: { ...userDetails, averageRating: avgRating },
+        participants: { ...userDetails, averageRating: avgRating },
         chatId: item.chatId,
         lastMessage: item.lastMessage,
         updatedAt: item.updatedAt,
