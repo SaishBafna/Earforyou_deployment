@@ -357,7 +357,6 @@ const formatChatResponse = (chat) => {
   return {
     _id: chat._id,
     name: chat.name,
-    isGroupChat: chat.isGroupChat,
     participants: chat.participants,
     admin: chat.admin,
     lastMessage: chat.lastMessage,
