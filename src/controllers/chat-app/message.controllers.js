@@ -46,20 +46,60 @@ const chatMessageCommonAggregation = () => {
   ];
 };
 
+// const getAllMessages = asyncHandler(async (req, res) => {
+//   const { chatId } = req.params;
+
+//   const selectedChat = await Chat.findById(chatId);
+
+//   if (!selectedChat) {
+//     throw new ApiError(404, "Chat does not exist");
+//   }
+
+//   // Only send messages if the logged in user is a part of the chat he is requesting messages of
+//   if (!selectedChat.participants?.includes(req.user?._id)) {
+//     throw new ApiError(400, "User is not a part of this chat");
+//   }
+
+//   const messages = await ChatMessage.aggregate([
+//     {
+//       $match: {
+//         chat: new mongoose.Types.ObjectId(chatId),
+//       },
+//     },
+//     ...chatMessageCommonAggregation(),
+//     {
+//       $sort: {
+//         createdAt: 1,
+//       },
+//     },
+//   ]);
+
+//   return res
+//     .status(200)
+//     .json(
+//       new ApiResponse(200, messages || [], "Messages fetched successfully")
+//     );
+// });
+
+
 const getAllMessages = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
+  const { page = 1, limit = 20 } = req.query;
 
   const selectedChat = await Chat.findById(chatId);
-
   if (!selectedChat) {
     throw new ApiError(404, "Chat does not exist");
   }
 
-  // Only send messages if the logged in user is a part of the chat he is requesting messages of
+  // Ensure the logged-in user is a participant of the chat
   if (!selectedChat.participants?.includes(req.user?._id)) {
     throw new ApiError(400, "User is not a part of this chat");
   }
 
+  // Calculate skip value for pagination
+  const skip = (page - 1) * limit;
+
+  // Fetch paginated messages
   const messages = await ChatMessage.aggregate([
     {
       $match: {
@@ -69,17 +109,123 @@ const getAllMessages = asyncHandler(async (req, res) => {
     ...chatMessageCommonAggregation(),
     {
       $sort: {
-        createdAt: 1,
+        createdAt: -1, // Sort by latest messages
       },
+    },
+    {
+      $skip: skip, // Skip messages for pagination
+    },
+    {
+      $limit: parseInt(limit, 10), // Limit to 20 messages per page
     },
   ]);
 
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(200, messages || [], "Messages fetched successfully")
-    );
+  // Response
+  return res.status(200).json(
+    new ApiResponse(200, messages || [], "Messages fetched successfully")
+  );
 });
+
+
+// const sendMessage = asyncHandler(async (req, res) => {
+//   const { chatId } = req.params;
+//   const { content } = req.body;
+
+//   if (!content && !req.files?.attachments?.length) {
+//     throw new ApiError(400, "Message content or attachment is required");
+//   }
+
+//   const selectedChat = await Chat.findById(chatId);
+
+//   if (!selectedChat) {
+//     throw new ApiError(404, "Chat does not exist");
+//   }
+
+//   const messageFiles = [];
+
+//   if (req.files && req.files.attachments?.length > 0) {
+//     req.files.attachments?.map((attachment) => {
+//       messageFiles.push({
+//         url: getStaticFilePath(req, attachment.filename),
+//         localPath: getLocalPath(attachment.filename),
+//       });
+//     });
+//   }
+
+//   // Create a new message instance with appropriate metadata
+//   const message = await ChatMessage.create({
+//     sender: new mongoose.Types.ObjectId(req.user._id),
+//     content: content || "",
+//     chat: new mongoose.Types.ObjectId(chatId),
+//     attachments: messageFiles,
+//   });
+
+//   // update the chat's last message which could be utilized to show last message in the list item
+//   const chat = await Chat.findByIdAndUpdate(
+//     chatId,
+//     {
+//       $set: {
+//         lastMessage: message._id,
+//       },
+//     },
+//     { new: true }
+//   );
+
+//   // structure the message
+//   const messages = await ChatMessage.aggregate([
+//     {
+//       $match: {
+//         _id: new mongoose.Types.ObjectId(message._id),
+//       },
+//     },
+//     ...chatMessageCommonAggregation(),
+//   ]);
+
+//   // Store the aggregation result
+//   const receivedMessage = messages[0];
+
+//   if (!receivedMessage) {
+//     throw new ApiError(500, "Internal server error");
+//   }
+
+//   const sender = await User.findById(req.user._id).select('username name avatarUrl');
+//   const senderName = sender.name || sender.username;
+//   const avatarUrl = sender.avatarUrl; // Access the avatar URL
+  
+
+//   // logic to emit socket event about the new message created to the other participants
+
+
+//   const notificationPromises = chat.participants.map(async (participant) => {
+    
+//     // Skip sender
+//     if (participant._id.toString() === req.user._id.toString()) return;
+
+
+//     // Emit socket event
+//     emitSocketEvent(
+//       req,
+//       participant._id.toString(),
+//       ChatEventEnum.MESSAGE_RECEIVED_EVENT,
+//       receivedMessage
+//     );
+//     const notificationTitle = `💬 Hey, ${senderName} sent you a message! ✨`;
+//     const notificationMessage = content 
+//       ? `📨 "${content}"` 
+//       : '📎 You’ve got an attachment waiting for you! Tap to check it out!';
+//     await sendNotification(participant, notificationTitle, notificationMessage, chatId, message._id, sender._id, senderName, avatarUrl);
+
+
+
+//   });
+
+//   // Wait for all notifications to be processed
+//   await Promise.all(notificationPromises);
+
+//   return res
+//     .status(201)
+//     .json(new ApiResponse(201, receivedMessage, "Message saved successfully"));
+// });
 
 
 const sendMessage = asyncHandler(async (req, res) => {
@@ -91,15 +237,13 @@ const sendMessage = asyncHandler(async (req, res) => {
   }
 
   const selectedChat = await Chat.findById(chatId);
-
   if (!selectedChat) {
     throw new ApiError(404, "Chat does not exist");
   }
 
   const messageFiles = [];
-
   if (req.files && req.files.attachments?.length > 0) {
-    req.files.attachments?.map((attachment) => {
+    req.files.attachments.forEach((attachment) => {
       messageFiles.push({
         url: getStaticFilePath(req, attachment.filename),
         localPath: getLocalPath(attachment.filename),
@@ -107,7 +251,7 @@ const sendMessage = asyncHandler(async (req, res) => {
     });
   }
 
-  // Create a new message instance with appropriate metadata
+  // Create a new message
   const message = await ChatMessage.create({
     sender: new mongoose.Types.ObjectId(req.user._id),
     content: content || "",
@@ -115,47 +259,28 @@ const sendMessage = asyncHandler(async (req, res) => {
     attachments: messageFiles,
   });
 
-  // update the chat's last message which could be utilized to show last message in the list item
-  const chat = await Chat.findByIdAndUpdate(
-    chatId,
-    {
-      $set: {
-        lastMessage: message._id,
-      },
-    },
-    { new: true }
-  );
+  // Update the chat's last message (async and non-blocking)
+  Chat.findByIdAndUpdate(chatId, { lastMessage: message._id }).exec();
 
-  // structure the message
-  const messages = await ChatMessage.aggregate([
-    {
-      $match: {
-        _id: new mongoose.Types.ObjectId(message._id),
-      },
-    },
-    ...chatMessageCommonAggregation(),
+  // Fetch the structured message
+  const [receivedMessage, sender] = await Promise.all([
+    ChatMessage.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(message._id) } },
+      ...chatMessageCommonAggregation(),
+    ]).then((messages) => messages[0]),
+    User.findById(req.user._id).select("username name avatarUrl"),
   ]);
-
-  // Store the aggregation result
-  const receivedMessage = messages[0];
 
   if (!receivedMessage) {
     throw new ApiError(500, "Internal server error");
   }
 
-  const sender = await User.findById(req.user._id).select('username name avatarUrl');
   const senderName = sender.name || sender.username;
-  const avatarUrl = sender.avatarUrl; // Access the avatar URL
-  
+  const avatarUrl = sender.avatarUrl;
 
-  // logic to emit socket event about the new message created to the other participants
-
-
-  const notificationPromises = chat.participants.map(async (participant) => {
-    
-    // Skip sender
+  // Emit socket events and send notifications concurrently
+  const notificationPromises = selectedChat.participants.map(async (participant) => {
     if (participant._id.toString() === req.user._id.toString()) return;
-
 
     // Emit socket event
     emitSocketEvent(
@@ -164,17 +289,24 @@ const sendMessage = asyncHandler(async (req, res) => {
       ChatEventEnum.MESSAGE_RECEIVED_EVENT,
       receivedMessage
     );
+
+    // Send notifications
     const notificationTitle = `💬 Hey, ${senderName} sent you a message! ✨`;
-    const notificationMessage = content 
-      ? `📨 "${content}"` 
-      : '📎 You’ve got an attachment waiting for you! Tap to check it out!';
-    await sendNotification(participant, notificationTitle, notificationMessage, chatId, message._id, sender._id, senderName, avatarUrl);
-
-
-
+    const notificationMessage = content
+      ? `📨 "${content}"`
+      : "📎 You’ve got an attachment waiting for you! Tap to check it out!";
+    return sendNotification(
+      participant,
+      notificationTitle,
+      notificationMessage,
+      chatId,
+      message._id,
+      sender._id,
+      senderName,
+      avatarUrl
+    );
   });
 
-  // Wait for all notifications to be processed
   await Promise.all(notificationPromises);
 
   return res
