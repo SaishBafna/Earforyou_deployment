@@ -19,7 +19,6 @@ import {
  * @returns {mongoose.PipelineStage[]}
  */
 
-
 const chatMessageCommonAggregation = () => {
   return [
     {
@@ -47,60 +46,20 @@ const chatMessageCommonAggregation = () => {
   ];
 };
 
-// const getAllMessages = asyncHandler(async (req, res) => {
-//   const { chatId } = req.params;
-
-//   const selectedChat = await Chat.findById(chatId);
-
-//   if (!selectedChat) {
-//     throw new ApiError(404, "Chat does not exist");
-//   }
-
-//   // Only send messages if the logged in user is a part of the chat he is requesting messages of
-//   if (!selectedChat.participants?.includes(req.user?._id)) {
-//     throw new ApiError(400, "User is not a part of this chat");
-//   }
-
-//   const messages = await ChatMessage.aggregate([
-//     {
-//       $match: {
-//         chat: new mongoose.Types.ObjectId(chatId),
-//       },
-//     },
-//     ...chatMessageCommonAggregation(),
-//     {
-//       $sort: {
-//         createdAt: 1,
-//       },
-//     },
-//   ]);
-
-//   return res
-//     .status(200)
-//     .json(
-//       new ApiResponse(200, messages || [], "Messages fetched successfully")
-//     );
-// });
-
-
 const getAllMessages = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
-  
 
   const selectedChat = await Chat.findById(chatId);
+
   if (!selectedChat) {
     throw new ApiError(404, "Chat does not exist");
   }
 
-  // Ensure the logged-in user is a participant of the chat
+  // Only send messages if the logged in user is a part of the chat he is requesting messages of
   if (!selectedChat.participants?.includes(req.user?._id)) {
     throw new ApiError(400, "User is not a part of this chat");
   }
 
-  // Calculate skip value for pagination
-  
-
-  // Fetch paginated messages
   const messages = await ChatMessage.aggregate([
     {
       $match: {
@@ -110,15 +69,16 @@ const getAllMessages = asyncHandler(async (req, res) => {
     ...chatMessageCommonAggregation(),
     {
       $sort: {
-        createdAt: -1, // Sort by latest messages
+        createdAt: -1,
       },
     },
   ]);
 
-  // Response
-  return res.status(200).json(
-    new ApiResponse(200, messages || [], "Messages fetched successfully")
-  );
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, messages || [], "Messages fetched successfully")
+    );
 });
 
 
@@ -221,9 +181,6 @@ const sendMessage = asyncHandler(async (req, res) => {
     .status(201)
     .json(new ApiResponse(201, receivedMessage, "Message saved successfully"));
 });
-
-
-
 
 
 const deleteMessage = asyncHandler(async (req, res) => {
