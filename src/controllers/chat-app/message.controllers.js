@@ -19,6 +19,7 @@ import {
  * @returns {mongoose.PipelineStage[]}
  */
 
+
 const chatMessageCommonAggregation = () => {
   return [
     {
@@ -84,7 +85,7 @@ const chatMessageCommonAggregation = () => {
 
 const getAllMessages = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
-  const { page = 1, limit = 20 } = req.query;
+  
 
   const selectedChat = await Chat.findById(chatId);
   if (!selectedChat) {
@@ -97,7 +98,7 @@ const getAllMessages = asyncHandler(async (req, res) => {
   }
 
   // Calculate skip value for pagination
-  const skip = (page - 1) * limit;
+  
 
   // Fetch paginated messages
   const messages = await ChatMessage.aggregate([
@@ -111,12 +112,6 @@ const getAllMessages = asyncHandler(async (req, res) => {
       $sort: {
         createdAt: -1, // Sort by latest messages
       },
-    },
-    {
-      $skip: skip, // Skip messages for pagination
-    },
-    {
-      $limit: parseInt(limit, 10), // Limit to 20 messages per page
     },
   ]);
 
