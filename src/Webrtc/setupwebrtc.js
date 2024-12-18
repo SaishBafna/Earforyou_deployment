@@ -1805,8 +1805,7 @@ export const setupWebRTC = (io) => {
     socket.on('disconnect', async () => {
       logger.info(`Socket disconnected: ${socket.id}`);
       removeUserFromQueue(socket.id);
-      userOfferCounts.delete(userId);
-      rateLimiter.delete(userId);
+      
       console.log('Current queue:', userQueue);
 
       let disconnectedUserId;
@@ -1839,6 +1838,10 @@ export const setupWebRTC = (io) => {
           break;
         }
       }
+
+      userOfferCounts.delete(disconnectedUserId);
+      rateLimiter.delete(disconnectedUserId);
+
 
       // Handle active call disconnection
       if (disconnectedUserId && activeCalls[disconnectedUserId]) {
