@@ -922,32 +922,36 @@ export const setupWebRTC = (io) => {
           return socket.emit('callError', { message: 'Caller or receiver not found' });
         }
 
-        // Notify receiver
-        users[receiverId]?.forEach((socketId) => {
-          socket.to(socketId).emit('callMissed', {
-            callerId,
-            callerName: caller.name || caller.username,
-            callerPicture: caller.profilePicture,
-            timestamp: new Date(),
-          });
-        });
+        const callerName = caller.name || caller.username;
 
-        // Send push notification
+        // Notify receiver via socket
+        const receiverSockets = users[receiverId];
+        if (receiverSockets?.length) {
+          // Send socket notification to all connected sockets for the receiver
+          receiverSockets.forEach((socketId) => {
+            socket.to(socketId).emit('callMissed', {
+              callerId,
+              callerName,
+              callerPicture: caller.profilePicture,
+              timestamp: new Date(),
+            });
+          });
+        }
+
+        // Send push notification (only once)
         if (receiver.deviceToken && receiver.notificationSettings?.missedCalls !== false) {
           await sendNotification(
             receiverId,
             'Missed Call',
-            `You missed a call from ${caller.name || caller.username}`,
+            `You missed a call from ${callerName}`,
             'missed_call',
             receiverId,
-            caller.name || caller.username,
+            callerName,
             caller.profilePicture
           );
         }
 
-        
         // Log missed call for caller
-
         const logForCaller = await CallLog.create({
           caller: new mongoose.Types.ObjectId(callerId),
           receiver: new mongoose.Types.ObjectId(receiverId),
@@ -956,9 +960,6 @@ export const setupWebRTC = (io) => {
           duration: 0,
           status: 'missed',
         });
-
-
-
 
         // Log missed call for receiver
         const logForReceiver = await CallLog.create({
@@ -972,9 +973,11 @@ export const setupWebRTC = (io) => {
 
         console.log('Missed call logs created:', { logForCaller, logForReceiver });
       } catch (error) {
+        console.error('Error processing missed call:', error);
         socket.emit('callError', { message: 'Failed to process missed call' });
       }
     });
+
 
 
     socket.on('rejectCall', async ({ receiverId, callerId }) => {
