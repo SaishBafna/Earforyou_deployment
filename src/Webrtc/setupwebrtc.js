@@ -497,7 +497,7 @@ export const setupWebRTC = (io) => {
             const senderName = caller.username || 'Unknown Caller';
             const senderAvatar = caller.avatarUrl || 'https://investogram.ukvalley.com/avatars/default.png';
 
-            await sendNotification(receiverId, title, message, type, callerId, senderName, senderAvatar);
+            await sendNotification_call(receiverId, title, message, type, callerId, senderName, senderAvatar);
             logger.info(`Push notification sent to User ${receiverId}`);
           }
 
@@ -512,7 +512,7 @@ export const setupWebRTC = (io) => {
 
             try {
               // Send initial notification
-              await sendNotification(receiverId, title, message, type, callerId, senderName, senderAvatar);
+              await sendNotification_call(receiverId, title, message, type, callerId, senderName, senderAvatar);
               logger.info(`Push notification sent to User ${receiverId}`);
 
               // Cleanup timeout if the call is accepted, rejected, or ended
@@ -1100,7 +1100,88 @@ export const setupWebRTC = (io) => {
 };
 
 
+async function sendNotification_call(userId, title, message, type, callerId, senderName, senderAvatar) {
+  try {
+    const user = await User.findById(userId);
+    if (!user || !user.deviceToken) {
+      logger.error(`No device token found for user: ${userId}`);
+      return;
+    }
 
+    // Payload optimized for React Native
+    const payload = {
+      notification: {
+        title: title,
+        body: message,
+        android_channel_id: 'calls', // Android notification channel for calls
+        sound: 'ringtone.mp3', // Default React Native sound
+      },
+      data: {
+        // Essential data for React Native handling
+        type: 'incoming_call',
+        callType: type, // 'audio' or 'video'
+        callerId: callerId,
+        callerName: senderName,
+        callerAvatar: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png',
+        timestamp: Date.now().toString(),
+        
+        // React Native specific navigation data
+        screen: 'incoming_Call', // Target screen
+        
+        // Additional call metadata as stringified JSON
+        callData: JSON.stringify({
+          callId: `${callerId}_${Date.now()}`,
+          caller: {
+            id: callerId,
+            name: senderName,
+            avatar: senderAvatar
+          },
+          recipientId: userId,
+          isVideoCall: type === 'video'
+        })
+      },
+      android: {
+        priority: 'high',
+        ttl: 60 * 1000, // 1 minute
+        notification: {
+          channelId: 'calls',
+          priority: 'high',
+          sound: 'ringtone',
+          color: '#FF0000', // Notification icon color
+          importance: 'high',
+          visibility: 'public',
+          vibrationPattern: [0, 250, 250, 250], // Vibration pattern
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'ringtone.caf',
+            category: 'CALL',
+            contentAvailable: true,
+            priority: 10,
+            badge: 1
+          }
+        },
+        headers: {
+          'apns-push-type': 'background',
+          'apns-priority': '10',
+          'apns-expiration': Math.floor(Date.now() / 1000) + 60
+        }
+      },
+      token: user.deviceToken
+    };
+
+    logger.info(`Sending React Native call notification to user ${userId}`);
+    const response = await admin.messaging().send(payload);
+    logger.info(`Call notification sent successfully: ${response}`);
+
+    return response;
+  } catch (error) {
+    logger.error(`Failed to send call notification: ${error.message}`);
+    throw error;
+  }
+}
 
 
 
