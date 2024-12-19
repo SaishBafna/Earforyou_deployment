@@ -1115,7 +1115,7 @@ async function sendNotification_call(userId, title, message, type, callerId, sen
       },
       data: {
         type: 'incoming_call',
-        callType: 'voice', // Specifically set for voice calls
+        callType: 'voice',
         callerId: callerId,
         callerName: senderName,
         callerAvatar: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png',
@@ -1132,13 +1132,13 @@ async function sendNotification_call(userId, title, message, type, callerId, sen
             avatar: senderAvatar
           },
           recipientId: userId,
-          isVoiceCall: true, // Indicating this is a voice call
+          isVoiceCall: true,
           callType: 'voice'
         })
       },
       android: {
         priority: 'high',
-        ttl: '60s',
+        ttl: 60000, // 60 seconds in milliseconds
         notification: {
           channel_id: 'EarforYou123',
           priority: 'high',
