@@ -1111,59 +1111,63 @@ async function sendNotification_call(userId, title, message, type, callerId, sen
     const payload = {
       notification: {
         title: title || "Incoming Voice Call",
-        body: message || `${senderName} is calling you`
+        body: message || `${senderName} is calling you`,
+        android: {
+          channelId: 'EarforYou123',
+          priority: 'high',
+          sound: 'default',
+          visibility: 'PUBLIC',
+          // Add actions for Android
+          actions: [
+            {
+              title: 'Answer',
+              action: 'answer_call',
+              icon: 'ic_answer_call'
+            },
+            {
+              title: 'Decline',
+              action: 'decline_call',
+              icon: 'ic_decline_call'
+            }
+          ]
+        },
+        apns: {
+          payload: {
+            aps: {
+              category: 'INCOMING_CALL', // This category should be registered in your iOS app
+              sound: 'default',
+              alert: {
+                title: title || "Incoming Voice Call",
+                body: message || `${senderName} is calling you`,
+                'launch-image': 'call_background'
+              }
+            }
+          }
+        }
       },
       data: {
-        type: 'incoming_call',
-        callType: 'voice',
-        callerId: callerId,
-        callerName: senderName,
-        callerAvatar: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png',
-        timestamp: Date.now().toString(),
         screen: 'incoming_Call',
-        channelId: 'EarforYou123',
-        playSound: 'true',
-        priority: 'high',
-        callData: JSON.stringify({
-          callId: `${callerId}_${Date.now()}`,
-          caller: {
-            id: callerId,
-            name: senderName,
-            avatar: senderAvatar
-          },
-          recipientId: userId,
-          isVoiceCall: true,
-          callType: 'voice'
+        params: JSON.stringify({
+          user_id: userId,
+          type: 'voice',
+          agent_id: callerId,
+          username: senderName,
+          imageurl: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png',
+          timestamp: Date.now().toString(),
+          call_id: `${callerId}_${Date.now()}`
         })
       },
       android: {
         priority: 'high',
-        ttl: 60000, // 60 seconds in milliseconds
+        ttl: 60000,
         notification: {
           channel_id: 'EarforYou123',
           priority: 'high',
-          default_sound: true,
-          notification_priority: 'PRIORITY_MAX',
-          visibility: 'PUBLIC'
-        }
-      },
-      apns: {
-        payload: {
-          aps: {
-            alert: {
-              title: title || "Incoming Voice Call",
-              body: message || `${senderName} is calling you`
-            },
-            sound: 'default',
-            category: 'VOICE_CALL',
-            'content-available': 1,
-            priority: '10'
-          }
-        },
-        headers: {
-          'apns-push-type': 'background',
-          'apns-priority': '10',
-          'apns-expiration': (Math.floor(Date.now() / 1000) + 60).toString()
+          sound: 'default',
+          visibility: 'PUBLIC',
+          notification_priority: 'PRIORITY_HIGH',
+          category: 'CALL',
+          fullScreenIntent: true // This will show the call screen even if the device is locked
         }
       },
       token: user.deviceToken
