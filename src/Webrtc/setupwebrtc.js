@@ -1163,10 +1163,10 @@ async function sendNotification_call(userId, title, message, type, callerId, sen
             badge: 1
           }
         },
-        headers: {
+          headers: {
           'apns-push-type': 'background',
           'apns-priority': '10',
-          'apns-expiration': Math.floor(Date.now() / 1000) + 60
+          'apns-expiration': (Math.floor(Date.now() / 1000) + 60).toString() // Convert to string
         }
       },
       token: user.deviceToken
