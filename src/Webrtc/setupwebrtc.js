@@ -1187,8 +1187,8 @@ async function sendNotification(userId, title, message, type, receiverId, sender
     // Construct the payload for FCM
     const payload = {
       notification: {
-        title: title,
-        body: message,
+        title: title || "Incoming Voice Call",
+        body: message || `${senderName} is calling you`,
       },
       data: {
         screen: 'incoming_Call', // Target screen
@@ -1202,8 +1202,24 @@ async function sendNotification(userId, title, message, type, receiverId, sender
         // Add any additional parameters if needed
       },
       token: deviceToken,
+      apns: {
+        payload: {
+          aps: {
+            alert: {
+              title: title || "Incoming Voice Call",
+              body: message || `${senderName} is calling you`,
+            },
+            sound: 'default',
+            category: 'VOICE_CALL',
+            'content-available': 1,
+            priority: '10',
+          },
+        },
+      },
     };
-    logger.info(`Push notification sent to User  in  notification  function`);
+
+    // Log the notification attempt
+    logger.info(`Push notification sent to User: ${userId} in notification function`);
 
     // Send the notification
     const response = await admin.messaging().send(payload);
@@ -1212,6 +1228,7 @@ async function sendNotification(userId, title, message, type, receiverId, sender
     console.error("Error sending notification:", error);
   }
 }
+
 
 
 // async function sendMNotification(userId, title, message, type, receiverId, senderName, senderAvatar) {
