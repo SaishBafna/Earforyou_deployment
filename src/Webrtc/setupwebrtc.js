@@ -1221,12 +1221,6 @@ async function sendNotification(userId, title, message, type, receiverId, sender
       // Android specific
       android: {
         priority: 'high',
-        notification: {
-          channelId: 'voice_calls',
-          priority: 'max',
-          defaultSound: true,
-          defaultVibrate: true
-        }
       },
       
       // iOS specific
@@ -1241,7 +1235,6 @@ async function sendNotification(userId, title, message, type, receiverId, sender
               title: title || "Incoming Voice Call",
               body: message || `${senderName} is calling you`,
             },
-            sound: 'default',
             badge: 1,
             category: 'VOICE_CALL',
             'content-available': 1
