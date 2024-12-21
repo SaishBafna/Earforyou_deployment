@@ -1153,11 +1153,7 @@ async function sendNotification_call(userId, title, message, type, callerId, sen
             priority: '10'
           }
         },
-        headers: {
-          'apns-push-type': 'background',
-          'apns-priority': '10',
-          'apns-expiration': (Math.floor(Date.now() / 1000) + 60).toString()
-        }
+
       },
       token: user.deviceToken
     };
@@ -1175,138 +1171,59 @@ async function sendNotification_call(userId, title, message, type, callerId, sen
 
 async function sendNotification(userId, title, message, type, receiverId, senderName, senderAvatar) {
   try {
-    // Input validation
-    if (!userId) {
-      throw new Error('userId is required');
-    }
-
     // Fetch the user from the database
     const user = await User.findById(userId);
-    if (!user) {
-      throw new Error(`User not found with ID: ${userId}`);
-    }
-
-    if (!user.deviceToken) {
-      throw new Error(`No device token found for user: ${userId}`);
+    if (!user || !user.deviceToken) {
+      console.error("No device token found for user:", userId);
+      return;
     }
 
     const deviceToken = user.deviceToken;
 
-    // Prepare the data payload
-    const notificationData = {
-      screen: 'incoming_Call',
-      user_id: userId,
-      type: type,
-      agent_id: receiverId,
-      username: senderName,
-      imageurl: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png',
-      timestamp: new Date().toISOString(),
-    };
-
-    // Construct the notification payload
+    // Construct the payload for FCM
     const payload = {
-      token: deviceToken,
-      
       notification: {
-        title: title || "Incoming Voice Call",
-        body: message || `${senderName} is calling you`,
+        title: title,
+        body: message,
       },
-      
       data: {
-        ...notificationData,
-        click_action: 'FLUTTER_NOTIFICATION_CLICK', // For handling notification clicks
-        screen: 'incoming_Call',
-      },
-      
-      // Android specific
-      android: {
-        priority: 'high',
-      },
-      
-      // iOS specific
-      apns: {
-        headers: {
-          'apns-priority': '10',
-          'apns-push-type': 'alert',
-        },
+        screen: 'incoming_Call', // Target screen
+        params: JSON.stringify({
+          user_id: userId, // Include Call ID
+          type: type, // Type of call
+          agent_id: receiverId, // Receiver ID
+          username: senderName, // Sender name
+          imageurl: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png', // Sender avatar with default fallback
+        }),
+        // Add any additional parameters if needed
+      }, apns: {
         payload: {
           aps: {
             alert: {
               title: title || "Incoming Voice Call",
-              body: message || `${senderName} is calling you`,
+              body: message || `${senderName} is calling you`
             },
-            badge: 1,
+            sound: 'default',
             category: 'VOICE_CALL',
-            'content-available': 1
-          },
-          // Custom data for iOS
-          screen: 'incoming_Call',
-          data: notificationData
-        }
-      }
-    };
+            'content-available': 1,
+            priority: '10'
+          }
+        },
 
-    // Log the notification attempt
-    logger.info({
-      message: 'Sending push notification',
-      userId,
-      type,
-      deviceToken, // Log token for debugging
-      timestamp: new Date().toISOString(),
-    });
+      },
+
+
+      token: deviceToken,
+    };
+    logger.info(`Push notification sent to User  in  notification  function`);
 
     // Send the notification
     const response = await admin.messaging().send(payload);
-    
-    // Log successful delivery
-    logger.info({
-      message: 'Push notification sent successfully',
-      userId,
-      messageId: response,
-      timestamp: new Date().toISOString(),
-    });
-
-    return {
-      success: true,
-      messageId: response,
-    };
-
+    console.log("Notification sent successfully:", response);
   } catch (error) {
-    // Enhanced error logging
-    logger.error({
-      message: 'Failed to send push notification',
-      userId,
-      error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString(),
-    });
-
-    throw new Error(`Failed to send notification: ${error.message}`);
+    console.error("Error sending notification:", error);
   }
 }
-
-// Example of React Native notification channel setup:
-/*
-// In your React Native app initialization:
-import PushNotification from 'react-native-push-notification';
-
-PushNotification.createChannel(
-  {
-    channelId: 'voice_calls', // Must match the channelId in the payload
-    channelName: 'Voice Calls',
-    channelDescription: 'Notifications for incoming voice calls',
-    playSound: true,
-    soundName: 'default',
-    importance: 4, // max importance
-    vibrate: true,
-  },
-  (created) => console.log(`Channel 'voice_calls' created: ${created}`)
-);
-*/
-
-
-
-
 
 
 // async function sendMNotification(userId, title, message, type, receiverId, senderName, senderAvatar) {
