@@ -878,61 +878,61 @@ export const setupWebRTC = (io) => {
     });
 
 
-    socket.on('endCall', async ({ receiverId, callerId }) => {
-      try {
-        logger.info(`Call ended between ${callerId} and ${receiverId}`);
+    // socket.on('endCall', async ({ receiverId, callerId }) => {
+    //   try {
+    //     logger.info(`Call ended between ${callerId} and ${receiverId}`);
 
-        // Check if the call is active
-        if (activeCalls[callerId] === receiverId || activeCalls[receiverId] === callerId) {
-          // Notify the other party about the call ending
-          if (users[receiverId]) {
-            users[receiverId].forEach((socketId) => {
-              socket.to(socketId).emit('callEnded', { callerId });
-              socket.to(socketId).emit('inactiveCall', {
-                callerId,
-                receiverId,
-                socketId: socket.id, // Include the initiating socket ID
-              });
-            });
-          }
+    //     // Check if the call is active
+    //     if (activeCalls[callerId] === receiverId || activeCalls[receiverId] === callerId) {
+    //       // Notify the other party about the call ending
+    //       if (users[receiverId]) {
+    //         users[receiverId].forEach((socketId) => {
+    //           socket.to(socketId).emit('callEnded', { callerId });
+    //           socket.to(socketId).emit('inactiveCall', {
+    //             callerId,
+    //             receiverId,
+    //             socketId: socket.id, // Include the initiating socket ID
+    //           });
+    //         });
+    //       }
 
-          // Calculate call duration
-          const callerCallKey = `${callerId}_${receiverId}`;
-          const receiverCallKey = `${receiverId}_${callerId}`;
-          const startTime = callTimings[callerCallKey]?.startTime || callTimings[receiverCallKey]?.startTime;
+    //       // Calculate call duration
+    //       const callerCallKey = `${callerId}_${receiverId}`;
+    //       const receiverCallKey = `${receiverId}_${callerId}`;
+    //       const startTime = callTimings[callerCallKey]?.startTime || callTimings[receiverCallKey]?.startTime;
 
-          if (!startTime) {
-            logger.warn(`Start time not found for call between ${callerId} and ${receiverId}`);
-            return;
-          }
+    //       if (!startTime) {
+    //         logger.warn(`Start time not found for call between ${callerId} and ${receiverId}`);
+    //         return;
+    //       }
 
-          const endTime = new Date();
-          const duration = Math.round((endTime - new Date(startTime)) / 1000); // Duration in seconds
+    //       const endTime = new Date();
+    //       const duration = Math.round((endTime - new Date(startTime)) / 1000); // Duration in seconds
 
-          // Log the call with duration
-          await CallLog.create({
-            caller: new mongoose.Types.ObjectId(callerId),
-            receiver: new mongoose.Types.ObjectId(receiverId),
-            startTime: new Date(startTime),
-            endTime,
-            duration,
-            status: 'completed',
-          });
+    //       // Log the call with duration
+    //       await CallLog.create({
+    //         caller: new mongoose.Types.ObjectId(callerId),
+    //         receiver: new mongoose.Types.ObjectId(receiverId),
+    //         startTime: new Date(startTime),
+    //         endTime,
+    //         duration,
+    //         status: 'completed',
+    //       });
 
-          logger.info(`Call log saved for call between ${callerId} and ${receiverId}`);
+    //       logger.info(`Call log saved for call between ${callerId} and ${receiverId}`);
 
-          // Clean up call-related data
-          delete activeCalls[callerId];
-          delete activeCalls[receiverId];
-          delete callTimings[callerCallKey];
-          delete callTimings[receiverCallKey];
-        } else {
-          logger.warn(`No active call found between ${callerId} and ${receiverId}`);
-        }
-      } catch (error) {
-        logger.error(`Error in endCall handler: ${error.message}`);
-      }
-    });
+    //       // Clean up call-related data
+    //       delete activeCalls[callerId];
+    //       delete activeCalls[receiverId];
+    //       delete callTimings[callerCallKey];
+    //       delete callTimings[receiverCallKey];
+    //     } else {
+    //       logger.warn(`No active call found between ${callerId} and ${receiverId}`);
+    //     }
+    //   } catch (error) {
+    //     logger.error(`Error in endCall handler: ${error.message}`);
+    //   }
+    // });
 
 
     // Update disconnect handler to handle call timings cleanup
@@ -1089,6 +1089,142 @@ export const setupWebRTC = (io) => {
     //   }
     // });
 
+    socket.on('endCall', async ({ receiverId, callerId }) => {
+      try {
+        logger.info('Attempting to end call', { callerId, receiverId });
+    
+        // Debug log current state
+        logger.info('Current active calls:', activeCalls);
+        logger.info('Current call timings:', callTimings);
+    
+        // Validate IDs
+        if (!callerId || !receiverId) {
+          logger.warn('Missing caller or receiver ID');
+          return;
+        }
+    
+        // Check active calls with more detailed logging
+        const isCallerActive = activeCalls[callerId] === receiverId;
+        const isReceiverActive = activeCalls[receiverId] === callerId;
+        
+        logger.info('Call status check:', {
+          isCallerActive,
+          isReceiverActive,
+          callerActivePair: `${callerId} -> ${activeCalls[callerId]}`,
+          receiverActivePair: `${receiverId} -> ${activeCalls[receiverId]}`
+        });
+    
+        if (isCallerActive || isReceiverActive) {
+          // Handle active call ending
+          logger.info(`Ending active call between ${callerId} and ${receiverId}`);
+    
+          // Notify receiver of call end
+          if (users[receiverId]) {
+            const receiverSockets = users[receiverId];
+            logger.info(`Found ${receiverSockets.length} sockets for receiver`);
+    
+            receiverSockets.forEach((socketId) => {
+              socket.to(socketId).emit('callEnded', { 
+                callerId,
+                timestamp: Date.now() 
+              });
+              
+              socket.to(socketId).emit('inactiveCall', {
+                callerId,
+                receiverId,
+                socketId: socket.id,
+                timestamp: Date.now()
+              });
+              
+              logger.info(`Sent end call notifications to socket: ${socketId}`);
+            });
+          } else {
+            logger.warn(`No active sockets found for receiver: ${receiverId}`);
+          }
+    
+          // Handle call duration calculation
+          const callerCallKey = `${callerId}_${receiverId}`;
+          const receiverCallKey = `${receiverId}_${callerId}`;
+          
+          logger.info('Checking call timing keys:', {
+            callerCallKey,
+            receiverCallKey,
+            callerTiming: callTimings[callerCallKey],
+            receiverTiming: callTimings[receiverCallKey]
+          });
+    
+          const startTime = callTimings[callerCallKey]?.startTime || callTimings[receiverCallKey]?.startTime;
+    
+          if (!startTime) {
+            logger.warn('Call timing not found', {
+              callerCallKey,
+              receiverCallKey,
+              callTimings: JSON.stringify(callTimings)
+            });
+            return;
+          }
+    
+          const endTime = new Date();
+          const duration = Math.round((endTime - new Date(startTime)) / 1000);
+    
+          logger.info('Call duration calculated:', {
+            startTime,
+            endTime,
+            durationSeconds: duration
+          });
+    
+          // Save call log
+          try {
+            await CallLog.create({
+              caller: new mongoose.Types.ObjectId(callerId),
+              receiver: new mongoose.Types.ObjectId(receiverId),
+              startTime: new Date(startTime),
+              endTime,
+              duration,
+              status: 'completed',
+            });
+            
+            logger.info('Call log saved successfully');
+          } catch (dbError) {
+            logger.error('Failed to save call log:', dbError);
+          }
+    
+          // Cleanup with logging
+          logger.info('Cleaning up call data...');
+          delete activeCalls[callerId];
+          delete activeCalls[receiverId];
+          delete callTimings[callerCallKey];
+          delete callTimings[receiverCallKey];
+          
+          logger.info('Call cleanup completed');
+          
+        } else {
+          // No active call found - log detailed state
+          logger.warn('No active call found', {
+            requestedPair: `${callerId} <-> ${receiverId}`,
+            activeCallsState: JSON.stringify(activeCalls),
+            callTimingsState: JSON.stringify(callTimings)
+          });
+    
+          socket.emit('error', {
+            type: 'END_CALL_ERROR',
+            message: 'No active call found'
+          });
+        }
+      } catch (error) {
+        logger.error('Error in endCall handler:', {
+          error: error.message,
+          stack: error.stack,
+          callerId,
+          receiverId
+        });
+        
+        socket.emit('error', {
+          type: 'END_CALL_ERROR',
+          message: 'Failed to end call'
+        });
+      }
+    });
 
     socket.on('disconnect', async () => {
       logger.info(`Socket disconnected: ${socket.id}`);
