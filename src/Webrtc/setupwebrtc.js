@@ -579,18 +579,88 @@ export const setupWebRTC = (io) => {
     });
 
     // Handle ICE candidates offer
+    // socket.on('iceCandidate', ({ candidate, callerId, receiverId }) => {
+    //   try {
+    //     if (users[receiverId]) {
+    //       users[receiverId].forEach((socketId) => {
+    //         socket.to(socketId).emit('iceCandidate', { candidate, callerId });
+    //       });
+    //     }
+    //     else{
+    //       socket.emit('error', { 
+    //         type: 'ICE_CANDIDATE_ERROR',
+    //         message: 'Receiver not found'
+    //       });
+    //     }
+    //   } catch (error) {
+    //     logger.error(`Error in iceCandidate handler: ${error.message}`);
+    //   }
+    // });
+
+
     socket.on('iceCandidate', ({ candidate, callerId, receiverId }) => {
       try {
-        if (users[receiverId]) {
-          users[receiverId].forEach((socketId) => {
-            socket.to(socketId).emit('iceCandidate', { candidate, callerId });
+        // Log incoming ICE candidate
+        logger.info('ICE candidate received', { callerId, receiverId });
+    
+        // Check if candidate exists
+        if (!candidate) {
+          logger.warn('Invalid ICE candidate received');
+          socket.emit('error', {
+            type: 'ICE_CANDIDATE_ERROR',
+            message: 'Invalid ICE candidate'
           });
+          return;
         }
+    
+        // Check if receiver exists in users
+        if (!users[receiverId]) {
+          logger.warn(`Receiver ${receiverId} not found in users`);
+          socket.emit('error', {
+            type: 'ICE_CANDIDATE_ERROR',
+            message: 'Receiver not found'
+          });
+          return;
+        }
+    
+        // Check if receiver has any socket connections
+        if (!Array.isArray(users[receiverId]) || users[receiverId].length === 0) {
+          logger.warn(`No active sockets for receiver ${receiverId}`);
+          socket.emit('error', {
+            type: 'ICE_CANDIDATE_ERROR',
+            message: 'Receiver not connected'
+          });
+          return;
+        }
+    
+        // Forward ICE candidate to all receiver's sockets
+        users[receiverId].forEach((socketId) => {
+          socket.to(socketId).emit('iceCandidate', { 
+            candidate, 
+            callerId,
+            timestamp: Date.now() 
+          });
+          logger.info(`ICE candidate forwarded`, { 
+            from: callerId, 
+            to: receiverId, 
+            socketId 
+          });
+        });
+    
       } catch (error) {
-        logger.error(`Error in iceCandidate handler: ${error.message}`);
+        logger.error('Error in iceCandidate handler:', {
+          error: error.message,
+          callerId,
+          receiverId
+        });
+        
+        socket.emit('error', {
+          type: 'ICE_CANDIDATE_ERROR',
+          message: 'Failed to process ICE candidate'
+        });
       }
     });
-
+    
 
 
     // socket.on('acceptCall', async ({ receiverId, callerId }) => {
@@ -1213,6 +1283,7 @@ async function sendNotification(userId, title, message, type, receiverId, sender
 
 
 // async function sendMNotification(userId, title, message, type, receiverId, senderName, senderAvatar) {
+
 //   try {
 //     // Fetch the user from the database
 //     const user = await User.findById(userId);
@@ -1283,3 +1354,94 @@ async function sendNotification(userId, title, message, type, receiverId, sender
 //     throw new Error('Failed to log missed call');
 //   }
 // };
+
+
+
+const handleIceCandidate = (socket, users, logger) => {
+  socket.on('iceCandidate', async ({ candidate, callerId, receiverId }) => {
+    try {
+      // Validate inputs
+      if (!candidate || !callerId || !receiverId) {
+        logger.warn('Missing required parameters in iceCandidate event', {
+          hasCandidate: !!candidate,
+          hasCallerId: !!callerId,
+          hasReceiverId: !!receiverId
+        });
+        return;
+      }
+
+      // Validate that receiver exists
+      if (!users[receiverId]) {
+        logger.warn(`Receiver ${receiverId} not found in users list`);
+        socket.emit('error', { 
+          type: 'ICE_CANDIDATE_ERROR',
+          message: 'Receiver not found'
+        });
+        return;
+      }
+
+      // Get receiver's socket connections
+      const receiverSockets = users[receiverId];
+      if (!Array.isArray(receiverSockets) || receiverSockets.length === 0) {
+        logger.warn(`No active socket connections found for receiver ${receiverId}`);
+        socket.emit('error', {
+          type: 'ICE_CANDIDATE_ERROR',
+          message: 'Receiver not connected'
+        });
+        return;
+      }
+
+      // Track successful emissions
+      const emissionPromises = receiverSockets.map(socketId => {
+        return new Promise((resolve, reject) => {
+          try {
+            socket.to(socketId).emit('iceCandidate', {
+              candidate,
+              callerId,
+              timestamp: Date.now()
+            });
+            resolve(socketId);
+          } catch (err) {
+            reject({ socketId, error: err });
+          }
+        });
+      });
+
+      // Wait for all emissions to complete
+      const results = await Promise.allSettled(emissionPromises);
+      
+      // Log results
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      logger.info(`ICE candidate forwarding complete`, {
+        receiverId,
+        callerId,
+        totalSockets: receiverSockets.length,
+        successfulEmissions: successful,
+        failedEmissions: failed
+      });
+
+      // If no successful emissions, notify caller
+      if (successful === 0) {
+        socket.emit('error', {
+          type: 'ICE_CANDIDATE_ERROR',
+          message: 'Failed to forward ICE candidate to any receiver sockets'
+        });
+      }
+
+    } catch (error) {
+      logger.error('Error in iceCandidate handler:', {
+        error: error.message,
+        stack: error.stack,
+        callerId,
+        receiverId
+      });
+      
+      socket.emit('error', {
+        type: 'ICE_CANDIDATE_ERROR',
+        message: 'Internal server error while processing ICE candidate'
+      });
+    }
+  });
+};
