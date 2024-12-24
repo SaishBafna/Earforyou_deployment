@@ -19,80 +19,8 @@ import { title } from "process";
 import EarningWallet from "../models/Wallet/EarningWallet.js";
 import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
-import NodeCache from 'node-cache';
+
 import { Chat } from "../models/chat.modal.js";
-const myCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 })
-const cache = new NodeCache({ stdTTL: 600, checkperiod: 120 }); // Cache TTL: 10 minutes
-
-export const getCachedUsers = (req, res, next) => {
-  try {
-    const { page = 1, limit = 50 } = req.query; // Pagination parameters
-    const cacheKey = `users:${req.user.id}:page:${page}:limit:${limit}`;
-    const cachedData = myCache.get(cacheKey);
-
-    if (cachedData) {
-      return res.status(200).json({
-        success: true,
-        message: "Users fetched successfully from cache",
-        ...cachedData, // Spread the cached response
-      });
-    }
-
-    // No cached data: Override res.json to cache the DB response
-    const originalJson = res.json.bind(res);
-    let hasCached = false; // Ensure data is cached only once
-
-    res.json = (data) => {
-      try {
-        if (!hasCached) {
-          const { users: userList, totalUsers } = data;
-
-          // Prepare and cache data with pagination
-          const cachedResponse = {
-            users: Array.isArray(userList) ? removeDuplicates(userList) : userList,
-            pagination: {
-              totalUsers,
-              currentPage: page,
-              totalPages: Math.ceil(totalUsers / limit),
-              limit,
-            },
-          };
-
-          myCache.set(cacheKey, cachedResponse, 3600); // Cache for 1 hour
-          hasCached = true; // Mark as cached
-        }
-      } catch (cacheError) {
-        console.error("Error setting cache:", cacheError);
-      }
-      originalJson(data); // Send the original response to the client
-    };
-
-    next(); // Proceed to the next middleware/controller
-  } catch (error) {
-    console.error("Error in getCachedUsers middleware:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error while handling cache.",
-    });
-  }
-};
-
-const removeDuplicates = (data, uniqueKey = "_id") => {
-  if (!Array.isArray(data)) {
-
-    return data; // Return as is if not an array
-  }
-
-  const seen = new Set();
-  return data.filter((item) => {
-    const keyValue = item[uniqueKey];
-    if (seen.has(keyValue)) {
-      return false;
-    }
-    seen.add(keyValue);
-    return true;
-  });
-};
 
 
 
@@ -1489,16 +1417,6 @@ export const getAllUsers1 = async (req, res) => {
       return res.status(404).json({ message: "No users found" });
     }
 
-    // // Cache the response
-    // myCache.set(`users:${req.user.id}`, {
-    //   users: userList,
-    //   pagination: {
-    //     totalUsers,
-    //     currentPage: page,
-    //     totalPages: Math.ceil(totalUsers / limit),
-    //     limit,
-    //   },
-    // }, 3600); // Cache for 1 hour
 
     // Send response
     res.status(200).json({
@@ -1804,14 +1722,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20; // Results per page
     const skip = (page - 1) * limit;
 
-    // Step 1: Check if cached data exists for this user and page
-    const cacheKey = `chats_${userId}_page_${page}_limit_${limit}`;
-    const cachedChats = cache.get(cacheKey);
-    if (cachedChats) {
-      return res.json(cachedChats); // Return cached response
-    }
-
-    // Step 2: Fetch chats where the user is a participant with pagination
+    // Step 1: Fetch chats where the user is a participant with pagination
     const chats = await Chat.find({ participants: userId })
       .populate({
         path: 'participants',
@@ -1823,12 +1734,10 @@ export const getChatsWithLatestMessages = async (req, res) => {
       .limit(limit);
 
     if (!chats.length) {
-      const emptyResponse = { chats: [], page, limit };
-      cache.set(cacheKey, emptyResponse); // Cache empty response
-      return res.json(emptyResponse);
+      return res.json({ chats: [], page, limit });
     }
 
-    // Step 3: Use a Map to filter unique users
+    // Step 2: Use a Map to filter unique users
     const uniqueUsersMap = new Map();
 
     for (const chat of chats) {
@@ -1846,45 +1755,29 @@ export const getChatsWithLatestMessages = async (req, res) => {
       });
     }
 
-    // Step 4: Check if ratings are already cached for participants
-    const cachedRatings = {};
-    const uncachedIds = [];
-    uniqueUsersMap.forEach((value, key) => {
-      const cachedRating = cache.get(`rating_${key}`);
-      if (cachedRating) {
-        cachedRatings[key] = cachedRating;
-      } else {
-        uncachedIds.push(key);
+    // Step 3: Fetch reviews for unique participants
+    const participantIds = Array.from(uniqueUsersMap.keys());
+    const reviews = await Review.find({ user: { $in: participantIds } });
+
+    // Step 4: Calculate average ratings for participants
+    const userRatingsMap = {};
+    reviews.forEach((review) => {
+      const userId = review.user.toString();
+      if (!userRatingsMap[userId]) {
+        userRatingsMap[userId] = { sum: 0, count: 0 };
       }
+      userRatingsMap[userId].sum += review.rating || 0;
+      userRatingsMap[userId].count += 1;
     });
 
-    // Step 5: Fetch reviews for uncached IDs and calculate ratings
-    const userRatingsMap = { ...cachedRatings };
-
-    if (uncachedIds.length > 0) {
-      const reviews = await Review.find({ user: { $in: uncachedIds } });
-
-      reviews.forEach((review) => {
-        const userId = review.user.toString();
-        if (!userRatingsMap[userId]) {
-          userRatingsMap[userId] = { sum: 0, count: 0 };
-        }
-        userRatingsMap[userId].sum += review.rating || 0;
-        userRatingsMap[userId].count += 1;
-      });
-
-      // Cache calculated ratings for uncached IDs
-      uncachedIds.forEach((id) => {
-        const avgRating =
-          (userRatingsMap[id]?.sum || 0) / (userRatingsMap[id]?.count || 1);
-        cache.set(`rating_${id}`, avgRating, 600); // Cache for 10 minutes
-        userRatingsMap[id] = avgRating;
-      });
+    const avgRatings = {};
+    for (const [userId, ratingData] of Object.entries(userRatingsMap)) {
+      avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
     }
 
-    // Step 6: Format unique user chat data with participants in array format
+    // Step 5: Format unique user chat data with participants in array format
     const formattedChats = Array.from(uniqueUsersMap.values()).map((item) => {
-      const avgRating = userRatingsMap[item.user._id.toString()] || 0;
+      const avgRating = avgRatings[item.user._id.toString()] || 0;
       const { password, refreshToken, ...userDetails } = item.user.toObject();
 
       return {
@@ -1895,16 +1788,13 @@ export const getChatsWithLatestMessages = async (req, res) => {
       };
     });
 
-    // Step 7: Cache the final response
-    const response = { chats: formattedChats, page, limit };
-    cache.set(cacheKey, response, 600); // Cache for 10 minutes
-
-    res.json(response);
+    res.json({ chats: formattedChats, page, limit });
   } catch (error) {
     console.error('Error fetching chats with latest messages:', error);
     res.status(500).json({ error: 'Failed to fetch chats' });
   }
 };
+
 
 
 

@@ -21,7 +21,7 @@ import {
     addBankDetails,
     getBankDetails,
     getAllUsers1,
-    getCachedUsers,
+    
     UserCategoryData
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
@@ -65,7 +65,7 @@ router.post('/Reporte_User', Reporte_User);
 router.get('/user/:userId', getUserById);
 
 // router.get('/users', protect, getAllUsers);
-router.get('/users', protect, getCachedUsers, getAllUsers1);
+router.get('/users', protect, getAllUsers1);
 
 router.get('/listener', protect, listener);
 
@@ -89,6 +89,7 @@ router.post('/initiate/registration', initiateRegistration);
 router.post('/login/verify', verifyLoginOtp);
 
 router.get('/userStatics', protect, userStatics);
+
 router.get('/getUsersByLatestActivity', protect, getChatsWithLatestMessages);
 
 export default router;
