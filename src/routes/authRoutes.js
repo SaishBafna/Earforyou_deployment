@@ -21,7 +21,7 @@ import {
     addBankDetails,
     getBankDetails,
     getAllUsers1,
-    
+    getAllUsers2,
     UserCategoryData
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
