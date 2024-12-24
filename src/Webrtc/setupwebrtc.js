@@ -791,7 +791,7 @@ export const setupWebRTC = (io) => {
 
         // Send push notification (only once)
         if (receiver.deviceToken && receiver.notificationSettings?.missedCalls !== false) {
-          await sendNotification(
+          await sendMNotification(
             receiverId,
             'Missed Call',
             `You missed a call from ${callerName}`,
@@ -1394,6 +1394,48 @@ async function sendNotification(userId, title, message, type, receiverId, sender
       },
       data: {
         screen: 'incoming_Call', // Target screen
+        params: JSON.stringify({
+          user_id: userId, // Include Call ID
+          type: type, // Type of call
+          agent_id: receiverId, // Receiver ID
+          username: senderName, // Sender name
+          imageurl: senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png', // Sender avatar with default fallback
+        }),
+        // Add any additional parameters if needed
+      },
+
+
+      token: deviceToken,
+    };
+    logger.info(`Push notification sent to User  in  notification  function`);
+
+    // Send the notification
+    const response = await admin.messaging().send(payload);
+    console.log("Notification sent successfully:", response);
+  } catch (error) {
+    console.error("Error sending notification:", error);
+  }
+}
+
+async function sendMNotification(userId, title, message, type, receiverId, senderName, senderAvatar) {
+  try {
+    // Fetch the user from the database
+    const user = await User.findById(userId);
+    if (!user || !user.deviceToken) {
+      console.error("No device token found for user:", userId);
+      return;
+    }
+
+    const deviceToken = user.deviceToken;
+
+    // Construct the payload for FCM
+    const payload = {
+      notification: {
+        title: title,
+        body: message,
+      },
+      data: {
+        screen: 'Recent_Calls', // Target screen
         params: JSON.stringify({
           user_id: userId, // Include Call ID
           type: type, // Type of call
