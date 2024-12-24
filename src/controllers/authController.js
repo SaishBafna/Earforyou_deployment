@@ -1400,19 +1400,17 @@ export const getAllUsers2 = async (req, res) => {
         // Project only needed fields
         {
           $project: {
-            name: 1,
+            username: 1,
             email: 1,
             gender: 1,
             status: 1,
             UserStatus: 1,
-            profilePicture: 1,
+            avatar: 1,
             avgRating: 1,
-            reviewCount: 1,
-            // Add other required fields here
-            sortScore: 0,
-            ratings: 0
+            reviewCount: 1
           }
         }
+        
       ]),
       
       // Separate count query for better performance
