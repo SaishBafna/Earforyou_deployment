@@ -149,6 +149,7 @@ export const logoutUser = async (req, res) => {
       {
         $set: {
           refreshToken: '',
+          deviceToken:''
         },
       },
       { new: true }

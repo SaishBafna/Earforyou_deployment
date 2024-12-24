@@ -38,11 +38,16 @@ const walletSchema = new mongoose.Schema({
       rechargeMethod: {
         type: String,
         required: true,
-        enum: ['PhonePe', 'CALL','admin','INTERNAL'], // Add more as needed
+        enum: ['PhonePe', 'CALL', 'admin', 'INTERNAL'], // Add more as needed
       },
       rechargeDate: {
         type: Date,
         default: Date.now,
+      },
+      
+     
+      rechargeDate: {
+        type: Date
       },
       transactionId: {
         type: String, // Unique transaction ID for tracking

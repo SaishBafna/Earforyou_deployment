@@ -193,10 +193,6 @@ import mongoose from 'mongoose'; // If using ES modules
 // };
 
 
-
-
-
-
 export const initiatePayment = async (req, res) => {
   try {
     const { userId, planId } = req.body;
@@ -337,7 +333,9 @@ export const validatePayment = async (req, res) => {
         responseCode: response.data.code,
         rechargeMethod: "PhonePe",
         rechargeDate: new Date(),
-        transactionId: merchantTransactionId
+        transactionId: merchantTransactionId,
+        // ExpiryDate: new Date(Date.now() + validity * 24 * 60 * 60 * 1000),
+        // validityDays:validityDays,
       };
 
       const newBalance = wallet.balance + talkTime;
