@@ -71,7 +71,7 @@ const sendSingleNotification = async (deviceToken, title, body) => {
 // };
 
 
-export const sendBroadcastNotification = async (req, res) => {
+export const sendBulkNotification = async (req, res) => {
   const { title, body } = req.body;
 
   try {
