@@ -71,9 +71,11 @@ const sendSingleNotification = async (deviceToken, title, body) => {
 // };
 
 
+
+
 export const sendBulkNotification = async (req, res) => {
   const { title, body } = req.body;
-
+  
   try {
     // Input validation
     if (!title || !body) {
@@ -83,84 +85,114 @@ export const sendBulkNotification = async (req, res) => {
       });
     }
 
-    // Fetch only valid device tokens
+    // Get all device tokens
     const users = await User.find(
       { deviceToken: { $exists: true, $ne: null } },
-      { deviceToken: 1, _id: 1, email: 1 }
+      { deviceToken: 1 }
     ).lean();
 
     if (!users || users.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'No users with device tokens found'
+        message: 'No device tokens found'
       });
     }
 
-    // Extract tokens
-    const tokens = users.map(user => user.deviceToken);
+    // Extract tokens and create batches (FCM limits to 500 tokens per request)
+    const registrationTokens = users.map(user => user.deviceToken);
+    const BATCH_SIZE = 500;
+    const batches = [];
+    
+    for (let i = 0; i < registrationTokens.length; i += BATCH_SIZE) {
+      batches.push(registrationTokens.slice(i, i + BATCH_SIZE));
+    }
 
-    // Create the multicast message
-    const message = {
-      notification: {
-        title,
-        body
-      },
+    const results = await Promise.all(
+      batches.map(async (tokenBatch) => {
+        const message = {
+          data: {
+            title,
+            body,
+          },
+          tokens: tokenBatch
+        };
 
+        try {
+          return await admin.messaging().sendEachForMulticast(message);
+        } catch (error) {
+          console.error('Batch error:', error);
+          return {
+            successCount: 0,
+            failureCount: tokenBatch.length,
+            responses: tokenBatch.map(() => ({ success: false, error }))
+          };
+        }
+      })
+    );
 
-      tokens: tokens.slice(0, 500) // FCM limits to 500 tokens per request
+    // Aggregate results
+    const totalResults = {
+      successCount: 0,
+      failureCount: 0,
+      responses: []
     };
 
-    // Send broadcast
-    const response = await admin.messaging().sendMulticast(message);
+    results.forEach(result => {
+      totalResults.successCount += result.successCount;
+      totalResults.failureCount += result.failureCount;
+      totalResults.responses.push(...result.responses);
+    });
 
-    // Handle failed tokens
-    if (response.failureCount > 0) {
+    // Handle failures and cleanup invalid tokens
+    if (totalResults.failureCount > 0) {
       const failedTokens = [];
-      response.responses.forEach((resp, idx) => {
+      totalResults.responses.forEach((resp, idx) => {
         if (!resp.success) {
           failedTokens.push({
-            token: tokens[idx],
-            error: resp.error.message
+            token: registrationTokens[idx],
+            error: resp.error?.message || 'Unknown error'
           });
         }
       });
 
-      // Remove invalid tokens
+      // Clean up invalid tokens
       const invalidTokens = failedTokens
-        .filter(f => f.error.includes('registration-token-not-registered'))
-        .map(f => f.token);
+        .filter(({ error }) => 
+          error.includes('registration-token-not-registered') ||
+          error.includes('invalid-registration-token')
+        )
+        .map(({ token }) => token);
 
       if (invalidTokens.length > 0) {
         await User.updateMany(
           { deviceToken: { $in: invalidTokens } },
-          { $unset: { deviceToken: "" } }
+          { $unset: { deviceToken: 1 } }
         );
       }
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Broadcast notification sent',
+      message: 'Notifications sent',
       summary: {
-        total: response.responses.length,
-        successful: response.successCount,
-        failed: response.failureCount,
-        failedDetails: response.failureCount > 0 ? {
-          count: response.failureCount,
-          invalidTokensRemoved: invalidTokens?.length || 0
-        } : null
+        total: registrationTokens.length,
+        successful: totalResults.successCount,
+        failed: totalResults.failureCount,
+        invalidTokensRemoved: invalidTokens?.length || 0
       }
     });
 
   } catch (error) {
-    console.error('Error sending broadcast notification:', error);
+    console.error('Error sending multicast:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to send broadcast notification',
+      message: 'Failed to send notifications',
       error: error.message
     });
   }
 };
+
+
 
 
 // Original single user notification function (kept for backward compatibility)
