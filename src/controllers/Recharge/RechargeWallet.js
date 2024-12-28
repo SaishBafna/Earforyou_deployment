@@ -712,8 +712,11 @@ export const transferEarningsToWallet = async (req, res) => {
       createdAt: new Date()
     });
 
-    wallet.balance+=amount
-    
+    const newBalance = wallet.balance + talkTime;
+    // const days=wallet.isvalidityDays+validityDays;
+    console.log("newBalance",newBalance)
+    wallet.balance = newBalance;
+
     // Add transfer to main wallet recharges
     wallet.recharges.push({
       amount,
