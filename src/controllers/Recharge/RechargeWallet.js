@@ -693,6 +693,9 @@ export const transferEarningsToWallet = async (req, res) => {
 
     // Find or create main wallet
     let wallet = await Wallet.findOne({ userId }).session(session);
+
+     
+
     if (!wallet) {
       await session.abortTransaction();
       session.endSession();
@@ -709,6 +712,8 @@ export const transferEarningsToWallet = async (req, res) => {
       createdAt: new Date()
     });
 
+    wallet.balance+=amount
+    
     // Add transfer to main wallet recharges
     wallet.recharges.push({
       amount,
