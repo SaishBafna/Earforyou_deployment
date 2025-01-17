@@ -902,21 +902,21 @@ export const listener = async (req, res) => {
     const pageNumber = parseInt(page, 10);
     const limitNumber = parseInt(limit, 10);
 
-    // Base query with hardcoded status filter for 'Online' users only
+    // Base query to exclude the current user and inactive/blocked users
     const query = {
       userType: 'RECEIVER',
       _id: { $ne: userId },
       UserStatus: { $nin: ['inActive', 'Blocked', 'InActive'] },
-      status: 'Online'  // Filter only users with status 'Online'
     };
 
     const users = await User.aggregate([
-      { $match: query },  // Always filters for 'Online' users
+      { $match: query },  // Fetch all eligible users
       {
         $addFields: {
-          isOnline: 1  // Since only 'Online' users are fetched, set isOnline to 1
+          isOnline: { $cond: [{ $eq: ['$status', 'Online'] }, 1, 0] }  // Mark online users
         }
       },
+      { $sort: { isOnline: -1, createdAt: -1 } },  // Sort online users on top, then by creation date
       { $skip: (pageNumber - 1) * limitNumber },
       { $limit: limitNumber }
     ]);
