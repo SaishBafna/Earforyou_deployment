@@ -149,7 +149,7 @@ export const logoutUser = async (req, res) => {
       {
         $set: {
           refreshToken: '',
-          deviceToken:''
+          deviceToken: ''
         },
       },
       { new: true }
@@ -686,7 +686,7 @@ export const updateOrCreateUserCategory = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { username, dateOfBirth, gender, Language, phone, userCategory, avatarUrl } = req.body;
+    const { username, dateOfBirth, gender, Language, phone, userCategory, avatarUrl, decs } = req.body;
 
     // Input validation
     const validationErrors = [];
@@ -732,6 +732,19 @@ export const updateProfile = async (req, res) => {
       validationErrors.push('Language must be a string');
     }
 
+    if (decs !== undefined) {
+      if (typeof decs !== 'string') {
+        validationErrors.push('Description must be a string');
+      } else {
+        // Split the string into words and check the length
+        const wordCount = decs.trim().split(/\s+/).length;
+        if (wordCount > 200) {
+          validationErrors.push('Description must not exceed 100 words');
+        }
+      }
+    }
+    
+
     if (userCategory !== undefined && typeof userCategory !== 'string') {
       validationErrors.push('User category must be a string');
     }
@@ -761,6 +774,7 @@ export const updateProfile = async (req, res) => {
       ...(Language !== undefined && { Language }),
       ...(phone !== undefined && { phone: phone.trim() }),
       ...(userCategory !== undefined && { userCategory }),
+      ...(decs !== undefined && { decs }),
       ...(avatarUrl !== undefined && { avatarUrl }),
       status: 'Online',
       UserStatus: 'Active',
@@ -887,6 +901,7 @@ export const updateStatus = async (req, res) => {
 
 
 //--------------------------Get  User Listener-----------------------------------------
+
 export const listener = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
@@ -1414,9 +1429,9 @@ export const getAllUsers2 = async (req, res) => {
             reviewCount: 1
           }
         }
-        
+
       ]),
-      
+
       // Separate count query for better performance
       User.countDocuments({
         _id: { $ne: loggedInUserId },

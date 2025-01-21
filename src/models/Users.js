@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { type } from "os";
 
 const bankDetailsSchema = new mongoose.Schema({
   bankName: {
@@ -81,6 +82,10 @@ const userSchema = new mongoose.Schema(
       enum: ['CALLER', 'RECEIVER'], // Define the enum values
       default: 'CALLER', // Set default value
       index:true,
+    },
+    decs:{
+      type:String,
+      require:true
     },
     Bio: {
       type: [String],
