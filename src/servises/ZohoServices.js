@@ -4,6 +4,31 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+
+
+export const generateZohoTokens = async () => {
+    try {
+        const tokenUrl = `https://accounts.zoho.in/oauth/v2/token` +
+            `?client_id=${process.env.ZOHO_CLIENT_ID}` +
+            `&client_secret=${process.env.ZOHO_CLIENT_SECRET}` +
+            `&grant_type=authorization_code` +
+            `&code=${process.env.ZOHO_GRANT_CODE}`;
+
+        const response = await axios.post(tokenUrl);
+        const { access_token, refresh_token } = response.data;
+
+        await Promise.all([
+            ZohoToken.create({ reason: 'access_token', token: access_token }),
+            ZohoToken.create({ reason: 'refresh_token', token: refresh_token })
+        ]);
+
+        return { access_token, refresh_token };
+    } catch (error) {
+        console.error('Token generation failed:', error);
+        throw error;
+    }
+};
+
 // Get the latest Zoho access token from the DB
 export const getZohoAccessToken = async () => {
     try {
