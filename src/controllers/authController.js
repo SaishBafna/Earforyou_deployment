@@ -409,7 +409,11 @@ export const initiateRegistration = async (req, res) => {
       console.log("Wallet created with initial balance for user:", newUser._id, wallet);
 
       await session.commitTransaction();
-      
+      try {
+        await addUserToMailingList({ username: newUser.username, email: newUser.email });
+      } catch (error) {
+        console.error('Failed to add to mailing list:', error);
+      }
       res.status(200).json({
         message: "OTP sent to email for registration",
         userId: newUser._id,
