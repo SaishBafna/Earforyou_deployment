@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -30,13 +30,17 @@ jobs:
 
       - name: Push Docker images to Google Artifact Registry
         run: |
-        
           docker push asia-south1-docker.pkg.dev/leafy-flash-441005-g2/earforyou/earforyouserver:v1
+
+      - name: Installing kubectl authentication plugin
+        run: |
+          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+          curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+          sudo apt update
+          sudo apt-get install google-cloud-sdk-gke-gcloud-auth-plugin    
 
       - name: Deploy to GCP VM
         run: |
-          gcloud compute ssh --zone "us-central1-f" "earforyou" --project "leafy-flash-441005-g2" --command "
-            cd /home/adityasjoshi12/deployment
-            docker-compose pull
-            docker-compose up -d
-          "
+          gcloud container clusters get-credentials cluster-1 --zone us-central1-c --project leafy-flash-441005-g2
+          pwd
+          kubectl apply -f ./k8s
