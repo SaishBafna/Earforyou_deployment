@@ -1,5 +1,5 @@
 import axios from 'axios';
-import ZohoToken from '../models/TokenStore';
+import ZohoToken from '../models/TokenStore.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
