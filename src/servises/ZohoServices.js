@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Function to generate authorization URL for Zoho OAuth
 const getAuthorizationCode = () => {
     const authUrl = new URL('https://accounts.zoho.in/oauth/v2/auth');
     const params = {
@@ -22,6 +23,7 @@ const getAuthorizationCode = () => {
     return authUrl.toString();
 };
 
+// Function to handle Zoho OAuth callback and store tokens
 const handleCallback = async (code) => {
     try {
         const params = new URLSearchParams({
@@ -34,7 +36,7 @@ const handleCallback = async (code) => {
 
         const response = await axios.post(
             'https://accounts.zoho.in/oauth/v2/token',
-            params,
+            params.toString(),
             {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -46,13 +48,17 @@ const handleCallback = async (code) => {
             throw new Error(`Zoho API error: ${response.data.error}`);
         }
 
+        // Store tokens securely in DB
         await ZohoToken.create({
             reason: 'access_token',
             token: response.data.access_token
         });
-        
-        process.env.ZOHO_REFRESH_TOKEN = response.data.refresh_token;
-        
+
+        if (response.data.refresh_token) {
+            process.env.ZOHO_REFRESH_TOKEN = response.data.refresh_token;
+        }
+
+        console.log('OAuth response:', response.data);
         return response.data;
     } catch (error) {
         console.error('Callback error:', error);
@@ -60,8 +66,13 @@ const handleCallback = async (code) => {
     }
 };
 
+// Function to obtain new access token using refresh token
 const getNewToken = async () => {
     try {
+        if (!process.env.ZOHO_REFRESH_TOKEN) {
+            throw new Error('Missing Zoho refresh token');
+        }
+
         const params = new URLSearchParams({
             client_id: process.env.ZOHO_CLIENT_ID,
             client_secret: process.env.ZOHO_CLIENT_SECRET,
@@ -72,7 +83,7 @@ const getNewToken = async () => {
 
         const response = await axios.post(
             'https://accounts.zoho.in/oauth/v2/token',
-            params,
+            params.toString(),
             {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -91,19 +102,15 @@ const getNewToken = async () => {
 
         return response.data.access_token;
     } catch (error) {
-        console.error('Token error:', {
-            message: error instanceof Error ? error.message : 'Unknown error',
-            response: axios.isAxiosError(error) ? error.response?.data : undefined
-        });
+        console.error('Error getting new token:', error.message);
         throw error;
     }
 };
 
+// Function to check if access token exists or generate a new one
 const generateTokens = async () => {
     try {
-        const existingToken = await ZohoToken.findOne({ reason: 'access_token' })
-            .sort({ createdAt: -1 });
-            
+        const existingToken = await ZohoToken.findOne({ reason: 'access_token' }).sort({ createdAt: -1 });
         if (existingToken) {
             return { access_token: existingToken.token };
         }
@@ -116,10 +123,10 @@ const generateTokens = async () => {
     }
 };
 
+// Function to retrieve the latest access token from the database
 const getAccessToken = async () => {
     try {
-        const token = await ZohoToken.findOne({ reason: 'access_token' })
-            .sort({ createdAt: -1 });
+        const token = await ZohoToken.findOne({ reason: 'access_token' }).sort({ createdAt: -1 });
         return token ? token.token : null;
     } catch (error) {
         console.error('Error retrieving token:', error);
@@ -127,8 +134,13 @@ const getAccessToken = async () => {
     }
 };
 
+// Function to refresh the Zoho access token using refresh token
 const refreshAccessToken = async () => {
     try {
+        if (!process.env.ZOHO_REFRESH_TOKEN) {
+            throw new Error('Missing Zoho refresh token');
+        }
+
         const params = new URLSearchParams({
             client_id: process.env.ZOHO_CLIENT_ID,
             client_secret: process.env.ZOHO_CLIENT_SECRET,
@@ -139,7 +151,7 @@ const refreshAccessToken = async () => {
 
         const response = await axios.post(
             'https://accounts.zoho.in/oauth/v2/token',
-            params,
+            params.toString(),
             {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -158,14 +170,12 @@ const refreshAccessToken = async () => {
 
         return { access_token: newToken.token };
     } catch (error) {
-        console.error('Token refresh failed:', {
-            message: error instanceof Error ? error.message : 'Unknown error',
-            response: axios.isAxiosError(error) ? error.response?.data : undefined
-        });
+        console.error('Token refresh failed:', error.message);
         throw error;
     }
 };
 
+// Function to add an email to Zoho mailing list
 const addToMailingList = async (name, email) => {
     try {
         let accessToken = await getAccessToken();
@@ -193,6 +203,7 @@ const addToMailingList = async (name, email) => {
             return response.data;
         } catch (error) {
             if (error.response?.data?.message === 'Unauthorized request.') {
+                console.warn('Token expired, refreshing...');
                 const tokens = await refreshAccessToken();
                 accessToken = tokens.access_token;
 
@@ -216,7 +227,7 @@ export {
     generateTokens, 
     getAccessToken, 
     refreshAccessToken, 
-    addToMailingList,
-    getAuthorizationCode,
+    addToMailingList, 
+    getAuthorizationCode, 
     handleCallback 
 };
