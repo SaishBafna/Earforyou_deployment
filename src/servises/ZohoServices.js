@@ -6,16 +6,29 @@ dotenv.config();
 
 const getNewToken = async () => {
     try {
-        const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?client_id=${process.env.ZOHO_CLIENT_ID}&client_secret=${process.env.ZOHO_CLIENT_SECRET}&grant_type=client_credentials&scope=ZohoMail.partner.organization.UPDATE`;
-        
-        console.log("tokenUrl",tokenUrl);
+        const params = new URLSearchParams({
+            client_id: process.env.ZOHO_CLIENT_ID,
+            client_secret: process.env.ZOHO_CLIENT_SECRET,
+            grant_type: 'client_credentials',
+            scope: 'ZohoMail.partner.organization.UPDATE'
+        });
 
-        const response = await axios.post(tokenUrl);
+        const response = await axios.post(
+            'https://accounts.zoho.in/oauth/v2/token',
+            params.toString(),
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
 
-        console.log("response",response);
-        
+        if (response.data.error) {
+            throw new Error(`Zoho API error: ${response.data.error}`);
+        }
+
         if (!response.data.access_token) {
-            throw new Error('No access token received from Zoho');
+            throw new Error('No access token in response');
         }
 
         await ZohoToken.create({
@@ -25,22 +38,24 @@ const getNewToken = async () => {
 
         return response.data.access_token;
     } catch (error) {
-        console.error('Error getting new token:', error);
+        console.error('Token error:', {
+            message: error.message,
+            response: error.response?.data
+        });
         throw error;
     }
 };
 
 const generateTokens = async () => {
     try {
-        const existingToken = await ZohoToken.findOne({ reason: 'access_token' });
+        const existingToken = await ZohoToken.findOne({ reason: 'access_token' })
+            .sort({ createdAt: -1 });
+            
         if (existingToken) {
             return { access_token: existingToken.token };
         }
 
         const access_token = await getNewToken();
-        if (!access_token) {
-            throw new Error('Failed to generate access token');
-        }
         return { access_token };
     } catch (error) {
         console.error('Token generation failed:', error);
@@ -62,9 +77,6 @@ const getAccessToken = async () => {
 const refreshAccessToken = async () => {
     try {
         const access_token = await getNewToken();
-        if (!access_token) {
-            throw new Error('Failed to refresh access token');
-        }
         return { access_token };
     } catch (error) {
         console.error('Token refresh failed:', error);
@@ -81,10 +93,6 @@ const addToMailingList = async (name, email) => {
             accessToken = tokens.access_token;
         }
 
-        if (!accessToken) {
-            throw new Error('Unable to obtain access token');
-        }
-
         const contactInfo = encodeURIComponent(
             JSON.stringify({
                 'Name': name,
@@ -97,8 +105,9 @@ const addToMailingList = async (name, email) => {
         try {
             const response = await axios.get(url, {
                 headers: {
-                    Authorization: `Zoho-oauthtoken ${accessToken}`,
-                },
+                    'Authorization': `Zoho-oauthtoken ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
             });
             return response.data;
         } catch (error) {
@@ -106,14 +115,11 @@ const addToMailingList = async (name, email) => {
                 const tokens = await refreshAccessToken();
                 accessToken = tokens.access_token;
 
-                if (!accessToken) {
-                    throw new Error('Failed to refresh token');
-                }
-
                 const retryResponse = await axios.get(url, {
                     headers: {
-                        Authorization: `Zoho-oauthtoken ${accessToken}`,
-                    },
+                        'Authorization': `Zoho-oauthtoken ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
                 });
                 return retryResponse.data;
             }
