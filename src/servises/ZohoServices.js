@@ -225,7 +225,7 @@ const addToMailingList = async (email) => {
                     'Content-Type': 'application/json'
                 }
             });
-            console.log("Response sending mail",response.data.status)
+            console.log("Response sending mail",response.data);
 
             if (response.data.status !== 'success') {
                 throw new Error('Failed to add email to mailing list');
