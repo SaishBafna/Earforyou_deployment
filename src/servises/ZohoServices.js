@@ -176,10 +176,10 @@ const refreshAccessToken = async () => {
 };
 
 // Function to add an email to Zoho mailing list
+// Token validation function
 const validateToken = async (accessToken) => {
-    debugLog('Validating token', { accessToken: accessToken?.substring(0, 10) + '...' });
-    
     try {
+        // Test endpoint that requires authentication
         const testUrl = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribedetails';
         const response = await axios.get(testUrl, {
             params: {
@@ -189,39 +189,27 @@ const validateToken = async (accessToken) => {
                 'Authorization': `Zoho-oauthtoken ${accessToken}`
             }
         });
-        
-        // Parse XML response
-        const xmlData = response.data;
-        if (xmlData.includes('<status>error</status>')) {
-            debugLog('Token validation failed', { response: xmlData });
+        return response.status === 200;
+    } catch (error) {
+        if (error.response?.data?.message === 'Unauthorized request.') {
             return false;
         }
-        
-        return true;
-    } catch (error) {
-        debugLog('Validation error', {
-            message: error.message,
-            response: error.response?.data
-        });
-        return false;
+        throw error;
     }
 };
 
+// Modified addToMailingList with explicit token validation
 const addToMailingList = async (email) => {
     try {
         let accessToken = await getAccessToken();
-        debugLog('Initial token check', { token: accessToken?.substring(0, 10) + '...' });
-
+        console.log("accessToken",accessToken);
+        // Validate token before use
         if (!accessToken || !(await validateToken(accessToken))) {
-            debugLog('Getting new token');
             const tokens = await generateTokens();
             accessToken = tokens.access_token;
-            
-            if (!accessToken) {
-                throw new Error('Failed to generate access token');
-            }
         }
 
+        // Rest of your existing code...
         const data = {
             listkey: process.env.ZOHO_LIST_KEY,
             emailids: email,
@@ -229,34 +217,33 @@ const addToMailingList = async (email) => {
         };
 
         const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
-        const response = await axios.post(url, data, {
-            headers: {
-                'Authorization': `Zoho-oauthtoken ${accessToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
+        
+        try {
+            const response = await axios.post(url, data, {
+                headers: {
+                    'Authorization': `Zoho-oauthtoken ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            console.log("Response sending mail",response.data.status)
 
-        // Check XML response
-        if (response.data.includes('<status>error</status>')) {
-            const errorMessage = response.data.match(/<message>(.*?)<\/message>/)?.[1] || 'Unknown error';
-            
-            if (errorMessage.includes('Unauthorized')) {
-                debugLog('Token expired, refreshing');
+            if (response.data.status !== 'success') {
+                throw new Error('Failed to add email to mailing list');
+            }
+
+            // Verification logic
+            return await verifySubscription(email, accessToken);
+
+        } catch (error) {
+            console.log("Response sending mail",error.response.data.message)
+            if (error.response?.data?.message === 'Unauthorized request.') {
                 const tokens = await refreshAccessToken();
                 return await retrySubscription(email, tokens.access_token);
             }
-            
-            throw new Error(errorMessage);
+            throw error;
         }
-
-        return await verifySubscription(email, accessToken);
-
     } catch (error) {
-        debugLog('Operation failed', {
-            message: error.message,
-            response: error.response?.data
-        });
-        
+        console.error('Mailing list operation failed:', error);
         return {
             success: false,
             message: error.message,
@@ -265,10 +252,10 @@ const addToMailingList = async (email) => {
     }
 };
 
-// Updated verification to handle XML responses
+// Helper function for subscription verification
 const verifySubscription = async (email, accessToken) => {
     const verifyUrl = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribedetails';
-    const response = await axios.get(verifyUrl, {
+    const verifyResponse = await axios.get(verifyUrl, {
         params: {
             listkey: process.env.ZOHO_LIST_KEY,
             email: email
@@ -278,15 +265,42 @@ const verifySubscription = async (email, accessToken) => {
         }
     });
 
-    if (response.data.includes('<status>success</status>')) {
+    if (verifyResponse.data.list_subscribe_details?.subscribed === true) {
         return {
             success: true,
-            message: 'Email successfully added and verified'
+            message: 'Email successfully added and verified',
+            details: verifyResponse.data.list_subscribe_details
         };
     }
-    
-    throw new Error('Subscription verification failed');
+    throw new Error('Email addition could not be verified');
 };
+
+// Helper function for retry logic
+const retrySubscription = async (email, newAccessToken) => {
+    const data = {
+        listkey: process.env.ZOHO_LIST_KEY,
+        emailids: email,
+        source: "web"
+    };
+
+    const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
+    const retryResponse = await axios.post(url, data, {
+        headers: {
+            'Authorization': `Zoho-oauthtoken ${newAccessToken}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (retryResponse.data.status === 'success') {
+        return {
+            success: true,
+            message: 'Email added after token refresh',
+            details: retryResponse.data
+        };
+    }
+    throw new Error('Retry failed after token refresh');
+};
+
 
 export {
     generateTokens,
