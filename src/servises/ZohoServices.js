@@ -7,9 +7,13 @@ dotenv.config();
 const getNewToken = async () => {
     try {
         const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?client_id=${process.env.ZOHO_CLIENT_ID}&client_secret=${process.env.ZOHO_CLIENT_SECRET}&grant_type=client_credentials&scope=ZohoMail.partner.organization.UPDATE`;
+        
+        console.log("tokenUrl",tokenUrl);
 
         const response = await axios.post(tokenUrl);
 
+        console.log("response",response);
+        
         if (!response.data.access_token) {
             throw new Error('No access token received from Zoho');
         }
