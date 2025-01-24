@@ -410,7 +410,7 @@ export const initiateRegistration = async (req, res) => {
 
       await session.commitTransaction();
       try {
-        await addToMailingList(newUser.username, newUser.email);
+        await addToMailingList(newUser.email);
       } catch (error) {
         console.error('Failed to add to mailing list:', error);
       }

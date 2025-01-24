@@ -176,7 +176,7 @@ const refreshAccessToken = async () => {
 };
 
 // Function to add an email to Zoho mailing list
-const addToMailingList = async (name, email) => {
+const addToMailingList = async (email) => {
     try {
         let accessToken = await getAccessToken();
 
@@ -191,6 +191,7 @@ const addToMailingList = async (name, email) => {
             source: "web"
         };
 
+        console.log("data",data);
         const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
 
         try {
@@ -200,6 +201,7 @@ const addToMailingList = async (name, email) => {
                     'Content-Type': 'application/json'
                 }
             });
+            console.log(response.data)
             return response.data;
         } catch (error) {
             if (error.response?.data?.message === 'Unauthorized request.') {
