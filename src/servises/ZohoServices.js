@@ -4,24 +4,29 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const getNewToken = async () => {
+    const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?client_id=${process.env.ZOHO_CLIENT_ID}&client_secret=${process.env.ZOHO_CLIENT_SECRET}&grant_type=client_credentials&scope=ZohoMail.partner.organization.UPDATE`;
+    
+    const response = await axios.post(tokenUrl);
+    const { access_token } = response.data;
+    
+    await ZohoToken.create({ 
+        reason: 'access_token', 
+        token: access_token 
+    });
+
+    return access_token;
+};
+
 const generateZohoTokens = async () => {
     try {
         const existingToken = await ZohoToken.findOne({ reason: 'access_token' });
         if (existingToken) {
             return { access_token: existingToken.token };
         }
-
-        const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?client_id=${process.env.ZOHO_CLIENT_ID}&client_secret=${process.env.ZOHO_CLIENT_SECRET}&grant_type=authorization_code&code=${process.env.ZOHO_GRANT_CODE}`;
         
-        const response = await axios.post(tokenUrl);
-        const { access_token, refresh_token } = response.data;
-
-        await Promise.all([
-            ZohoToken.create({ reason: 'access_token', token: access_token }),
-            ZohoToken.create({ reason: 'refresh_token', token: refresh_token })
-        ]);
-
-        return { access_token, refresh_token };
+        const access_token = await getNewToken();
+        return { access_token };
     } catch (error) {
         console.error('Token generation failed:', error);
         throw error;
@@ -34,34 +39,18 @@ const getZohoAccessToken = async () => {
             .sort({ createdAt: -1 });
         return token ? token.token : null;
     } catch (error) {
-        console.error('Error retrieving token:', error.message);
+        console.error('Error retrieving token:', error);
         throw error;
     }
 };
 
 const refreshZohoAccessToken = async () => {
     try {
-        const refreshToken = await ZohoToken.findOne({ reason: 'refresh_token' })
-            .sort({ createdAt: -1 });
-
-        if (!refreshToken) {
-            return await generateZohoTokens();
-        }
-
-        const tokenUrl = `https://accounts.zoho.in/oauth/v2/token?client_id=${process.env.ZOHO_CLIENT_ID}&client_secret=${process.env.ZOHO_CLIENT_SECRET}&grant_type=refresh_token&refresh_token=${refreshToken.token}`;
-        
-        const response = await axios.post(tokenUrl);
-        const { access_token } = response.data;
-
-        if (access_token) {
-            await ZohoToken.create({ reason: 'access_token', token: access_token });
-            return { access_token };
-        }
-
-        return await generateZohoTokens();
+        const access_token = await getNewToken();
+        return { access_token };
     } catch (error) {
         console.error('Token refresh failed:', error);
-        return await generateZohoTokens();
+        throw error;
     }
 };
 
@@ -76,8 +65,8 @@ const addUserToMailingList = async (name, email) => {
 
         const contactInfo = encodeURIComponent(
             JSON.stringify({
-                'First Name': name,
-                'Contact Email': email,
+                'Name': name,
+                'Email': email,
             })
         );
 
