@@ -176,19 +176,11 @@ const refreshAccessToken = async () => {
 };
 
 // Function to add an email to Zoho mailing list
-// Debug logger
-const debugLog = (message, data) => {
-    console.log(`[DEBUG] ${message}:`, JSON.stringify(data, null, 2));
-};
-
-// Token validation with debug
 const validateToken = async (accessToken) => {
     debugLog('Validating token', { accessToken: accessToken?.substring(0, 10) + '...' });
-
+    
     try {
         const testUrl = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribedetails';
-        debugLog('Making validation request to', { url: testUrl });
-
         const response = await axios.get(testUrl, {
             params: {
                 listkey: process.env.ZOHO_LIST_KEY
@@ -197,50 +189,37 @@ const validateToken = async (accessToken) => {
                 'Authorization': `Zoho-oauthtoken ${accessToken}`
             }
         });
-
-        debugLog('Validation response', {
-            status: response.status,
-            headers: response.headers,
-            data: response.data
-        });
-
-        return response.status === 200;
+        
+        // Parse XML response
+        const xmlData = response.data;
+        if (xmlData.includes('<status>error</status>')) {
+            debugLog('Token validation failed', { response: xmlData });
+            return false;
+        }
+        
+        return true;
     } catch (error) {
         debugLog('Validation error', {
             message: error.message,
-            response: error.response?.data,
-            status: error.response?.status
+            response: error.response?.data
         });
-
-        if (error.response?.data?.message === 'Unauthorized request.') {
-            return false;
-        }
-        throw error;
+        return false;
     }
 };
 
 const addToMailingList = async (email) => {
-    debugLog('Starting mailing list operation', { email });
-
     try {
         let accessToken = await getAccessToken();
-        debugLog('Initial access token', {
-            exists: !!accessToken,
-            token: accessToken ? accessToken.substring(0, 10) + '...' : null
-        });
+        debugLog('Initial token check', { token: accessToken?.substring(0, 10) + '...' });
 
-        // Token validation
-        const isValid = await validateToken(accessToken);
-        debugLog('Token validation result', { isValid });
-
-        if (!accessToken || !isValid) {
-            debugLog('Generating new tokens');
+        if (!accessToken || !(await validateToken(accessToken))) {
+            debugLog('Getting new token');
             const tokens = await generateTokens();
             accessToken = tokens.access_token;
-            debugLog('New token generated', {
-                token: accessToken.substring(0, 10) + '...',
-                tokenInfo: tokens
-            });
+            
+            if (!accessToken) {
+                throw new Error('Failed to generate access token');
+            }
         }
 
         const data = {
@@ -248,50 +227,36 @@ const addToMailingList = async (email) => {
             emailids: email,
             source: "web"
         };
-        debugLog('Request payload', data);
 
         const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
-
-        try {
-            debugLog('Making subscription request', { url });
-            const response = await axios.post(url, data, {
-                headers: {
-                    'Authorization': `Zoho-oauthtoken ${accessToken}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            debugLog('Subscription response', {
-                status: response.status,
-                data: response.data
-            });
-
-            if (response.data.status !== 'success') {
-                throw new Error('Failed to add email to mailing list');
+        const response = await axios.post(url, data, {
+            headers: {
+                'Authorization': `Zoho-oauthtoken ${accessToken}`,
+                'Content-Type': 'application/json'
             }
+        });
 
-            return await verifySubscription(email, accessToken);
-
-        } catch (error) {
-            debugLog('Subscription error', {
-                message: error.message,
-                response: error.response?.data,
-                stack: error.stack
-            });
-
-            if (error.response?.data?.message === 'Unauthorized request.') {
+        // Check XML response
+        if (response.data.includes('<status>error</status>')) {
+            const errorMessage = response.data.match(/<message>(.*?)<\/message>/)?.[1] || 'Unknown error';
+            
+            if (errorMessage.includes('Unauthorized')) {
                 debugLog('Token expired, refreshing');
                 const tokens = await refreshAccessToken();
                 return await retrySubscription(email, tokens.access_token);
             }
-            throw error;
+            
+            throw new Error(errorMessage);
         }
+
+        return await verifySubscription(email, accessToken);
+
     } catch (error) {
         debugLog('Operation failed', {
             message: error.message,
-            stack: error.stack,
             response: error.response?.data
         });
-
+        
         return {
             success: false,
             message: error.message,
@@ -300,13 +265,10 @@ const addToMailingList = async (email) => {
     }
 };
 
+// Updated verification to handle XML responses
 const verifySubscription = async (email, accessToken) => {
-    debugLog('Verifying subscription', { email });
-
     const verifyUrl = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribedetails';
-    debugLog('Making verification request', { url: verifyUrl });
-
-    const verifyResponse = await axios.get(verifyUrl, {
+    const response = await axios.get(verifyUrl, {
         params: {
             listkey: process.env.ZOHO_LIST_KEY,
             email: email
@@ -316,56 +278,14 @@ const verifySubscription = async (email, accessToken) => {
         }
     });
 
-    debugLog('Verification response', {
-        status: verifyResponse.status,
-        data: verifyResponse.data
-    });
-
-    if (verifyResponse.data.list_subscribe_details?.subscribed === true) {
+    if (response.data.includes('<status>success</status>')) {
         return {
             success: true,
-            message: 'Email successfully added and verified',
-            details: verifyResponse.data.list_subscribe_details
+            message: 'Email successfully added and verified'
         };
     }
-    throw new Error('Email addition could not be verified');
-};
-
-const retrySubscription = async (email, newAccessToken) => {
-    debugLog('Retrying subscription', {
-        email,
-        newToken: newAccessToken.substring(0, 10) + '...'
-    });
-
-    const data = {
-        listkey: process.env.ZOHO_LIST_KEY,
-        emailids: email,
-        source: "web"
-    };
-
-    const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
-    debugLog('Making retry request', { url, data });
-
-    const retryResponse = await axios.post(url, data, {
-        headers: {
-            'Authorization': `Zoho-oauthtoken ${newAccessToken}`,
-            'Content-Type': 'application/json'
-        }
-    });
-
-    debugLog('Retry response', {
-        status: retryResponse.status,
-        data: retryResponse.data
-    });
-
-    if (retryResponse.data.status === 'success') {
-        return {
-            success: true,
-            message: 'Email added after token refresh',
-            details: retryResponse.data
-        };
-    }
-    throw new Error('Retry failed after token refresh');
+    
+    throw new Error('Subscription verification failed');
 };
 
 export {
