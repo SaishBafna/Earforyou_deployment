@@ -1,5 +1,5 @@
 import axios from 'axios';
-import TokenStore from './TokenStore.js';
+import ZohoToken from '../models/TokenStore';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -14,7 +14,7 @@ const getNewToken = async () => {
             throw new Error('No access token received from Zoho');
         }
 
-        await TokenStore.create({
+        await ZohoToken.create({
             reason: 'access_token',
             token: response.data.access_token
         });
@@ -28,7 +28,7 @@ const getNewToken = async () => {
 
 const generateTokens = async () => {
     try {
-        const existingToken = await TokenStore.findOne({ reason: 'access_token' });
+        const existingToken = await ZohoToken.findOne({ reason: 'access_token' });
         if (existingToken) {
             return { access_token: existingToken.token };
         }
@@ -46,7 +46,7 @@ const generateTokens = async () => {
 
 const getAccessToken = async () => {
     try {
-        const token = await TokenStore.findOne({ reason: 'access_token' })
+        const token = await ZohoToken.findOne({ reason: 'access_token' })
             .sort({ createdAt: -1 });
         return token ? token.token : null;
     } catch (error) {
