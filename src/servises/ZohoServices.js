@@ -6,16 +6,16 @@ dotenv.config();
 
 const getNewToken = async () => {
     try {
-        const params = new URLSearchParams({
-            client_id: process.env.ZOHO_CLIENT_ID,
-            client_secret: process.env.ZOHO_CLIENT_SECRET,
-            grant_type: 'client_credentials',
-            scope: 'ZohoMail.partner.organization.UPDATE'
-        });
+        const params = new URLSearchParams();
+        params.append('client_id', process.env.ZOHO_CLIENT_ID);
+        params.append('client_secret', process.env.ZOHO_CLIENT_SECRET);
+        params.append('grant_type', 'refresh_token');
+        params.append('refresh_token', process.env.ZOHO_REFRESH_TOKEN);
+        params.append('scope', 'ZohoMail.partner.organization.UPDATE');
 
         const response = await axios.post(
             'https://accounts.zoho.in/oauth/v2/token',
-            params.toString(),
+            params,
             {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -25,10 +25,6 @@ const getNewToken = async () => {
 
         if (response.data.error) {
             throw new Error(`Zoho API error: ${response.data.error}`);
-        }
-
-        if (!response.data.access_token) {
-            throw new Error('No access token in response');
         }
 
         await ZohoToken.create({
@@ -93,17 +89,16 @@ const addToMailingList = async (name, email) => {
             accessToken = tokens.access_token;
         }
 
-        const contactInfo = encodeURIComponent(
-            JSON.stringify({
-                'Name': name,
-                'Email': email,
-            })
-        );
+        const data = {
+            "listkey": process.env.ZOHO_LIST_KEY,
+            "emailids": email,
+            "source": "web"
+        };
 
-        const url = `${process.env.ZOHO_API_URL}?resfmt=JSON&listkey=${process.env.ZOHO_LIST_KEY}&contactinfo=${contactInfo}&source=web`;
+        const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
 
         try {
-            const response = await axios.get(url, {
+            const response = await axios.post(url, data, {
                 headers: {
                     'Authorization': `Zoho-oauthtoken ${accessToken}`,
                     'Content-Type': 'application/json'
@@ -115,7 +110,7 @@ const addToMailingList = async (name, email) => {
                 const tokens = await refreshAccessToken();
                 accessToken = tokens.access_token;
 
-                const retryResponse = await axios.get(url, {
+                const retryResponse = await axios.post(url, data, {
                     headers: {
                         'Authorization': `Zoho-oauthtoken ${accessToken}`,
                         'Content-Type': 'application/json'
