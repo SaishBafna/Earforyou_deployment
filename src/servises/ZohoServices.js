@@ -151,8 +151,14 @@ const addToMailingList = async (email) => {
         console.log('ZOHO_LIST_KEY:', process.env.ZOHO_LIST_KEY);
 
         // Always refresh token before making request
-        const { access_token } = await refreshAccessToken();
+        const tokenResponse = await refreshAccessToken();
+        console.log('Token Response:', tokenResponse);
 
+        if (!tokenResponse || !tokenResponse.access_token) {
+            throw new Error('Failed to obtain access token');
+        }
+
+        const access_token = tokenResponse.access_token;
         const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
 
         const requestBody = {
@@ -168,7 +174,7 @@ const addToMailingList = async (email) => {
         // Log the complete request details
         console.log('Request URL:', url);
         console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-        console.log('Authorization Token:', `Bearer ${access_token.slice(0, 10)}...`);
+        console.log('Authorization Token Present:', !!access_token);
 
         const response = await axios.post(url, requestBody, {
             headers: {
@@ -185,10 +191,10 @@ const addToMailingList = async (email) => {
             throw new Error(response.data.message || 'Failed to add email');
         }
     } catch (error) {
-        console.error('Mailing List Error:', error.response?.data || error.message);
+        console.error('Mailing List Error:', error.message);
         return {
             success: false,
-            message: error.response?.data?.message || error.message
+            message: error.message
         };
     }
 };
