@@ -5,13 +5,21 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const ZOHO_SCOPES = 'ZohoMail.contacts.CREATE,ZohoMail.partner.organization.UPDATE,ZohoCampaigns.contact.CREATE';
+const ZOHO_API_BASE_URL = 'https://campaigns.zoho.in/api/v1.1/json';
+const ZOHO_AUTH_BASE_URL = 'https://accounts.zoho.in/oauth/v2';
 
 const debugLog = (message, data) => {
     console.log(`[DEBUG] ${message}:`, JSON.stringify(data, null, 2));
 };
 
+const isTokenExpired = (error) => {
+    return error?.response?.data?.message === 'Unauthorized request.' || 
+           error?.message?.includes('Unauthorized') ||
+           error?.response?.status === 401;
+};
+
 const getAuthorizationCode = () => {
-    const authUrl = new URL('https://accounts.zoho.in/oauth/v2/auth');
+    const authUrl = new URL(`${ZOHO_AUTH_BASE_URL}/auth`);
     const params = {
         client_id: process.env.ZOHO_CLIENT_ID,
         response_type: 'code',
@@ -40,7 +48,7 @@ const handleCallback = async (code) => {
         });
 
         const response = await axios.post(
-            'https://accounts.zoho.in/oauth/v2/token',
+            `${ZOHO_AUTH_BASE_URL}/token`,
             params.toString(),
             {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
@@ -49,14 +57,13 @@ const handleCallback = async (code) => {
 
         if (response.data.error) throw new Error(`Zoho API error: ${response.data.error}`);
 
+        // Store both access token and refresh token
         await ZohoToken.create({
             reason: 'access_token',
-            token: response.data.access_token
+            token: response.data.access_token,
+            refreshToken: response.data.refresh_token,
+            expiresIn: response.data.expires_in
         });
-
-        if (response.data.refresh_token) {
-            process.env.ZOHO_REFRESH_TOKEN = response.data.refresh_token;
-        }
 
         debugLog('OAuth success', response.data);
         return response.data;
@@ -66,20 +73,21 @@ const handleCallback = async (code) => {
     }
 };
 
-const refreshAccessToken = async () => {
+const refreshAccessToken = async (refreshToken) => {
     try {
-        if (!process.env.ZOHO_REFRESH_TOKEN) throw new Error('Missing refresh token');
+        const tokenToUse = refreshToken || process.env.ZOHO_REFRESH_TOKEN;
+        if (!tokenToUse) throw new Error('No refresh token available');
 
         const params = new URLSearchParams({
             client_id: process.env.ZOHO_CLIENT_ID,
             client_secret: process.env.ZOHO_CLIENT_SECRET,
-            refresh_token: process.env.ZOHO_REFRESH_TOKEN,
+            refresh_token: tokenToUse,
             grant_type: 'refresh_token',
             scope: ZOHO_SCOPES
         });
 
         const response = await axios.post(
-            'https://accounts.zoho.in/oauth/v2/token',
+            `${ZOHO_AUTH_BASE_URL}/token`,
             params.toString(),
             {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
@@ -90,7 +98,9 @@ const refreshAccessToken = async () => {
 
         const newToken = await ZohoToken.create({
             reason: 'access_token',
-            token: response.data.access_token
+            token: response.data.access_token,
+            refreshToken: tokenToUse,
+            expiresIn: response.data.expires_in
         });
 
         debugLog('Token refreshed', { newToken: newToken.token?.substring(0, 10) + '...' });
@@ -103,23 +113,46 @@ const refreshAccessToken = async () => {
 
 const getAccessToken = async () => {
     try {
-        const token = await ZohoToken.findOne({ reason: 'access_token' }).sort({ createdAt: -1 });
-        return token ? token.token : null;
+        const token = await ZohoToken.findOne({ reason: 'access_token' })
+            .sort({ createdAt: -1 });
+        
+        if (!token) {
+            throw new Error('No access token found');
+        }
+
+        // Check if token is about to expire (within 5 minutes)
+        const tokenAge = (Date.now() - token.createdAt.getTime()) / 1000;
+        if (tokenAge > (token.expiresIn - 300)) {
+            debugLog('Token expired or about to expire, refreshing');
+            const refreshedToken = await refreshAccessToken(token.refreshToken);
+            return refreshedToken.access_token;
+        }
+
+        return token.token;
     } catch (error) {
         debugLog('Token retrieval failed', error);
         throw error;
     }
 };
 
-const generateTokens = async () => {
+const makeAuthenticatedRequest = async (url, data, retryCount = 0) => {
     try {
-        const existingToken = await ZohoToken.findOne({ reason: 'access_token' }).sort({ createdAt: -1 });
-        if (existingToken) return { access_token: existingToken.token };
+        const accessToken = await getAccessToken();
+        const response = await axios.post(url, data, {
+            headers: {
+                'Authorization': `Zoho-oauthtoken ${accessToken}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+        });
 
-        const access_token = await refreshAccessToken();
-        return access_token;
+        return response;
     } catch (error) {
-        debugLog('Token generation failed', error);
+        if (isTokenExpired(error) && retryCount < 2) {
+            debugLog('Token expired, refreshing and retrying request');
+            await refreshAccessToken();
+            return makeAuthenticatedRequest(url, data, retryCount + 1);
+        }
         throw error;
     }
 };
@@ -127,8 +160,6 @@ const generateTokens = async () => {
 const addToMailingList = async (email) => {
     try {
         debugLog('Starting mailing list operation', { email });
-        let accessToken = await getAccessToken();
-        debugLog('Initial token', { token: accessToken?.substring(0, 10) + '...' });
 
         const data = {
             listkey: process.env.ZOHO_LIST_KEY,
@@ -136,59 +167,28 @@ const addToMailingList = async (email) => {
             source: "web"
         };
 
-        const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
+        const response = await makeAuthenticatedRequest(
+            `${ZOHO_API_BASE_URL}/listsubscribe`,
+            data
+        );
 
-        const makeRequest = async (token) => {
-            const response = await axios.post(url, data, {
-                headers: {
-                    'Authorization': `Zoho-oauthtoken ${token}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                transformResponse: [(data) => {
-                    const match = data.match(/<message>(.*?)<\/message>/);
-                    const status = data.match(/<status>(.*?)<\/status>/)?.[1];
-                    return {
-                        status,
-                        message: match?.[1] || 'Unknown error',
-                        rawResponse: data
-                    };
-                }]
-            });
-            debugLog('Response', { status: response.status, data: response.data });
-            return response;
+        // Parse XML response
+        const responseData = {
+            status: response.data.match(/<status>(.*?)<\/status>/)?.[1],
+            message: response.data.match(/<message>(.*?)<\/message>/)?.[1],
+            code: response.data.match(/<code>(.*?)<\/code>/)?.[1]
         };
 
-        try {
-            const response = await makeRequest(accessToken);
-
-            if (response.data.message === 'Unauthorized request') {
-
-                debugLog('Token expired, refreshing');
-                const tokens = await refreshAccessToken();
-                const retryResponse = await makeRequest(tokens.access_token);
-
-                if (retryResponse.data.status === 'success') {
-                    return {
-                        success: true,
-                        message: 'Email added after token refresh',
-                        data: retryResponse.data
-                    };
-                }
-
-                throw new Error(response.data.message);
-            }
-
-            return {
-                success: true,
-                message: 'Email successfully added',
-                data: response.data
-            };
-
-        } catch (error) {
-            debugLog('Request error', error);
-            throw error;
+        if (responseData.status === 'error') {
+            throw new Error(responseData.message || 'Unknown error occurred');
         }
+
+        return {
+            success: true,
+            message: 'Email successfully added',
+            data: responseData
+        };
+
     } catch (error) {
         debugLog('Operation failed', error);
         return {
