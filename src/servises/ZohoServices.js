@@ -68,101 +68,59 @@ const handleCallback = async (code) => {
 
 const refreshAccessToken = async () => {
     try {
-        // Comprehensive scope definition
+        const params = {
+            refresh_token: '1000.bec60de8f76f4ec9f1e3958f182f2d18.d3500c440f9d90b07f6d7eb51266d3fd',
+            client_id: '1000.M9PNU2DDSI2RFY2K2HVLTCY4153HTN',
+            client_secret: 'c1217b89fccf397a715ddb7a1b56df5d068494db4c',
+            grant_type: 'refresh_token'
+        };
 
-
-        // Validate critical environment variables
-        const requiredVars = [
-            'ZOHO_CLIENT_ID',
-            'ZOHO_CLIENT_SECRET',
-            'ZOHO_REFRESH_TOKEN'
-        ];
-
-        requiredVars.forEach(varName => {
-            if (!process.env[varName]) {
-                throw new Error(`Missing environment variable: ${varName}`);
-            }
-        });
-
-        // Prepare request parameters
-        const params = new URLSearchParams({
-            refresh_token: process.env.ZOHO_REFRESH_TOKEN,
-            client_id: process.env.ZOHO_CLIENT_ID,
-            client_secret: process.env.ZOHO_CLIENT_SECRET,
-            grant_type: 'refresh_token',
-            scope: 'ZohoMail.contacts.CREAT'
-        });
-
-        // Detailed pre-request logging
-        console.log('Token Refresh Attempt', {
-            clientIdPartial: process.env.ZOHO_CLIENT_ID?.substring(0, 5) + '...',
-            refreshTokenLength: process.env.ZOHO_REFRESH_TOKEN?.length,
-            scopes: FULL_SCOPES
-        });
-
-        // Make token refresh request
         const response = await axios.post(
-            'https://accounts.zoho.in/oauth/v2/token?refresh_token=1000.bec60de8f76f4ec9f1e3958f182f2d18.d3500c440f9d90b07f6d7eb51266d3fd&client_id=1000.M9PNU2DDSI2RFY2K2HVLTCY4153HTN&client_secret=c1217b89fccf397a715ddb7a1b56df5d068494db4c&grant_type=refresh_token',
+            'https://accounts.zoho.in/oauth/v2/token',
+            null,
             {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'User-Agent': 'YourAppName/1.0'
-                },
-                timeout: 10000 // 10 second timeout
+                params,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
             }
         );
 
-        // Comprehensive response validation
+        console.log('Token Response:', response.data);
+
         if (response.data.error) {
-            console.error('Zoho API Token Error:', response.data);
-            throw new Error(`Zoho API Error: ${response.data.error}`);
+            throw new Error(`Zoho API error: ${response.data.error}`);
         }
 
-        // Store new access token
+        // Store the new access token
         const newToken = await ZohoToken.create({
             reason: 'access_token',
             token: response.data.access_token
         });
 
-        // Success logging
-        console.log('Token Refresh Success', {
-            newTokenPartial: newToken.token?.substring(0, 10) + '...',
-            tokenExpiresIn: response.data.expires_in
-        });
+        // Store the refresh token if it's not already stored
+        const existingRefreshToken = await ZohoToken.findOne({ reason: 'refresh_token' });
+        if (!existingRefreshToken) {
+            await ZohoToken.create({
+                reason: 'refresh_token',
+                token: params.refresh_token
+            });
+        }
 
         return {
-            access_token: newToken.token,
-            expires_in: response.data.expires_in
+            success: true,
+            message: 'Token generated and stored successfully',
+            accessToken: newToken.token
         };
 
     } catch (error) {
-        // Extremely detailed error logging
-        console.error('Token Refresh Failure', {
-            errorType: error.constructor.name,
-            errorMessage: error.message,
-            errorCode: error.code,
-            responseStatus: error.response?.status,
-            responseData: JSON.stringify(error.response?.data),
-            fullError: error
-        });
-
-        // Comprehensive error handling
-        if (error.response) {
-            switch (error.response.status) {
-                case 400:
-                    throw new Error(`Invalid request: ${error.response.data.error}`);
-                case 401:
-                    throw new Error('Authentication failed - verify credentials');
-                case 403:
-                    throw new Error('Access forbidden - check permissions');
-                default:
-                    throw new Error(`Token refresh failed: ${error.message}`);
-            }
-        }
-
-        throw error;
+        console.error('Token generation error:', error.message);
+        return {
+            success: false,
+            message: error.message,
+            error: error
+        };
     }
 };
+
 
 const getAccessToken = async () => {
     try {
