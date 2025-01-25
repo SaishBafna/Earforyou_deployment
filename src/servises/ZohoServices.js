@@ -68,36 +68,91 @@ const handleCallback = async (code) => {
 
 const refreshAccessToken = async () => {
     try {
-        if (!process.env.ZOHO_REFRESH_TOKEN) throw new Error('Missing refresh token');
+        // Validate refresh token
+        if (!process.env.ZOHO_REFRESH_TOKEN) {
+            throw new Error('Missing ZOHO_REFRESH_TOKEN in environment');
+        }
 
+        // Prepare request parameters
         const params = new URLSearchParams({
             client_id: process.env.ZOHO_CLIENT_ID,
             client_secret: process.env.ZOHO_CLIENT_SECRET,
             refresh_token: process.env.ZOHO_REFRESH_TOKEN,
             grant_type: 'refresh_token',
-            scope: ZOHO_SCOPES
+            scope: ZOHO_SCOPES // Use full scope from earlier definition
         });
 
+        // Detailed logging before request
+        debugLog('Token Refresh Attempt', {
+            clientId: process.env.ZOHO_CLIENT_ID?.substring(0, 5) + '...',
+            refreshTokenLength: process.env.ZOHO_REFRESH_TOKEN?.length
+        });
+
+        // Make token refresh request
         const response = await axios.post(
             'https://accounts.zoho.in/oauth/v2/token',
             params.toString(),
             {
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'User-Agent': 'YourAppName/1.0'
+                },
+                timeout: 10000 // 10 second timeout
             }
         );
 
-        if (response.data.error) throw new Error(`Zoho API error: ${response.data.error}`);
+        // Validate response
+        if (response.data.error) {
+            throw new Error(`Zoho API Token Error: ${response.data.error}`);
+        }
 
+        // Store new access token
         const newToken = await ZohoToken.create({
             reason: 'access_token',
             token: response.data.access_token
         });
 
-        debugLog('Token refreshed', { newToken: newToken.token?.substring(0, 10) + '...' });
-        return { access_token: newToken.token };
+        // Comprehensive logging
+        debugLog('Token Refresh Success', {
+            newTokenPartial: newToken.token?.substring(0, 10) + '...',
+            tokenExpiresIn: response.data.expires_in
+        });
+
+        return {
+            access_token: newToken.token,
+            expires_in: response.data.expires_in
+        };
+
     } catch (error) {
-        debugLog('Token refresh failed', error);
-        throw error;
+        // Detailed error logging
+        debugLog('Token Refresh Failed', {
+            errorType: error.constructor.name,
+            errorMessage: error.message,
+            errorCode: error.code,
+            responseStatus: error.response?.status,
+            responseData: error.response?.data
+        });
+
+        // Differentiate error types
+        if (error.response) {
+            // The request was made and the server responded with a status code
+            switch (error.response.status) {
+                case 400:
+                    throw new Error('Invalid token refresh request');
+                case 401:
+                    throw new Error('Authentication failed - check credentials');
+                case 403:
+                    throw new Error('Access forbidden - verify permissions');
+                default:
+                    throw new Error(`Token refresh failed: ${error.message}`);
+            }
+        } else if (error.request) {
+            // The request was made but no response was received
+            throw new Error('No response received from Zoho OAuth server');
+        } else {
+            // Something happened in setting up the request
+            throw new Error(`Token refresh setup error: ${error.message}`);
+        }
     }
 };
 
@@ -128,9 +183,9 @@ const generateTokens = async () => {
 //     try {
 //         // Always refresh token before making request
 //         const { access_token } = await refreshAccessToken();
-        
+
 //         const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
-        
+
 //         const response = await axios.get(url, {
 //             params: {
 //                 listkey: process.env.ZOHO_LIST_KEY,
@@ -173,16 +228,16 @@ const addToMailingList = async (email) => {
 
     try {
         // Detailed token retrieval logging
-        debugInfo.steps.push({ 
-            stage: 'Token Retrieval', 
-            startTime: Date.now() 
+        debugInfo.steps.push({
+            stage: 'Token Retrieval',
+            startTime: Date.now()
         });
 
         const { access_token } = await refreshAccessToken();
-        
+
         debugInfo.steps[debugInfo.steps.length - 1].endTime = Date.now();
-        debugInfo.steps[debugInfo.steps.length - 1].duration = 
-            debugInfo.steps[debugInfo.steps.length - 1].endTime - 
+        debugInfo.steps[debugInfo.steps.length - 1].duration =
+            debugInfo.steps[debugInfo.steps.length - 1].endTime -
             debugInfo.steps[debugInfo.steps.length - 1].startTime;
 
         // Comprehensive request configuration logging
@@ -205,8 +260,8 @@ const addToMailingList = async (email) => {
             }
         };
 
-        debugInfo.steps.push({ 
-            stage: 'Request Configuration', 
+        debugInfo.steps.push({
+            stage: 'Request Configuration',
             requestDetails: {
                 url: requestConfig.url,
                 params: Object.keys(requestConfig.params),
@@ -217,10 +272,10 @@ const addToMailingList = async (email) => {
         // Performance tracking for API call
         const startTime = Date.now();
         const response = await axios.get(
-            requestConfig.url, 
-            { 
-                params: requestConfig.params, 
-                headers: requestConfig.headers 
+            requestConfig.url,
+            {
+                params: requestConfig.params,
+                headers: requestConfig.headers
             }
         );
         const endTime = Date.now();
@@ -240,10 +295,10 @@ const addToMailingList = async (email) => {
                 ...debugInfo
             }, null, 2));
 
-            return { 
-                success: true, 
+            return {
+                success: true,
                 message: 'Email added successfully',
-                debugInfo 
+                debugInfo
             };
         } else {
             throw new Error(response.data.message || 'Failed to add email');
@@ -261,10 +316,10 @@ const addToMailingList = async (email) => {
             ...debugInfo
         }, null, 2));
 
-        return { 
-            success: false, 
+        return {
+            success: false,
             message: error.response?.data?.message || error.message,
-            debugInfo 
+            debugInfo
         };
     }
 };
