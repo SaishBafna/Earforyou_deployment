@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const ZOHO_SCOPES = 'ZohoMail.contacts.CREATE,ZohoMail.partner.organization.UPDATE,ZohoCampaigns.contact.CREATE';
+const ZOHO_SCOPES = 'ZohoCampaigns.contact.CREATE,ZohoCampaigns.lists.ALL';
 
 const debugLog = (message, data) => {
     console.log(`[DEBUG] ${message}:`, JSON.stringify(data, null, 2));
@@ -36,7 +36,7 @@ const handleCallback = async (code) => {
             client_secret: process.env.ZOHO_CLIENT_SECRET,
             redirect_uri: process.env.ZOHO_REDIRECT_URI,
             grant_type: 'authorization_code',
-            scope: ZOHO_SCOPES
+            scope: "ZohoCampaigns.contact.CREATE,ZohoCampaigns.lists.ALL"
         });
 
         const response = await axios.post(
