@@ -15,7 +15,7 @@ const getAuthorizationCode = () => {
     const params = {
         client_id: process.env.ZOHO_CLIENT_ID,
         response_type: 'code',
-        scope: ZOHO_SCOPES,
+        scope: 'ZohoCampaigns.contact.CREATE,ZohoCampaigns.lists.ALL',
         redirect_uri: process.env.ZOHO_REDIRECT_URI,
         access_type: 'offline',
         prompt: 'consent'
@@ -72,7 +72,8 @@ const refreshAccessToken = async () => {
             refresh_token: '1000.bec60de8f76f4ec9f1e3958f182f2d18.d3500c440f9d90b07f6d7eb51266d3fd',
             client_id: '1000.M9PNU2DDSI2RFY2K2HVLTCY4153HTN',
             client_secret: 'c1217b89fccf397a715ddb7a1b56df5d068494db4c',
-            grant_type: 'refresh_token'
+            grant_type: 'refresh_token',
+            scope:'ZohoCampaigns.contact.CREATE,ZohoCampaigns.lists.ALL'
         };
 
         const response = await axios.post(
