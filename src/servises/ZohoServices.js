@@ -7,7 +7,6 @@ dotenv.config();
 const ZOHO_SCOPES = 'ZohoMail.contacts.CREATE,ZohoMail.partner.organization.UPDATE,ZohoCampaigns.contact.CREATE';
 const ZOHO_API_BASE_URL = 'https://campaigns.zoho.in/api/v1.1/json';
 const ZOHO_AUTH_BASE_URL = 'https://accounts.zoho.in/oauth/v2';
-const TOKEN_EXPIRY_TIME = 3600; // Default expiry time in seconds
 
 const debugLog = (message, data) => {
     console.log(`[DEBUG] ${message}:`, JSON.stringify(data, null, 2));
@@ -58,19 +57,13 @@ const handleCallback = async (code) => {
 
         if (response.data.error) throw new Error(`Zoho API error: ${response.data.error}`);
 
-        // Store access token
+        // Store both access token and refresh token
         await ZohoToken.create({
             reason: 'access_token',
-            token: response.data.access_token
+            token: response.data.access_token,
+            refreshToken: response.data.refresh_token,
+            expiresIn: response.data.expires_in
         });
-
-        // Store refresh token separately
-        if (response.data.refresh_token) {
-            await ZohoToken.create({
-                reason: 'refresh_token',
-                token: response.data.refresh_token
-            });
-        }
 
         debugLog('OAuth success', response.data);
         return response.data;
@@ -80,18 +73,15 @@ const handleCallback = async (code) => {
     }
 };
 
-const refreshAccessToken = async () => {
+const refreshAccessToken = async (refreshToken) => {
     try {
-        const refreshTokenDoc = await ZohoToken.findOne({ 
-            reason: 'refresh_token' 
-        }).sort({ createdAt: -1 });
-
-        if (!refreshTokenDoc) throw new Error('No refresh token found');
+        const tokenToUse = refreshToken || process.env.ZOHO_REFRESH_TOKEN;
+        if (!tokenToUse) throw new Error('No refresh token available');
 
         const params = new URLSearchParams({
             client_id: process.env.ZOHO_CLIENT_ID,
             client_secret: process.env.ZOHO_CLIENT_SECRET,
-            refresh_token: refreshTokenDoc.token,
+            refresh_token: tokenToUse,
             grant_type: 'refresh_token',
             scope: ZOHO_SCOPES
         });
@@ -108,7 +98,9 @@ const refreshAccessToken = async () => {
 
         const newToken = await ZohoToken.create({
             reason: 'access_token',
-            token: response.data.access_token
+            token: response.data.access_token,
+            refreshToken: tokenToUse,
+            expiresIn: response.data.expires_in
         });
 
         debugLog('Token refreshed', { newToken: newToken.token?.substring(0, 10) + '...' });
@@ -121,19 +113,18 @@ const refreshAccessToken = async () => {
 
 const getAccessToken = async () => {
     try {
-        const token = await ZohoToken.findOne({ 
-            reason: 'access_token' 
-        }).sort({ createdAt: -1 });
+        const token = await ZohoToken.findOne({ reason: 'access_token' })
+            .sort({ createdAt: -1 });
         
         if (!token) {
             throw new Error('No access token found');
         }
 
-        // Check if token is older than 50 minutes (allowing buffer before 1-hour expiry)
+        // Check if token is about to expire (within 5 minutes)
         const tokenAge = (Date.now() - token.createdAt.getTime()) / 1000;
-        if (tokenAge > (TOKEN_EXPIRY_TIME - 600)) {
+        if (tokenAge > (token.expiresIn - 300)) {
             debugLog('Token expired or about to expire, refreshing');
-            const refreshedToken = await refreshAccessToken();
+            const refreshedToken = await refreshAccessToken(token.refreshToken);
             return refreshedToken.access_token;
         }
 
