@@ -127,67 +127,42 @@ const generateTokens = async () => {
 const addToMailingList = async (email) => {
     try {
         debugLog('Starting mailing list operation', { email });
-        let accessToken = await getAccessToken();
-        debugLog('Initial token', { token: accessToken?.substring(0, 10) + '...' });
+
+        // Ensure we have a fresh access token
+        const tokens = await generateTokens();
+        const accessToken = tokens.access_token;
+
+        debugLog('Using token', { token: accessToken?.substring(0, 10) + '...' });
 
         const data = {
             listkey: process.env.ZOHO_LIST_KEY,
-            emailids: email,
+            contactinfo: JSON.stringify({
+                'Contact Email': email
+            }),
             source: "web"
         };
 
         const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
 
-        const makeRequest = async (token) => {
-            const response = await axios.post(url, data, {
-                headers: {
-                    'Authorization': `Zoho-oauthtoken ${token}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                transformResponse: [(data) => {
-                    const match = data.match(/<message>(.*?)<\/message>/);
-                    const status = data.match(/<status>(.*?)<\/status>/)?.[1];
-                    return {
-                        status,
-                        message: match?.[1] || 'Unknown error',
-                        rawResponse: data
-                    };
-                }]
-            });
-            debugLog('Response', { status: response.status, data: response.data });
-            return response;
-        };
-
-        try {
-            const response = await makeRequest(accessToken);
-
-            if (response.data.message === 'Unauthorized request') {
-
-                debugLog('Token expired, refreshing');
-                const tokens = await refreshAccessToken();
-                const retryResponse = await makeRequest(tokens.access_token);
-
-                if (retryResponse.data.status === 'success') {
-                    return {
-                        success: true,
-                        message: 'Email added after token refresh',
-                        data: retryResponse.data
-                    };
-                }
-
-                throw new Error(response.data.message);
+        const response = await axios.get(url, {
+            params: data,
+            headers: {
+                'Authorization': `Zoho-oauthtoken ${accessToken}`,
+                'Content-Type': 'application/json'
             }
+        });
 
+        debugLog('Response', response.data);
+
+        // Check for success or specific error conditions
+        if (response.data.status === 'success') {
             return {
                 success: true,
                 message: 'Email successfully added',
                 data: response.data
             };
-
-        } catch (error) {
-            debugLog('Request error', error);
-            throw error;
+        } else {
+            throw new Error(response.data.message || 'Failed to add email');
         }
     } catch (error) {
         debugLog('Operation failed', error);
