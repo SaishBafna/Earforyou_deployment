@@ -1048,7 +1048,7 @@ export const UserCategoryData = async (req, res) => {
     const { 
       page = 1, 
       limit = 20,
-      search = "" // Add search parameter
+      search = "" 
     } = req.query;
 
     const pageNumber = parseInt(page, 10);
