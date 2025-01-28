@@ -1045,10 +1045,10 @@ export const UserCategoryData = async (req, res) => {
     }
 
     const { Category } = req.body;
-    const { 
-      page = 1, 
+    const {
+      page = 1,
       limit = 20,
-      search = "" 
+      search = ""
     } = req.query;
 
     const pageNumber = parseInt(page, 10);
@@ -1069,12 +1069,12 @@ export const UserCategoryData = async (req, res) => {
       },
       {
         $addFields: {
-          isOnline: { 
+          isOnline: {
             $cond: [
-              { $eq: ['$status', 'Online'] }, 
-              1, 
+              { $eq: ['$status', 'Online'] },
+              1,
               0
-            ] 
+            ]
           }
         }
       },
@@ -1354,22 +1354,32 @@ export const getUserById = async (req, res) => {
 export const getAllUsers1 = async (req, res) => {
   try {
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-    const loggedInUserGender = req.user.gender;
 
-    // Get and normalize gender filter from params
-    let genderFilter = req.params.gender?.toLowerCase();
-    
-    // Validate gender parameter
-    if (genderFilter && !['male', 'female'].includes(genderFilter)) {
+    // Get and normalize logged in user's gender
+    const loggedInUserGender = req.user.gender?.toLowerCase();
+
+    // Get and normalize requested gender filter from params
+    const requestedGender = req.params.gender?.toLowerCase();
+
+    // Validate logged in user gender
+    if (!loggedInUserGender || !['male', 'female'].includes(loggedInUserGender)) {
+      return res.status(400).json({
+        message: "Invalid logged in user gender"
+      });
+    }
+
+    // Validate requested gender parameter if provided
+    if (requestedGender && !['male', 'female'].includes(requestedGender)) {
       return res.status(400).json({
         message: "Invalid gender parameter. Must be 'male' or 'female'"
       });
     }
 
-    // Convert gender filter to proper case (assuming your DB stores it with first letter capitalized)
-    if (genderFilter) {
-      genderFilter = genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1).toLowerCase();
-    }
+    // If no specific gender filter is provided, default to opposite gender
+    const genderFilter = requestedGender || (loggedInUserGender === 'male' ? 'female' : 'male');
+
+    // Standardize gender case for database query (assuming DB stores with first letter capitalized)
+    const normalizedGenderFilter = genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1);
 
     // Pagination parameters
     const page = parseInt(req.query.page) || 1;
@@ -1382,13 +1392,9 @@ export const getAllUsers1 = async (req, res) => {
     // Base match conditions
     const matchConditions = {
       _id: { $ne: loggedInUserId },
-      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] }
+      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+      gender: normalizedGenderFilter // Always apply gender filter
     };
-
-    // Add gender filter if provided
-    if (genderFilter) {
-      matchConditions.gender = genderFilter;
-    }
 
     // Add search conditions if search query exists
     if (searchQuery) {
@@ -1416,13 +1422,6 @@ export const getAllUsers1 = async (req, res) => {
         $addFields: {
           avgRating: { $avg: "$ratings.rating" },
           reviewCount: { $size: "$ratings" },
-          isOppositeGender: {
-            $cond: {
-              if: { $ne: ["$gender", loggedInUserGender] },
-              then: 1,
-              else: 0
-            }
-          },
           isOnline: {
             $cond: {
               if: { $eq: ["$status", "Online"] },
@@ -1435,7 +1434,6 @@ export const getAllUsers1 = async (req, res) => {
       {
         $sort: {
           isOnline: -1,
-          isOppositeGender: -1,
           avgRating: -1
         }
       },
@@ -1462,16 +1460,12 @@ export const getAllUsers1 = async (req, res) => {
 
     if (userList.length === 0) {
       return res.status(404).json({
-        message: genderFilter
-          ? `No ${genderFilter.toLowerCase()} users found`
-          : "No users found"
+        message: `No ${genderFilter} users found`
       });
     }
 
     res.status(200).json({
-      message: genderFilter
-        ? `${genderFilter} users fetched successfully`
-        : "Users fetched successfully",
+      message: `${normalizedGenderFilter} users fetched successfully`,
       users: userList,
       pagination: {
         totalUsers,
@@ -2166,8 +2160,8 @@ export const getChatsWithLatestMessages = async (req, res) => {
     }
 
     // Step 4: Fetch chats with filtered participants
-    const filteredChatIds = userChats.filter(chat => 
-      chat.participants.some(participantId => 
+    const filteredChatIds = userChats.filter(chat =>
+      chat.participants.some(participantId =>
         participants.some(p => p._id.toString() === participantId.toString())
       )
     ).map(chat => chat._id);
@@ -2205,14 +2199,14 @@ export const getChatsWithLatestMessages = async (req, res) => {
 
     // Step 7: Format chat data with online status and search results
     const uniqueUsersMap = new Map();
-    
+
     for (const chat of chats) {
       chat.participants.forEach((participant) => {
         if (participant._id.toString() !== userId.toString()) {
-          const matchingParticipant = participants.find(p => 
+          const matchingParticipant = participants.find(p =>
             p._id.toString() === participant._id.toString()
           );
-          
+
           if (matchingParticipant && !uniqueUsersMap.has(participant._id.toString())) {
             uniqueUsersMap.set(participant._id.toString(), {
               user: {
