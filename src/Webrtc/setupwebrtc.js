@@ -440,40 +440,56 @@ export const setupWebRTC = (io) => {
 
         // Check for simultaneous calls between the same users
         const pendingCallKey = `${Math.min(callerId, receiverId)}_${Math.max(callerId, receiverId)}`;
+
+        // Check if there's already a pending call
         if (pendingCalls[pendingCallKey]) {
           const existingCall = pendingCalls[pendingCallKey];
 
-          // If the existing caller is the current receiver, handle the cross-call
-          if (existingCall.callerId === receiverId) {
-            // Clear the pending call
-            delete pendingCalls[pendingCallKey];
+          // Clear the pending call immediately
+          delete pendingCalls[pendingCallKey];
 
-            // Notify both users about the conflict
-            socket.emit('callConflict', {
-              message: 'Simultaneous call detected',
-              otherUserId: receiverId
-            });
+          // Mark both users as having a conflict
+          pendingCalls[pendingCallKey] = {
+            conflict: true,
+            timestamp: Date.now()
+          };
 
-            users[receiverId]?.forEach(socketId => {
+          // Notify both users about the conflict immediately
+          socket.emit('callConflict', {
+            message: 'Simultaneous call detected',
+            otherUserId: receiverId
+          });
+
+          if (users[receiverId]) {
+            users[receiverId].forEach(socketId => {
               socket.to(socketId).emit('callConflict', {
                 message: 'Simultaneous call detected',
                 otherUserId: callerId
               });
             });
-
-            logger.warn(`Simultaneous call detected between users ${callerId} and ${receiverId}`);
-            return; // Early return to prevent further execution
           }
+
+          logger.warn(`Simultaneous call detected between users ${callerId} and ${receiverId}`);
+
+          // Cleanup the conflict state after a delay
+          setTimeout(() => {
+            if (pendingCalls[pendingCallKey]?.conflict) {
+              delete pendingCalls[pendingCallKey];
+            }
+          }, 5000);
+
+          // Return false to indicate a conflict
+          return false;
         }
 
-        // Store the current call attempt
+        // If no conflict, store the current call attempt
         pendingCalls[pendingCallKey] = {
           callerId,
           receiverId,
           timestamp: Date.now(),
-          socketId: socket.id
+          socketId: socket.id,
+          conflict: false
         };
-
         // Clear pending call after timeout
         setTimeout(() => {
           if (pendingCalls[pendingCallKey]) {
