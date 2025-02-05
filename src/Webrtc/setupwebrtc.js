@@ -462,7 +462,7 @@ export const setupWebRTC = (io) => {
             });
 
             logger.warn(`Simultaneous call detected between users ${callerId} and ${receiverId}`);
-            return;
+            return; // Early return to prevent further execution
           }
         }
 
@@ -474,7 +474,7 @@ export const setupWebRTC = (io) => {
           socketId: socket.id
         };
 
-        // Clear pending call after timeout (e.g., 30 seconds)
+        // Clear pending call after timeout
         setTimeout(() => {
           if (pendingCalls[pendingCallKey]) {
             delete pendingCalls[pendingCallKey];
@@ -508,14 +508,15 @@ export const setupWebRTC = (io) => {
           users[callerId].push(socket.id);
         }
 
-        if (users[receiverId].length > 0) {
+        // Only proceed with incomingCall if there's no conflict
+        if (users[receiverId].length > 0 && !pendingCalls[pendingCallKey]?.conflict) {
           // Notify all receiver's sockets about the incoming call
           users[receiverId].forEach((socketId) => {
             socket.to(socketId).emit('incomingCall', {
               callerId,
               callerSocketId: socket.id,
             });
-            logger.warn(`Caller user ${callerId} found`);
+            logger.info(`Incoming call notification sent to receiver ${receiverId} via socket ${socketId}`);
           });
 
           socket.emit('playCallerTune', { callerId });
@@ -807,17 +808,7 @@ export const setupWebRTC = (io) => {
           status: 'rejected'
         });
 
-        // await ChatMessage.call.push({
 
-        //   caller: new mongoose.Types.ObjectId(callerId),
-        //   receiver: new mongoose.Types.ObjectId(receiverId),
-        //   startTime: new Date(),
-        //   endTime: new Date(),
-        //   duration: 0,
-        //   status: 'rejected'
-
-
-        // })
 
       } catch (error) {
         logger.error(`Error in rejectCall handler: ${error.message}`);
