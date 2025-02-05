@@ -166,11 +166,13 @@ export const sendBulkNotification = async (req, res) => {
 
 
 // Original single user notification function (kept for backward compatibility)
-export const sendPushNotification = async (req, res) => {
+
+
+export const sendPushNotification = async (req, res) => 
   const {
-    userId,
-    title = "Are you free now, Yash If Yes, Let's Connect Over A Call"
-  } = req.body;
+  userId,
+
+} = req.body;
 
   try {
     const user = await User.findById(userId);
@@ -183,8 +185,8 @@ export const sendPushNotification = async (req, res) => {
     }
 
     // Create body text with user's name
-    const body = `Your True Listener ${user.username || user.name || ''}`;
-
+    const body = `Your True Listener ${user.username || user.name || 'Unknown Person'}`;
+    const title = `Are you free now, ${user.username || user.name || 'Unknown Person'} If Yes, Let's Connect Over A Call`
     const response = await sendSingleNotification(user.deviceToken, title, body);
 
     if (!response) {
