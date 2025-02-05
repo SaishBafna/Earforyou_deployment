@@ -964,77 +964,125 @@ export const setupWebRTC = (io) => {
     });
 
     socket.on('disconnect', async () => {
-      logger.info(`Socket disconnected: ${socket.id}`);
-      removeUserFromQueue(socket.id);
-      console.log('Current queue:', userQueue);
+      try {
+        logger.info(`Socket disconnected: ${socket.id}`);
 
-      let disconnectedUserId;
+        // Handle queue cleanup
+        removeUserFromQueue(socket.id);
+        logger.debug('Current queue after disconnect:', userQueue);
 
-      // Find and remove the socket ID from the user's list
-      for (const [userId, socketIds] of Object.entries(users)) {
-        const index = socketIds.indexOf(socket.id);
-        if (index !== -1) {
-          socketIds.splice(index, 1);
-          disconnectedUserId = userId;
+        let disconnectedUserId = null;
 
-          if (socketIds.length === 0) {
-            delete users[userId];
-
-            // Update user status to offline
-            try {
-              const updatedUser = await User.findOneAndUpdate(
-                { _id: disconnectedUserId },
-                { status: 'offline' },
-                { new: true }
-              );
-              if (updatedUser) {
-                io.emit('userStatusChanged', { userId: disconnectedUserId, status: 'offline' });
-                // logger.error(`  update offline status for user ${disconnectedUserId}: ${updatedUser} Userid ${userId}`);
-              }
-            } catch (error) {
-              logger.error(`Failed to update offline status for user ${disconnectedUserId}: ${error.message}`);
-            }
+        // Clear any pending calls for this socket
+        for (const key in pendingCalls) {
+          if (pendingCalls[key].socketId === socket.id) {
+            logger.info(`Cleaning up pending call: ${key}`);
+            delete pendingCalls[key];
           }
-          break;
         }
-      }
 
-      // Handle active call disconnection
-      if (disconnectedUserId && activeCalls[disconnectedUserId]) {
-        const otherUserId = activeCalls[disconnectedUserId];
-        const callKey = `${disconnectedUserId}_${otherUserId}`;
-        const reverseCallKey = `${otherUserId}_${disconnectedUserId}`;
-        const callStartTime = callTimings[callKey]?.startTime || callTimings[reverseCallKey]?.startTime;
+        // Find and handle the disconnected user
+        for (const [userId, socketIds] of Object.entries(users)) {
+          const index = socketIds.indexOf(socket.id);
 
-        if (callStartTime) {
-          const endTime = new Date();
-          const duration = Math.floor((endTime - callStartTime) / 1000);
+          if (index !== -1) {
+            // Remove the socket from user's socket list
+            socketIds.splice(index, 1);
+            disconnectedUserId = userId;
+            logger.info(`Removed socket ${socket.id} from user ${userId}. Remaining sockets: ${socketIds.length}`);
+
+            // If no more sockets, handle complete disconnection
+            if (socketIds.length === 0) {
+              delete users[userId];
+              logger.info(`User ${userId} has no more active sockets. Updating status to offline`);
+
+              try {
+                // Update user status to offline in database
+                const updatedUser = await User.findOneAndUpdate(
+                  { _id: disconnectedUserId },
+                  { status: 'offline', lastSeen: new Date() },
+                  { new: true }
+                );
+
+                if (updatedUser) {
+                  // Broadcast status change to all connected users
+                  io.emit('userStatusChanged', {
+                    userId: disconnectedUserId,
+                    status: 'offline',
+                    lastSeen: updatedUser.lastSeen
+                  });
+                  logger.info(`Successfully updated offline status for user ${disconnectedUserId}`);
+                } else {
+                  logger.warn(`User ${disconnectedUserId} not found while updating offline status`);
+                }
+              } catch (error) {
+                logger.error(`Failed to update offline status for user ${disconnectedUserId}:`, error);
+              }
+            }
+            break;
+          }
+        }
+
+        // Handle active call disconnection if user was in a call
+        if (disconnectedUserId && activeCalls[disconnectedUserId]) {
+          const otherUserId = activeCalls[disconnectedUserId];
+          const callKey = `${Math.min(disconnectedUserId, otherUserId)}_${Math.max(disconnectedUserId, otherUserId)}`;
 
           try {
-            await CallLog.create({
-              caller: new mongoose.Types.ObjectId(disconnectedUserId),
-              receiver: new mongoose.Types.ObjectId(otherUserId),
-              startTime: callStartTime,
-              endTime,
-              duration,
-              status: 'failed',
-            });
+            // Get call timing information
+            const callTiming = callTimings[callKey];
+
+            if (callTiming?.startTime) {
+              const endTime = new Date();
+              const duration = Math.floor((endTime - callTiming.startTime) / 1000);
+
+              // Create call log
+              await CallLog.create({
+                caller: new mongoose.Types.ObjectId(callTiming.callerId),
+                receiver: new mongoose.Types.ObjectId(callTiming.receiverId),
+                startTime: callTiming.startTime,
+                endTime,
+                duration,
+                status: 'disconnected',
+                disconnectedBy: disconnectedUserId
+              });
+
+              logger.info(`Call log created for disconnected call between ${disconnectedUserId} and ${otherUserId}`);
+
+              // Cleanup call timing
+              delete callTimings[callKey];
+            }
+
+            // Notify other user about call end
+            if (users[otherUserId]) {
+              users[otherUserId].forEach((socketId) => {
+                socket.to(socketId).emit('callEnded', {
+                  callerId: disconnectedUserId,
+                  reason: 'disconnect'
+                });
+              });
+              logger.info(`Notified user ${otherUserId} about call end due to disconnect`);
+            }
+
+            // Cleanup active calls
+            delete activeCalls[disconnectedUserId];
+            delete activeCalls[otherUserId];
+
+            logger.info(`Cleaned up call state for users ${disconnectedUserId} and ${otherUserId}`);
           } catch (error) {
-            logger.error(`Failed to log call for disconnected user ${disconnectedUserId}: ${error.message}`);
+            logger.error(`Error handling call disconnection for user ${disconnectedUserId}:`, error);
           }
-
-          delete callTimings[callKey];
-          delete callTimings[reverseCallKey];
         }
 
-        if (users[otherUserId]) {
-          users[otherUserId].forEach((socketId) => {
-            socket.to(socketId).emit('callEnded', { callerId: disconnectedUserId });
-          });
-        }
+        // Emit final disconnect event for other features that might need it
+        io.emit('userDisconnected', {
+          userId: disconnectedUserId,
+          socketId: socket.id,
+          timestamp: new Date()
+        });
 
-        delete activeCalls[disconnectedUserId];
-        delete activeCalls[otherUserId];
+      } catch (error) {
+        logger.error('Unhandled error in disconnect handler:', error);
       }
     });
 
