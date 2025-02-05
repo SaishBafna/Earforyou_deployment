@@ -14,7 +14,7 @@ export const setupWebRTC = (io) => {
   const randomCallQueue = new Set();
   const onlineUsers = new Map(); // Map to track user IDs and their socket IDs
   const CALL_TIMEOUT = 60000; // 1 minute in milliseconds
-
+  const pendingCalls = {}; // Track pending calls between users
   // Queue to store connected users
   const userQueue = [];
 
