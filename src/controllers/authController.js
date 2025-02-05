@@ -1466,7 +1466,7 @@ export const getAllUsers1 = async (req, res) => {
     const genderFilter = req.query.gender;
     // Extract and normalize the gender filter from params or query
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-    const loggedInUserGender = genderFilter || req.user.gender?.toLowerCase();
+    const loggedInUserGender = genderFilter;
 
     console.log("Gender Filter (from params):", genderFilter);
     console.log("Logged-in User Gender:", loggedInUserGender);
@@ -1581,6 +1581,128 @@ export const getAllUsers1 = async (req, res) => {
     });
   }
 };
+
+// export const getAllUsers1 = async (req, res) => {
+//   try {
+//     // Extract and normalize the gender filter from params or query
+//     const genderFilter = req.query.gender;
+//     // Extract and normalize the gender filter from params or query
+//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+//     const loggedInUserGender = genderFilter || req.user.gender?.toLowerCase();
+
+//     console.log("Gender Filter (from params):", genderFilter);
+//     console.log("Logged-in User Gender:", loggedInUserGender);
+
+//     // Validate the gender parameter
+//     if (genderFilter && !["male", "female"].includes(genderFilter)) {
+//       return res.status(400).json({
+//         message: "Invalid gender parameter. Must be 'male' or 'female'",
+//       });
+//     }
+
+//     // Pagination parameters
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = 21;
+//     const skip = (page - 1) * limit;
+
+//     // Search query from request
+//     const searchQuery = req.query.search || "";
+//     console.log("Search Query:", searchQuery);
+
+//     // MongoDB aggregation pipeline
+//     const users = await User.aggregate([
+//       {
+//         $match: {
+//           _id: { $ne: loggedInUserId },
+//           UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+//           ...(genderFilter && { gender: genderFilter }),
+//           ...(searchQuery && {
+//             $or: [
+//               { username: { $regex: searchQuery, $options: "i" } },
+//               { name: { $regex: searchQuery, $options: "i" } },
+//               { email: { $regex: searchQuery, $options: "i" } },
+//             ],
+//           }),
+//         },
+//       },
+//       {
+//         $lookup: {
+//           from: "reviews",
+//           localField: "_id",
+//           foreignField: "user",
+//           as: "ratings",
+//         },
+//       },
+//       {
+//         $addFields: {
+//           avgRating: { $avg: "$ratings.rating" },
+//           reviewCount: { $size: "$ratings" },
+//           isOppositeGender: {
+//             $cond: { if: { $ne: ["$gender", loggedInUserGender] }, then: 1, else: 0 },
+//           },
+//           isOnline: {
+//             $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
+//           },
+//         },
+//       },
+//       {
+//         $sort: {
+//           isOnline: -1,
+//           isOppositeGender: -1,
+//           avgRating: -1,
+//         },
+//       },
+//       {
+//         $facet: {
+//           metadata: [{ $count: "totalUsers" }],
+//           users: [
+//             { $skip: skip },
+//             { $limit: limit },
+//             {
+//               $project: {
+//                 password: 0,
+//                 refreshToken: 0,
+//                 ratings: 0,
+//               },
+//             },
+//           ],
+//         },
+//       },
+//     ]);
+
+//     // Extract metadata and user list from the aggregation results
+//     const totalUsers = users[0]?.metadata[0]?.totalUsers || 0;
+//     const userList = users[0]?.users || [];
+
+//     if (userList.length === 0) {
+//       return res.status(404).json({
+//         message: genderFilter
+//           ? `No ${genderFilter} users found`
+//           : "No users found",
+//       });
+//     }
+
+//     // Send the response with users and pagination details
+//     res.status(200).json({
+//       message: genderFilter
+//         ? `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`
+//         : "Users fetched successfully",
+//       users: userList,
+//       pagination: {
+//         totalUsers,
+//         currentPage: page,
+//         totalPages: Math.ceil(totalUsers / limit),
+//         limit,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Error fetching users:", error);
+//     res.status(500).json({
+//       message: "Internal server error",
+//       error: error.message,
+//     });
+//   }
+// };
 
 
 

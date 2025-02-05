@@ -515,6 +515,7 @@ export const setupWebRTC = (io) => {
               callerId,
               callerSocketId: socket.id,
             });
+            logger.warn(`Caller user ${callerId} found`);
           });
 
           socket.emit('playCallerTune', { callerId });
