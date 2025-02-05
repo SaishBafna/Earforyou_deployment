@@ -168,11 +168,8 @@ export const sendBulkNotification = async (req, res) => {
 // Original single user notification function (kept for backward compatibility)
 
 
-export const sendPushNotification = async (req, res) => 
-  const {
-  userId,
-
-} = req.body;
+export const sendPushNotification = async (req, res) => {
+  const { userId } = req.body
 
   try {
     const user = await User.findById(userId);
