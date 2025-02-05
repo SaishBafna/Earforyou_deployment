@@ -35,4 +35,6 @@ router
 router
   .route("/messageread/:messageId/read")
   .put(mongoIdPathVariableValidator("messageId"), validate, markMessageAsRead);
+
+
 export default router;
