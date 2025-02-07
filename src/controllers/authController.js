@@ -1464,12 +1464,9 @@ export const getAllUsers1 = async (req, res) => {
   try {
     // Extract and normalize the gender filter from params or query
     const genderFilter = req.query.gender;
-    // Extract and normalize the gender filter from params or query
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-    const loggedInUserGender = genderFilter || req.user.gender?.toLowerCase();
 
     console.log("Gender Filter (from params):", genderFilter);
-    console.log("Logged-in User Gender:", loggedInUserGender);
 
     // Validate the gender parameter
     if (genderFilter && !["male", "female"].includes(genderFilter)) {
@@ -1486,6 +1483,10 @@ export const getAllUsers1 = async (req, res) => {
     // Search query from request
     const searchQuery = req.query.search || "";
     console.log("Search Query:", searchQuery);
+
+    // Get current timestamp for lastSeen comparison
+    const currentTime = new Date();
+    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
 
     // MongoDB aggregation pipeline
     const users = await User.aggregate([
@@ -1515,19 +1516,30 @@ export const getAllUsers1 = async (req, res) => {
         $addFields: {
           avgRating: { $avg: "$ratings.rating" },
           reviewCount: { $size: "$ratings" },
-          isOppositeGender: {
-            $cond: { if: { $ne: ["$gender", loggedInUserGender] }, then: 1, else: 0 },
-          },
           isOnline: {
             $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
           },
+          lastSeenStatus: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$status", "Online"] },
+                  then: "online"
+                },
+                {
+                  case: { $gte: ["$lastSeen", twentyFourHoursAgo] },
+                  then: "recently"
+                }
+              ],
+              default: "away"
+            }
+          }
         },
       },
       {
         $sort: {
           isOnline: -1,
-          isOppositeGender: -1,
-          avgRating: -1,
+          lastSeen: -1
         },
       },
       {
@@ -1541,6 +1553,17 @@ export const getAllUsers1 = async (req, res) => {
                 password: 0,
                 refreshToken: 0,
                 ratings: 0,
+                username: 1,
+                name: 1,
+                email: 1,
+                gender: 1,
+                status: 1,
+                lastSeen: 1,
+                lastSeenStatus: 1,
+                avgRating: 1,
+                reviewCount: 1,
+                isOnline: 1,
+                // Add any other fields you want to include
               },
             },
           ],
