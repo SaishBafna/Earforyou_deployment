@@ -336,7 +336,8 @@ export const setupWebRTC = (io) => {
           socket.emit('callError', { message: 'Invalid user IDs' });
           return;
         }
-
+        activeCalls[callerId] = receiverId;
+        activeCalls[receiverId] = callerId;
         // Check for active calls
         if (activeCalls[receiverId] || activeCalls[callerId]) {
           const busyUser = activeCalls[receiverId] ? receiverId : callerId;
