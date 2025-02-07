@@ -8,6 +8,6 @@ const router = express.Router();
 
 router.post('/send-notification',protect, sendPushNotification);
 router.get('/Notification', getNotifications);
-router.get('/BulkNotification', sendBulkNotification);
+router.post('/BulkNotification', sendBulkNotification);
 
 export default router;
