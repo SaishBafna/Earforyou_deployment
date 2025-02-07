@@ -16,7 +16,6 @@ export const setupWebRTC = (io) => {
   const CALL_TIMEOUT = 60000; // 1 minute in milliseconds
   const pendingCalls = {}; // Track pending calls between users
   // Queue to store connected users
-  const userBusy={}
   const userQueue = [];
 
   // Function to add user to the queue
@@ -339,8 +338,8 @@ export const setupWebRTC = (io) => {
         }
         
         // Check for active calls
-        if (users[receiverId] || users[callerId]) {
-          const busyUser = users[receiverId] ? receiverId : callerId;
+        if (activeCalls[receiverId] || activeCalls[callerId]) {
+          const busyUser = activeCalls[receiverId] ? receiverId : callerId;
           logger.warn(`[CALL_BUSY] User ${busyUser} is in active call`);
           socket.emit('userBusy', {
             receiverId,
