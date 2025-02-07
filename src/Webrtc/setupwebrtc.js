@@ -486,12 +486,6 @@ export const setupWebRTC = (io) => {
           return;
         }
 
-        const cleanupTimeout1 = setTimeout(() => {
-          delete activeCalls[callerId];
-          delete activeCalls[receiverId];
-        }, 30000);
-        activeCalls[callerId].cleanupTimeout = cleanupTimeout;
-        activeCalls[receiverId].cleanupTimeout = cleanupTimeout;
         // Initialize socket arrays
         users[callerId] = users[callerId] || [];
         users[receiverId] = users[receiverId] || [];
