@@ -1498,8 +1498,7 @@ export const getAllUsers1 = async (req, res) => {
           ...(searchQuery && {
             $or: [
               { username: { $regex: searchQuery, $options: "i" } },
-              { name: { $regex: searchQuery, $options: "i" } },
-              { email: { $regex: searchQuery, $options: "i" } },
+             
             ],
           }),
         },
@@ -1565,7 +1564,7 @@ export const getAllUsers1 = async (req, res) => {
                 UserStatus: 1,
                 shortDecs: 1,
                 decs: 1,
-                Language:1,
+                Language: 1,
                 Bio: 1,
                 avatarUrl: 1,
                 userCategory: 1,
@@ -1643,8 +1642,8 @@ export const getAllUsers1 = async (req, res) => {
 //     const users = await User.aggregate([
 //       {
 //         $match: {
-//           _id: { $ne: loggedInUserId },
-//           UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+// _id: { $ne: loggedInUserId },
+// UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
 //           ...(genderFilter && { gender: genderFilter }),
 //           ...(searchQuery && {
 //             $or: [
