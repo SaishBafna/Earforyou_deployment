@@ -336,7 +336,7 @@ export const setupWebRTC = (io) => {
           socket.emit('callError', { message: 'Invalid user IDs' });
           return;
         }
-        
+
         // Check for active calls
         if (activeCalls[receiverId] || activeCalls[callerId]) {
           const busyUser = activeCalls[receiverId] ? receiverId : callerId;
@@ -348,6 +348,8 @@ export const setupWebRTC = (io) => {
           return;
         }
 
+        activeCalls[callerId] = callerId;
+        activeCalls[receiverId] = receiverId;
 
         if (activeCalls[receiverId]) {
           logger.warn(`[CALL_BUSY] Receiver ${receiverId} is in active call`);
@@ -452,6 +454,8 @@ export const setupWebRTC = (io) => {
           if (pendingCalls[pendingCallKey] && !pendingCalls[pendingCallKey].conflict) {
             logger.info(`[CALL_TIMEOUT] Cleaning up ${pendingCallKey}`);
             delete pendingCalls[pendingCallKey];
+            delete activeCalls[callerId];
+            delete activeCalls[receiverId];
             socket.emit('callTimeout', {
               receiverId,
               message: 'Call request timed out'
@@ -477,9 +481,17 @@ export const setupWebRTC = (io) => {
             userId: !receiver ? receiverId : callerId
           });
           delete pendingCalls[pendingCallKey];
+          delete activeCalls[callerId];
+          delete activeCalls[receiverId];
           return;
         }
 
+        const cleanupTimeout1 = setTimeout(() => {
+          delete activeCalls[callerId];
+          delete activeCalls[receiverId];
+        }, 30000);
+        activeCalls[callerId].cleanupTimeout = cleanupTimeout;
+        activeCalls[receiverId].cleanupTimeout = cleanupTimeout;
         // Initialize socket arrays
         users[callerId] = users[callerId] || [];
         users[receiverId] = users[receiverId] || [];
@@ -495,8 +507,13 @@ export const setupWebRTC = (io) => {
           return;
         }
 
+
         // Handle socket notifications
         if (users[receiverId].length > 0) {
+
+          activeCalls[callerId] = callerId;
+          activeCalls[receiverId] = receiverId;
+
           users[receiverId].forEach((socketId) => {
             socket.to(socketId).emit('incomingCall', {
               callerId,
