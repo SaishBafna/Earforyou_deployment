@@ -1565,6 +1565,7 @@ export const getAllUsers1 = async (req, res) => {
                 UserStatus: 1,
                 shortDecs: 1,
                 decs: 1,
+                Language:1,
                 Bio: 1,
                 avatarUrl: 1,
                 userCategory: 1,
