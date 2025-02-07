@@ -338,8 +338,8 @@ export const setupWebRTC = (io) => {
         }
         
         // Check for active calls
-        if (activeCalls[receiverId] || activeCalls[callerId]) {
-          const busyUser = activeCalls[receiverId] ? receiverId : callerId;
+        if (users[receiverId] || users[callerId]) {
+          const busyUser = users[receiverId] ? receiverId : callerId;
           logger.warn(`[CALL_BUSY] User ${busyUser} is in active call`);
           socket.emit('userBusy', {
             receiverId,
