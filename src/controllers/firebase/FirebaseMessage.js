@@ -170,28 +170,28 @@ export const sendBulkNotification = async (req, res) => {
 
 
 export const sendPushNotification = async (req, res) => {
-  const loginuserid=req.user.id || req.user._id;
+  const loginuserid = req.user.id || req.user._id;
   const { userId } = req.body
 
   try {
     const user = await User.findById(userId);
     const loginuser = await User.findById(loginuserid);
-    
-    console.log("user",user);
-    console.log("user",user.deviceToken);
-    
-    if (!user || !user.deviceToken)
-       {
+
+    console.log("user", user);
+    console.log("user", user.deviceToken);
+
+    if (!user || !user.deviceToken) {
       console.log()
       return res.status(404).json({
         success: false,
         message: 'User or device token not found'
       });
     }
-
+    const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : 'Unknown Person';
     // Create body text with user's name
-    const body = `Your True Listener ${loginuser.username || user.name || 'Unknown Person'}`;
-    const title = `Are you free now, ${user.username || user.name || 'Unknown Person'} If Yes, Let's Connect Over A Call`
+    const body = `Your True Listener ${capitalize(loginuser.username) || capitalize(user.name) || 'Unknown Person'}`;
+    const title = `Are you free now, ${capitalize(user.username) || capitalize(user.name) || 'Unknown Person'}? If Yes, Let's Connect Over A Call`;
+
     const response = await sendSingleNotification(user.deviceToken, title, body);
 
     if (!response) {
