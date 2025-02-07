@@ -336,7 +336,7 @@ export const setupWebRTC = (io) => {
           socket.emit('callError', { message: 'Invalid user IDs' });
           return;
         }
-        
+
         // Check for active calls
         if (activeCalls[receiverId] || activeCalls[callerId]) {
           const busyUser = activeCalls[receiverId] ? receiverId : callerId;
@@ -350,21 +350,24 @@ export const setupWebRTC = (io) => {
 
 
         if (activeCalls[receiverId]) {
-          logger.warn(`[CALL_BUSY] Receiver ${receiverId} is in active call`);
           socket.emit('userBusy', {
             receiverId,
             message: 'User is in another call'
           });
+          logger.warn(`[CALL_BUSY] Receiver ${receiverId} is in active call`);
+
           return;
         }
 
         if (activeCalls[callerId]) {
-          logger.warn(`[CALL_BUSY] Caller ${callerId} is in active call`);
           socket.emit('userBusy', {
             receiverId: callerId,
             message: 'You are in another call'
           });
+          logger.warn(`[CALL_BUSY] Caller ${callerId} is in active call`);
+
           return;
+
         }
 
         // Generate call key using string comparison instead of Math.min/max
@@ -480,6 +483,9 @@ export const setupWebRTC = (io) => {
           return;
         }
 
+
+
+
         // Initialize socket arrays
         users[callerId] = users[callerId] || [];
         users[receiverId] = users[receiverId] || [];
@@ -497,6 +503,18 @@ export const setupWebRTC = (io) => {
 
         // Handle socket notifications
         if (users[receiverId].length > 0) {
+
+          activeCalls[callerId] = {
+            receiverId,
+            startTime: Date.now(),
+            socketId: socket.id
+          };
+          activeCalls[receiverId] = {
+            callerId,
+            startTime: Date.now(),
+            socketId: socket.id
+          };
+
           users[receiverId].forEach((socketId) => {
             socket.to(socketId).emit('incomingCall', {
               callerId,
