@@ -1550,9 +1550,7 @@ export const getAllUsers1 = async (req, res) => {
             { $limit: limit },
             {
               $project: {
-                password: 0,
-                refreshToken: 0,
-                ratings: 0,
+                _id: 1,
                 username: 1,
                 name: 1,
                 email: 1,
@@ -1563,7 +1561,8 @@ export const getAllUsers1 = async (req, res) => {
                 avgRating: 1,
                 reviewCount: 1,
                 isOnline: 1,
-                // Add any other fields you want to include
+                profilePhoto: 1,
+                UserStatus: 1
               },
             },
           ],
