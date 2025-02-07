@@ -505,8 +505,7 @@ export const setupWebRTC = (io) => {
         // Handle socket notifications
         if (users[receiverId].length > 0) {
 
-          activeCalls[callerId] = callerId;
-          activeCalls[receiverId] = receiverId;
+
 
           users[receiverId].forEach((socketId) => {
             socket.to(socketId).emit('incomingCall', {
@@ -515,6 +514,10 @@ export const setupWebRTC = (io) => {
               callerName: caller.username || 'Unknown Caller',
               timestamp: Date.now()
             });
+
+
+            activeCalls[callerId] = callerId;
+            activeCalls[receiverId] = receiverId;
             logger.info(`[SOCKET_NOTIFY] Sent to ${receiverId} via socket ${socketId}`);
           });
 
