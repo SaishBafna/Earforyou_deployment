@@ -1186,11 +1186,6 @@ async function sendNotification_call(userId, title, message, type, receiverId, s
     const payload = {
       android: {
         priority: 'high',
-        notification: {
-          channelId: 'calls',
-          title: 'Incoming Call',
-          body: `${senderName} is calling...`,
-        }
       },
       data: {
         screen: 'incoming_Call', // Target screen
