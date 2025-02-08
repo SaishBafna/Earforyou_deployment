@@ -552,11 +552,11 @@ export const setupWebRTC = (io) => {
         }
 
 
-      
+
 
         // Check if either user is in an active call
         const busyUsers = new Set();
-        logger.error("busyUsers",busyUsers);
+        logger.error("busyUsers", busyUsers);
         Object.entries(activeCalls).forEach(([userId, callData]) => {
           if (callData.participants) {
             callData.participants.forEach(participant => busyUsers.add(participant));
@@ -947,7 +947,7 @@ export const setupWebRTC = (io) => {
     });
 
 
-   
+
 
 
 
