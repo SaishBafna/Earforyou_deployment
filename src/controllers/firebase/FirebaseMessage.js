@@ -23,6 +23,7 @@ const sendSingleNotification = async (deviceToken, title, body) => {
 };
 
 // Function to send notification to multiple users
+
 // export const sendBulkNotification = async (req, res) => {
 //   const { title, body } = req.body;
 
