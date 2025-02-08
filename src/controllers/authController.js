@@ -2058,8 +2058,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
       })
       .sort({ updatedAt: -1 })
       .skip(skip)
-      .limit(limit)
-      .lean();
+      .limit(limit);
 
     // Step 5: Fetch reviews for participants
     const reviews = await Review.find({
