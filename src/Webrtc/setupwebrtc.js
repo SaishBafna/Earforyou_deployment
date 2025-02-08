@@ -691,7 +691,6 @@ export const setupWebRTC = (io) => {
         }
 
         // Important: Check if either user is in an active call
-        // Using Object.values to check all active calls
         const isUserBusy = (userId) => {
           return Object.entries(activeCalls).some(([key, value]) => {
             return key === userId || value === userId;
@@ -722,12 +721,44 @@ export const setupWebRTC = (io) => {
         const pendingCallKey = [callerId, receiverId].sort().join('_');
         logger.debug(`[CALL_KEY] Generated key: ${pendingCallKey}`);
 
+        // Fetch user details early to ensure we have them
+        const [receiver, caller] = await Promise.all([
+          User.findById(receiverId),
+          User.findById(callerId),
+        ]).catch(error => {
+          logger.error(`[DB_ERROR] Failed to fetch users: ${error.message}`);
+          throw new Error('Failed to fetch user details');
+        });
+
+        if (!receiver || !caller) {
+          handleMissingUser(socket, pendingCallKey, receiver, caller, receiverId, callerId);
+          return;
+        }
+
         // Check for existing pending calls
         if (pendingCalls[pendingCallKey]) {
           const existingCall = pendingCalls[pendingCallKey];
           const timeSinceCall = Date.now() - existingCall.timestamp;
 
           if (timeSinceCall < 5000) {
+            // Set conflict flag but continue with call notification
+            existingCall.conflict = true;
+            logger.warn(`[CALL_CONFLICT] Detected for key: ${pendingCallKey}`);
+
+            // Emit incoming call even in conflict situation
+            if (users[receiverId] && users[receiverId].length > 0) {
+              users[receiverId].forEach((socketId) => {
+                socket.to(socketId).emit('incomingCall', {
+                  callerId,
+                  callerSocketId: socket.id,
+                  callerName: caller.username || 'Unknown Caller',
+                  timestamp: Date.now(),
+                  isConflict: true
+                });
+                logger.info(`[SOCKET_NOTIFY] Sent conflict call to ${receiverId} via socket ${socketId}`);
+              });
+            }
+
             handleCallConflict(socket, pendingCallKey, callerId, receiverId, existingCall);
             return;
           }
@@ -760,60 +791,33 @@ export const setupWebRTC = (io) => {
 
         pendingCalls[pendingCallKey].cleanupTimeout = cleanupTimeout;
 
-        // Fetch user details
-        const [receiver, caller] = await Promise.all([
-          User.findById(receiverId),
-          User.findById(callerId),
-        ]).catch(error => {
-          logger.error(`[DB_ERROR] Failed to fetch users: ${error.message}`);
-          throw new Error('Failed to fetch user details');
-        });
+        // Initialize socket arrays and register caller socket
+        users[callerId] = users[callerId] || [];
+        users[receiverId] = users[receiverId] || [];
 
-        if (!receiver || !caller) {
-          handleMissingUser(`socket, pendingCallKey, receiver, caller, receiverId, callerId`);
-          return;
+        if (!users[callerId].includes(socket.id)) {
+          users[callerId].push(socket.id);
         }
 
+        // Set active call status
+        activeCalls[callerId] = receiverId;
+        activeCalls[receiverId] = callerId;
 
-
-
-        // Initialize socket arrays and register caller
-        initializeUserSockets(users, callerId, receiverId, socket);
-
-        // Final conflict check
-        if (pendingCalls[pendingCallKey]?.conflict) {
-          logger.warn(`[LATE_CONFLICT] Detected after user fetch`);
-          return;
-        }
-
-        // Handle socket notifications
+        // Handle socket notifications for normal call
         if (users[receiverId].length > 0) {
-          // Initialize socket arrays and register caller socket
+          users[receiverId].forEach((socketId) => {
+            socket.to(socketId).emit('incomingCall', {
+              callerId,
+              callerSocketId: socket.id,
+              callerName: caller.username || 'Unknown Caller',
+              timestamp: Date.now(),
+              isConflict: false
+            });
+            logger.info(`[SOCKET_NOTIFY] Sent to ${receiverId} via socket ${socketId}`);
+          });
 
-          notifyReceiver(socket, users, receiverId, callerId, caller);
-
-          users[callerId] = users[callerId] || [];
-          users[receiverId] = users[receiverId] || [];
-
-          if (!users[callerId].includes(socket.id)) {
-            users[callerId].push(socket.id);
-          }
-
-          // Set active call status
-          activeCalls[callerId] = receiverId;
-          activeCalls[receiverId] = callerId;
+          socket.emit('playCallerTune', { callerId });
         }
-
-        // Handle push notification
-        if (receiver.deviceToken && !pendingCalls[pendingCallKey]?.conflict) {
-          await sendPushNotification(receiver, caller, receiverId, callerId);
-        }
-
-        // Update call status
-        pendingCalls[pendingCallKey].status = 'active';
-
-
-
 
         // Handle push notification
         if (receiver.deviceToken) {
