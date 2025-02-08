@@ -73,6 +73,95 @@ const sendSingleNotification = async (deviceToken, title, body) => {
 
 
 
+export const sendBulkNotification = async (req, res) => {
+  const { title, body } = req.body;
+
+  try {
+    // Input validation
+    if (!title || !body) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title and body are required fields'
+      });
+    }
+
+    // Get all device tokens
+    const users = await User.find(
+      { deviceToken: { $exists: true, $ne: null } },
+      { deviceToken: 1 }
+    ).lean();
+
+    if (!users || users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No device tokens found'
+      });
+    }
+
+    // Extract tokens and create batches
+    const registrationTokens = users.map(user => user.deviceToken);
+    const BATCH_SIZE = 500;
+    const batches = [];
+
+    for (let i = 0; i < registrationTokens.length; i += BATCH_SIZE) {
+      batches.push(registrationTokens.slice(i, i + BATCH_SIZE));
+    }
+
+    const results = await Promise.all(
+      batches.map(async (tokenBatch) => {
+        const message = {
+          data: {
+            title,
+            body,
+          },
+          tokens: tokenBatch
+        };
+
+        try {
+          return await admin.messaging().sendEachForMulticast(message);
+        } catch (error) {
+          console.error('Batch error:', error);
+          return {
+            successCount: 0,
+            failureCount: tokenBatch.length,
+            responses: tokenBatch.map(() => ({ success: false }))
+          };
+        }
+      })
+    );
+
+    // Aggregate results
+    const totalResults = {
+      successCount: 0,
+      failureCount: 0,
+      responses: []
+    };
+
+    results.forEach(result => {
+      totalResults.successCount += result.successCount;
+      totalResults.failureCount += result.failureCount;
+      totalResults.responses.push(...result.responses);
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Notifications sent',
+      summary: {
+        total: registrationTokens.length,
+        successful: totalResults.successCount,
+        failed: totalResults.failureCount
+      }
+    });
+
+  } catch (error) {
+    console.error('Error sending multicast:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send notifications',
+      error: error.message
+    });
+  }
+};
 
 
 
@@ -119,73 +208,6 @@ export const sendPushNotification = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to send notification',
-      error: error.message
-    });
-  }
-};
-
-
-
-export const sendBulkNotification = async (req, res) => {
-  const { title, body, batchSize = DEFAULT_BATCH_SIZE } = req.body;
-
-  try {
-    // Input validation
-    if (!title?.trim() || !body?.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Title and body are required fields and cannot be empty'
-      });
-    }
-
-    // Fetch users with valid device tokens
-    const users = await User.find(
-      { deviceToken: { $exists: true, $ne: null } },
-      { deviceToken: 1 }
-    ).lean();
-
-    if (!users?.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'No device tokens found'
-      });
-    }
-
-    const registrationTokens = users
-      .map(user => user.deviceToken)
-      .filter(token => token && token.trim()); // Filter out invalid tokens
-
-    if (!registrationTokens.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'No valid device tokens found'
-      });
-    }
-
-    const batches = createBatches(registrationTokens, batchSize);
-    const results = await processBatches(batches, title, body);
-    const summary = aggregateResults(results);
-
-    if (summary.invalidTokens.length) {
-      await handleInvalidTokens(summary.invalidTokens);
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Notifications sent',
-      summary: {
-        total: registrationTokens.length,
-        successful: summary.successCount,
-        failed: summary.failureCount,
-        invalidTokensRemoved: summary.invalidTokens.length
-      }
-    });
-
-  } catch (error) {
-    console.error('Error in sendBulkNotification:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to send notifications',
       error: error.message
     });
   }
