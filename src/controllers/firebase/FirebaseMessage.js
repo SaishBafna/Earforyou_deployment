@@ -85,7 +85,7 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const sendNotificationWithRetry = async (message, maxRetries = MAX_RETRIES) => {
   let lastError;
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const result = await getMessaging().sendEachForMulticast(message);
@@ -93,13 +93,13 @@ const sendNotificationWithRetry = async (message, maxRetries = MAX_RETRIES) => {
     } catch (error) {
       lastError = error;
       console.log(`Retry attempt ${attempt + 1} failed:`, error.message);
-      
+
       if (attempt < maxRetries - 1) {
         await sleep(RETRY_DELAY * (attempt + 1)); // Exponential backoff
       }
     }
   }
-  
+
   throw lastError;
 };
 
@@ -143,12 +143,36 @@ export const sendBulkNotification = async (req, res) => {
         notification: {
           title,
           body
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            priority: 'high'
+          }
+        },
+        apns: {
+          payload: {
+            aps: {
+              priority: 10,
+              contentAvailable: true
+            }
+          },
+          headers: {
+            'apns-priority': '10',
+            'apns-push-type': 'alert'
+          }
+        },
+        webpush: {
+          headers: {
+            Urgency: 'high'
+          }
         }
+
       };
 
       try {
         const result = await sendNotificationWithRetry(message);
-        
+
         totalSuccessful += result.successCount;
         totalFailed += result.failureCount;
 
@@ -157,9 +181,9 @@ export const sendBulkNotification = async (req, res) => {
           result.responses.forEach((resp, idx) => {
             if (!resp.success) {
               const token = batchTokens[idx];
-              
+
               if (resp.error?.code === 'messaging/invalid-registration-token' ||
-                  resp.error?.code === 'messaging/registration-token-not-registered') {
+                resp.error?.code === 'messaging/registration-token-not-registered') {
                 allInvalidTokens.push(token);
               } else {
                 // Store tokens that failed for other reasons
@@ -200,7 +224,7 @@ export const sendBulkNotification = async (req, res) => {
             body
           }
         };
-        
+
         const retryResult = await sendNotificationWithRetry(retryMessage, 1);
         totalSuccessful += retryResult.successCount;
         totalFailed -= retryResult.successCount;
