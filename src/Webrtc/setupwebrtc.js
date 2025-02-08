@@ -550,6 +550,10 @@ export const setupWebRTC = (io) => {
           socket.emit('callError', { message: 'Invalid user IDs' });
           return;
         }
+
+
+
+
         // Check if either user is in an active call
         const busyUsers = new Set();
         // logger.error("busyUsers", busyUsers);
@@ -578,27 +582,8 @@ export const setupWebRTC = (io) => {
         }
 
 
-        const isPendingCall = Object.values(pendingCalls).some(call =>
-          (call.status === 'active' || call.status === 'initializing') &&
-          (call.participants.includes(callerId) || call.participants.includes(receiverId))
-        );
-
-        if (isPendingCall) {
-          logger.warn(`[CALL_BUSY] User involved in pending call`);
-          socket.emit('userBusy', {
-            receiverId,
-            message: 'User is busy with another call'
-          });
-          return;
-        }
-
-
-        const callId = `${Date.now()}_${callerId}_${receiverId}`;
-        activeCalls[callId] = {
-          participants: [callerId, receiverId],
-          status: 'initializing',
-          startTime: Date.now()
-        };
+        activeCalls[callerId] = callerId;
+        activeCalls[receiverId] = receiverId;
 
         // Generate call key using string comparison
         const pendingCallKey = [callerId, receiverId].sort().join('_');
@@ -742,7 +727,6 @@ export const setupWebRTC = (io) => {
     }
 
     function notifyReceiver(socket, users, receiverId, callerId, caller) {
-
       users[receiverId].forEach((socketId) => {
         socket.to(socketId).emit('incomingCall', {
           callerId,
@@ -751,16 +735,6 @@ export const setupWebRTC = (io) => {
           timestamp: Date.now()
         });
         logger.info(`[SOCKET_NOTIFY] Sent to ${receiverId} via socket ${socketId}`);
-      });
-
-      users[callerId].forEach((socketId) => {
-        if (socketId !== socket.id) { // Don't send to the current socket
-          socket.to(socketId).emit('outgoingCall', {
-            ...callData,
-            receiverId
-          });
-          logger.info(`[SOCKET_NOTIFY] Sent outgoing call to caller's other socket ${socketId}`);
-        }
       });
 
       socket.emit('playCallerTune', { callerId });
