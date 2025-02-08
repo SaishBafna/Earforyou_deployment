@@ -114,27 +114,47 @@ export const sendBulkNotification = async (req, res) => {
     const allInvalidTokens = [];
 
     for (const batchTokens of batches) {
-      const result = await getMessaging().sendMulticast({
-        notification: {
-          title,
-          body
+      const message = {
+        tokens: batchTokens,
+        android: {
+          notification: {
+            title,
+            body
+          }
         },
-        tokens: batchTokens
-      });
+        apns: {
+          payload: {
+            aps: {
+              alert: {
+                title,
+                body
+              }
+            }
+          }
+        },
+        webpush: {
+          notification: {
+            title,
+            body
+          }
+        }
+      };
+
+      const result = await getMessaging().sendEachForMulticast(message);
 
       totalSuccessful += result.successCount;
       totalFailed += result.failureCount;
 
       if (result.failureCount > 0) {
         const invalidTokens = result.responses.reduce((acc, resp, idx) => {
-          if (!resp.success &&
-            (resp.error.code === 'messaging/invalid-registration-token' ||
-              resp.error.code === 'messaging/registration-token-not-registered')) {
+          if (!resp.success && 
+              (resp.error?.code === 'messaging/invalid-registration-token' ||
+               resp.error?.code === 'messaging/registration-token-not-registered')) {
             acc.push(batchTokens[idx]);
           }
           return acc;
         }, []);
-
+        
         allInvalidTokens.push(...invalidTokens);
       }
     }
@@ -165,8 +185,6 @@ export const sendBulkNotification = async (req, res) => {
     });
   }
 };
-
-
 
 
 
