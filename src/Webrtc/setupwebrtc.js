@@ -445,7 +445,7 @@ export const setupWebRTC = (io) => {
                 message: 'user is Busy Another Call Wait Some Time '
               });
             }
-          }, 90000);
+          }, 60000);
 
           pendingCalls[pendingCallKey].cleanupTimeout = cleanupTimeout;
 
@@ -503,7 +503,7 @@ export const setupWebRTC = (io) => {
     });
 
 
-   
+
 
     function cleanupCallResources(pendingCallKey, callerId, receiverId, socket) {
       // Clean up pending calls
@@ -846,6 +846,10 @@ export const setupWebRTC = (io) => {
           });
         }
 
+        const callerCallKey = `${callerId}_${receiverId}`;
+        const receiverCallKey = `${receiverId}_${callerId}`;
+
+
         // Send push notification (only once)
         if (receiver.deviceToken && receiver.notificationSettings?.missedCalls !== false) {
           await sendMNotification(
@@ -878,6 +882,12 @@ export const setupWebRTC = (io) => {
           duration: 0,
           status: 'missed',
         });
+
+        logger.info('Cleaning up call data...');
+        delete activeCalls[callerId];
+        delete activeCalls[receiverId];
+        delete callTimings[callerCallKey];
+        delete callTimings[receiverCallKey];
 
         console.log('Missed call logs created:', { logForCaller, logForReceiver });
       } catch (error) {
