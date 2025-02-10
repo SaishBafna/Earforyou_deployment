@@ -38,6 +38,6 @@ router
   .put(mongoIdPathVariableValidator("messageId"), validate, markMessageAsRead);
 
 
-router.get("/messages/unread/count", protect, getUnreadMessagesCount);
+router.get("/messages/unread/count/:id", protect, getUnreadMessagesCount);
 
 export default router;
