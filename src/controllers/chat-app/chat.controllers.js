@@ -381,11 +381,11 @@ export const getUnreadMessagesCount = asyncHandler(async (req, res) => {
   // Count unread messages across all user's chats
   const unreadCount = await ChatMessage.countDocuments({
     chat: { $in: chatIds },
-    seenBy: { 
-      $not: { 
-        $elemMatch: { 
-          $eq: req.user._id 
-        } 
+    seenBy: {
+      $not: {
+        $elemMatch: {
+          $eq: req.user._id
+        }
       }
     },
     sender: { $ne: req.user._id } // Don't count user's own messages
@@ -396,11 +396,11 @@ export const getUnreadMessagesCount = asyncHandler(async (req, res) => {
     {
       $match: {
         chat: { $in: chatIds },
-        seenBy: { 
-          $not: { 
-            $elemMatch: { 
-              $eq: req.user._id 
-            } 
+        seenBy: {
+          $not: {
+            $elemMatch: {
+              $eq: req.user._id
+            }
           }
         },
         sender: { $ne: req.user._id }
@@ -415,14 +415,7 @@ export const getUnreadMessagesCount = asyncHandler(async (req, res) => {
   ]);
 
   return res.status(200).json(
-    new ApiResponse(
-      200, 
-      {
-        totalUnread: unreadCount,
-        unreadByChat: unreadCountByChat
-      },
-      "Unread messages count retrieved successfully"
-    )
+    new ApiResponse(unreadCount, unreadCountByChat)
   );
 });
 
