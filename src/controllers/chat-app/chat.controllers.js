@@ -451,40 +451,45 @@ const getAllChats = asyncHandler(async (req, res) => {
 
 export const getUnreadMessagesCount = asyncHandler(async (req, res) => {
   const loggedInUserId = req.user._id;
-  const otherParticipantId = req.params.participantId; // Get from params
+  const otherParticipantId = req.query.otherParticipantId;
 
-  // Get chat between logged in user and other participant
+  if (!otherParticipantId) {
+    throw new ApiError(400, "Other participant ID is required");
+  }
+
+  // Find the chat between these two users
   const chat = await Chat.findOne({
     participants: {
-      $all: [loggedInUserId, otherParticipantId]
+      $all: [loggedInUserId, otherParticipantId],
+      $size: 2  // Ensure it's a direct chat between two users
     }
   });
 
   if (!chat) {
     return res.status(200).json(
-      new ApiResponse(0, []) // Return 0 if no chat exists
+      new ApiResponse(0, { chatId: null, count: 0, otherParticipantId })
     );
   }
 
-  // Count unread messages from other participant
+  // Count unread messages for this specific chat
   const unreadCount = await ChatMessage.countDocuments({
     chat: chat._id,
-    sender: otherParticipantId,
     seenBy: {
       $not: {
         $elemMatch: {
           $eq: loggedInUserId
         }
       }
-    }
+    },
+    sender: { $ne: loggedInUserId } // Don't count user's own messages
   });
 
   return res.status(200).json(
-    new ApiResponse(unreadCount, [{
-      _id: chat._id,
+    new ApiResponse(unreadCount, {
+      chatId: chat._id,
       count: unreadCount,
       otherParticipantId
-    }])
+    })
   );
 });
 
