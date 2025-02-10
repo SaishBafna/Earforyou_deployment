@@ -445,7 +445,7 @@ export const setupWebRTC = (io) => {
                 message: 'user is Busy Another Call Wait Some Time '
               });
             }
-          }, 60000);
+          }, 90000);
 
           pendingCalls[pendingCallKey].cleanupTimeout = cleanupTimeout;
 
