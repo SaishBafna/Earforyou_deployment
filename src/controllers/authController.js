@@ -1630,14 +1630,13 @@ export const getAllUsers1 = async (req, res) => {
       {
         $lookup: {
           from: "chats",
-          let: { currentUserId: "$_id" },  // Changed variable name for clarity
+          let: { currentUserId: "$_id" },
           pipeline: [
             {
               $match: {
                 $expr: {
                   $and: [
-                    { $in: ["$$currentUserId", "$participants"] },
-                    { $in: [loggedInUserId, "$participants"] },
+                    { $setIsSubset: [[loggedInUserId, "$$currentUserId"], "$participants"] },
                     { $eq: [{ $size: "$participants" }, 2] }
                   ]
                 }
@@ -1651,9 +1650,9 @@ export const getAllUsers1 = async (req, res) => {
       {
         $lookup: {
           from: "chatmessages",
-          let: {
+          let: { 
             chatId: { $arrayElemAt: ["$chat._id", 0] },
-            currentUserId: "$_id"  // Added this variable
+            currentUserId: "$_id"
           },
           pipeline: [
             {
@@ -1662,11 +1661,7 @@ export const getAllUsers1 = async (req, res) => {
                   $and: [
                     { $eq: ["$chat", "$$chatId"] },
                     { $eq: ["$sender", "$$currentUserId"] },
-                    {
-                      $not: {
-                        $in: [loggedInUserId, "$seenBy"]
-                      }
-                    }
+                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } }
                   ]
                 }
               }
@@ -1789,6 +1784,7 @@ export const getAllUsers1 = async (req, res) => {
     });
   }
 };
+
 
 export const getAllUsers2 = async (req, res) => {
   try {
