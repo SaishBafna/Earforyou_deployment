@@ -910,6 +910,9 @@ export const setupWebRTC = (io) => {
       try {
         logger.info(`User ${receiverId} rejected call from User ${callerId}`);
 
+        const callerCallKey = `${callerId}_${receiverId}`;
+        const receiverCallKey = `${receiverId}_${callerId}`;
+
         // Clean up call status
         delete activeCalls[callerId];
         delete activeCalls[receiverId];
