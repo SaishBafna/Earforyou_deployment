@@ -1618,7 +1618,6 @@ export const getAllUsers1 = async (req, res) => {
           }),
         },
       },
-      // Lookup reviews
       {
         $lookup: {
           from: "reviews",
@@ -1631,13 +1630,13 @@ export const getAllUsers1 = async (req, res) => {
       {
         $lookup: {
           from: "chats",
-          let: { userId: "$_id" },
+          let: { currentUserId: "$_id" },  // Changed variable name for clarity
           pipeline: [
             {
               $match: {
                 $expr: {
                   $and: [
-                    { $in: ["$$userId", "$participants"] },
+                    { $in: ["$$currentUserId", "$participants"] },
                     { $in: [loggedInUserId, "$participants"] },
                     { $eq: [{ $size: "$participants" }, 2] }
                   ]
@@ -1652,14 +1651,17 @@ export const getAllUsers1 = async (req, res) => {
       {
         $lookup: {
           from: "chatmessages",
-          let: { chatId: { $arrayElemAt: ["$chat._id", 0] } },
+          let: {
+            chatId: { $arrayElemAt: ["$chat._id", 0] },
+            currentUserId: "$_id"  // Added this variable
+          },
           pipeline: [
             {
               $match: {
                 $expr: {
                   $and: [
                     { $eq: ["$chat", "$$chatId"] },
-                    { $eq: ["$sender", "$$userId"] },
+                    { $eq: ["$sender", "$$currentUserId"] },
                     {
                       $not: {
                         $in: [loggedInUserId, "$seenBy"]
