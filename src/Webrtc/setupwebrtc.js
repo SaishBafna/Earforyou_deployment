@@ -440,12 +440,12 @@ export const setupWebRTC = (io) => {
                 message: 'Call request timed out'
               });
 
-              socket.emit('userBusy', {
+              socket.emit('callMissed', {
                 receiverId,
                 message: 'user is Busy Another Call Wait Some Time '
               });
             }
-          }, 30000);
+          }, 60000);
 
           pendingCalls[pendingCallKey].cleanupTimeout = cleanupTimeout;
 
@@ -813,12 +813,6 @@ export const setupWebRTC = (io) => {
         });
       }
     });
-
-
-
-
-
-
 
 
     socket.on('missedcall', async ({ receiverId, callerId }) => {
