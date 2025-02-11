@@ -947,25 +947,11 @@ export const setupWebRTC = (io) => {
           }
         }
 
-        // Remove active call entries
-        if (activeCalls[callerId]) {
-          delete activeCalls[callerId];
-          logger.info(`Removed active call entry for Caller: ${callerId}`);
-        }
-        if (activeCalls[receiverId]) {
-          delete activeCalls[receiverId];
-          logger.info(`Removed active call entry for Receiver: ${receiverId}`);
-        }
+        delete activeCalls[callerId];
+        delete activeCalls[receiverId];
+        delete callTimings[callerCallKey];
+        delete callTimings[receiverCallKey];
 
-        // Clean up call timing data
-        if (callTimings[callerCallKey]) {
-          delete callTimings[callerCallKey];
-          logger.info(`Deleted call timing entry for ${callerCallKey}`);
-        }
-        if (callTimings[receiverCallKey]) {
-          delete callTimings[receiverCallKey];
-          logger.info(`Deleted call timing entry for ${receiverCallKey}`);
-        }
 
         logger.info('Call cleanup completed successfully.');
 
