@@ -904,213 +904,52 @@ export const setupWebRTC = (io) => {
       }
     });
 
+   
     socket.on('rejectCall', async ({ receiverId, callerId }) => {
       try {
-        // Input validation with type checking
-        if (!receiverId || !callerId || typeof receiverId !== 'string' || typeof callerId !== 'string') {
-          logger.warn('Invalid or missing caller/receiver ID', { receiverId, callerId });
-          return socket.emit('callError', { message: 'Invalid call parameters' });
-        }
-
         logger.info(`User ${receiverId} rejected call from User ${callerId}`);
 
-        // Call keys for tracking
-        const callerCallKey = `${callerId}_${receiverId}`;
-        const receiverCallKey = `${receiverId}_${callerId}`;
+        // Clean up call status
+        delete activeCalls[callerId];
+        delete activeCalls[receiverId];
 
-        // Capture initial state for debugging
-        const initialState = {
-          activeCalls: JSON.parse(JSON.stringify(activeCalls)),
-          pendingCalls: JSON.parse(JSON.stringify(pendingCalls)),
-          callTimings: JSON.parse(JSON.stringify(callTimings))
-        };
-
-        // Enhanced cleanup function with retries
-        const performCleanup = async (maxRetries = 3) => {
-          for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-              // Clear pending calls
-              delete pendingCalls[callerId];
-              delete pendingCalls[receiverId];
-
-              // Clear active calls
-              delete activeCalls[callerId];
-              delete activeCalls[receiverId];
-
-              // Clear call timings
-              delete callTimings[callerCallKey];
-              delete callTimings[receiverCallKey];
-
-              // Verify cleanup
-              const cleanupVerification = {
-                pendingCalls: !pendingCalls[callerId] && !pendingCalls[receiverId],
-                activeCalls: !activeCalls[callerId] && !activeCalls[receiverId],
-                callTimings: !callTimings[callerCallKey] && !callTimings[receiverCallKey]
-              };
-
-
-              if (users[callerId]) {
-                users[callerId].forEach((socketId) => {
-                  socket.to(socketId).emit('callRejected', { receiverId });
-                });
-              }
-              const isCleanupComplete = Object.values(cleanupVerification).every(v => v === true);
-
-              if (isCleanupComplete) {
-                logger.info('Cleanup successful on attempt', { attempt });
-                return true;
-              }
-
-              logger.warn('Cleanup incomplete, retrying...', {
-                attempt,
-                remainingState: {
-                  pendingCalls: Object.keys(pendingCalls),
-                  activeCalls: Object.keys(activeCalls),
-                  callTimings: Object.keys(callTimings)
-                }
-              });
-
-              // Small delay before retry
-              await new Promise(resolve => setTimeout(resolve, 100));
-            } catch (cleanupError) {
-              logger.error('Cleanup attempt failed', {
-                attempt,
-                error: cleanupError.message
-              });
-            }
-          }
-          return false;
-        };
-
-        // Force cleanup if regular cleanup fails
-        const forceCleanup = () => {
-          try {
-            // Direct property deletion with Object.defineProperty fallback
-            const cleanupTargets = [
-              { obj: pendingCalls, props: [callerId, receiverId] },
-              { obj: activeCalls, props: [callerId, receiverId] },
-              { obj: callTimings, props: [callerCallKey, receiverCallKey] }
-            ];
-
-            cleanupTargets.forEach(({ obj, props }) => {
-              props.forEach(prop => {
-                try {
-                  delete obj[prop];
-                  if (obj[prop] !== undefined) {
-                    Object.defineProperty(obj, prop, {
-                      value: undefined,
-                      configurable: true,
-                      enumerable: false,
-                      writable: true
-                    });
-                  }
-                } catch (e) {
-                  logger.error('Force cleanup property deletion failed', { prop, error: e.message });
-                }
-              });
-            });
-
-            return true;
-          } catch (forceError) {
-            logger.error('Force cleanup failed', { error: forceError.message });
-            return false;
-          }
-        };
-
-        // Attempt cleanup with retries
-        let cleanupSuccess = await performCleanup();
-
-        // If regular cleanup fails, attempt force cleanup
-        if (!cleanupSuccess) {
-          logger.warn('Regular cleanup failed, attempting force cleanup');
-          cleanupSuccess = forceCleanup();
+        // Notify caller about rejection
+        if (users[callerId]) {
+          users[callerId].forEach((socketId) => {
+            socket.to(socketId).emit('callRejected', { receiverId });
+          });
         }
 
-        // Verify final state
-        const finalState = {
-          pendingCalls: Object.keys(pendingCalls),
-          activeCalls: Object.keys(activeCalls),
-          callTimings: Object.keys(callTimings)
-        };
+        // Stop caller tune
+        socket.emit('stopCallerTune', { callerId });
 
-        logger.info('Cleanup process completed', {
-          success: cleanupSuccess,
-          initialState,
-          finalState
+        // Create call log
+        await CallLog.create({
+          caller: new mongoose.Types.ObjectId(callerId),
+          receiver: new mongoose.Types.ObjectId(receiverId),
+          startTime: new Date(),
+          endTime: new Date(),
+          duration: 0,
+          status: 'rejected'
         });
 
-        // Create call log with cleanup status
-        try {
-          await CallLog.create({
-            caller: new mongoose.Types.ObjectId(callerId),
-            receiver: new mongoose.Types.ObjectId(receiverId),
-            startTime: new Date(),
-            endTime: new Date(),
-            duration: 0,
-            status: 'rejected',
-            cleanupSuccess,
-            cleanupDetails: {
-              initialState,
-              finalState,
-              forceCleanupRequired: !cleanupSuccess
-            }
-          });
-        } catch (dbError) {
-          logger.error('Failed to create call log', { error: dbError.message });
-        }
+        // await ChatMessage.call.push({
 
-        // Fixed: Notify caller about rejection using io.to() instead of socket.to()
-        if (users[callerId]?.length > 0) {
-          const io = socket.nsp; // Get the namespace
-          const notificationResults = await Promise.all(
-            users[callerId].map(socketId =>
-              new Promise(resolve => {
-                try {
-                  // Use io.to() for proper emission to specific socket
-                  io.to(socketId).emit('callRejected', {
-                    receiverId,
-                    timestamp: Date.now(),
-                    cleanupSuccess
-                  });
-                  resolve(true);
-                } catch (e) {
-                  logger.error('Notification failed', { socketId, error: e.message });
-                  resolve(false);
-                }
-              })
-            )
-          );
+        //   caller: new mongoose.Types.ObjectId(callerId),
+        //   receiver: new mongoose.Types.ObjectId(receiverId),
+        //   startTime: new Date(),
+        //   endTime: new Date(),
+        //   duration: 0,
+        //   status: 'rejected'
 
-          // Add debug logging for notification
-          const successfulNotifications = notificationResults.filter(Boolean).length;
-          logger.info('Notifications sent', {
-            total: users[callerId].length,
-            successful: successfulNotifications,
-            sockets: users[callerId]
-          });
 
-          // Emit an additional debug event to verify socket connection
-          users[callerId].forEach(socketId => {
-            io.to(socketId).emit('debug', {
-              event: 'callRejected',
-              timestamp: Date.now()
-            });
-          });
-        } else {
-          logger.warn('No active sockets found for caller', { callerId });
-        }
+        // })
 
       } catch (error) {
-        logger.error('Fatal error in rejectCall handler', {
-          error: error.message,
-          stack: error.stack,
-          callerId,
-          receiverId
-        });
+        logger.error(`Error in rejectCall handler: ${error.message}`);
         socket.emit('callError', { message: 'Failed to reject call' });
       }
     });
-
 
 
     socket.on('endCall', async ({ receiverId, callerId }) => {
