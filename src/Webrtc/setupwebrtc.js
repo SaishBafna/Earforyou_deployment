@@ -915,103 +915,126 @@ export const setupWebRTC = (io) => {
 
         logger.info(`User ${receiverId} rejected call from User ${callerId}`);
 
-        // Validate active call state with detailed checks
-        const isValidActiveCall = activeCalls[callerId] === receiverId &&
-          activeCalls[receiverId] === callerId;
-
-        if (!isValidActiveCall) {
-          logger.warn('No valid active call found', {
-            expectedReceiver: activeCalls[callerId],
-            actualReceiver: receiverId,
-            callState: {
-              callerState: activeCalls[callerId],
-              receiverState: activeCalls[receiverId]
-            }
-          });
-          return socket.emit('callError', { message: 'No active call found' });
-        }
-
         // Call keys for tracking
         const callerCallKey = `${callerId}_${receiverId}`;
         const receiverCallKey = `${receiverId}_${callerId}`;
 
-        // Capture state before cleanup for logging
-        const preCleanupState = {
-          activeCalls: { ...activeCalls },
-          pendingCalls: { ...pendingCalls },
-          callTimings: { ...callTimings }
+        // Capture initial state for debugging
+        const initialState = {
+          activeCalls: JSON.parse(JSON.stringify(activeCalls)),
+          pendingCalls: JSON.parse(JSON.stringify(pendingCalls)),
+          callTimings: JSON.parse(JSON.stringify(callTimings))
         };
 
-        // Stop caller tune with error boundary
-        try {
-          socket.emit('stopCallerTune', { callerId });
-        } catch (tuneError) {
-          logger.error('Error stopping caller tune:', tuneError);
-          // Continue execution despite tune error
-        }
+        // Enhanced cleanup function with retries
+        const performCleanup = async (maxRetries = 3) => {
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              // Clear pending calls
+              delete pendingCalls[callerId];
+              delete pendingCalls[receiverId];
 
-        // Comprehensive cleanup with verification
-        const cleanup = {
-          pendingCalls: false,
-          activeCalls: false,
-          callTimings: false
-        };
+              // Clear active calls
+              delete activeCalls[callerId];
+              delete activeCalls[receiverId];
 
-        // Clear pending calls with verification
-        if (pendingCalls[callerId]) {
-          delete pendingCalls[callerId];
-          cleanup.pendingCalls = !pendingCalls[callerId];
-        }
-        if (pendingCalls[receiverId]) {
-          delete pendingCalls[receiverId];
-          cleanup.pendingCalls = !pendingCalls[receiverId];
-        }
+              // Clear call timings
+              delete callTimings[callerCallKey];
+              delete callTimings[receiverCallKey];
 
-        // Clear active calls with verification
-        if (activeCalls[callerId]) {
-          delete activeCalls[callerId];
-          cleanup.activeCalls = !activeCalls[callerId];
-        }
-        if (activeCalls[receiverId]) {
-          delete activeCalls[receiverId];
-          cleanup.activeCalls = !activeCalls[receiverId];
-        }
+              // Verify cleanup
+              const cleanupVerification = {
+                pendingCalls: !pendingCalls[callerId] && !pendingCalls[receiverId],
+                activeCalls: !activeCalls[callerId] && !activeCalls[receiverId],
+                callTimings: !callTimings[callerCallKey] && !callTimings[receiverCallKey]
+              };
 
-        // Clear call timings with verification
-        if (callTimings[callerCallKey]) {
-          delete callTimings[callerCallKey];
-          cleanup.callTimings = !callTimings[callerCallKey];
-        }
-        if (callTimings[receiverCallKey]) {
-          delete callTimings[receiverCallKey];
-          cleanup.callTimings = !callTimings[receiverCallKey];
-        }
+              const isCleanupComplete = Object.values(cleanupVerification).every(v => v === true);
 
-        // Verify cleanup success
-        const cleanupSuccess = Object.values(cleanup).every(status => status !== false);
+              if (isCleanupComplete) {
+                logger.info('Cleanup successful on attempt', { attempt });
+                return true;
+              }
 
-        if (!cleanupSuccess) {
-          logger.warn('Incomplete cleanup detected', {
-            cleanup,
-            remainingState: {
-              activeCalls: { ...activeCalls },
-              pendingCalls: { ...pendingCalls },
-              callTimings: { ...callTimings }
+              logger.warn('Cleanup incomplete, retrying...', {
+                attempt,
+                remainingState: {
+                  pendingCalls: Object.keys(pendingCalls),
+                  activeCalls: Object.keys(activeCalls),
+                  callTimings: Object.keys(callTimings)
+                }
+              });
+
+              // Small delay before retry
+              await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (cleanupError) {
+              logger.error('Cleanup attempt failed', {
+                attempt,
+                error: cleanupError.message
+              });
             }
-          });
+          }
+          return false;
+        };
+
+        // Force cleanup if regular cleanup fails
+        const forceCleanup = () => {
+          try {
+            // Direct property deletion with Object.defineProperty fallback
+            const cleanupTargets = [
+              { obj: pendingCalls, props: [callerId, receiverId] },
+              { obj: activeCalls, props: [callerId, receiverId] },
+              { obj: callTimings, props: [callerCallKey, receiverCallKey] }
+            ];
+
+            cleanupTargets.forEach(({ obj, props }) => {
+              props.forEach(prop => {
+                try {
+                  delete obj[prop];
+                  if (obj[prop] !== undefined) {
+                    Object.defineProperty(obj, prop, {
+                      value: undefined,
+                      configurable: true,
+                      enumerable: false,
+                      writable: true
+                    });
+                  }
+                } catch (e) {
+                  logger.error('Force cleanup property deletion failed', { prop, error: e.message });
+                }
+              });
+            });
+
+            return true;
+          } catch (forceError) {
+            logger.error('Force cleanup failed', { error: forceError.message });
+            return false;
+          }
+        };
+
+        // Attempt cleanup with retries
+        let cleanupSuccess = await performCleanup();
+
+        // If regular cleanup fails, attempt force cleanup
+        if (!cleanupSuccess) {
+          logger.warn('Regular cleanup failed, attempting force cleanup');
+          cleanupSuccess = forceCleanup();
         }
 
-        logger.info('Call cleanup completed', {
+        // Verify final state
+        const finalState = {
+          pendingCalls: Object.keys(pendingCalls),
+          activeCalls: Object.keys(activeCalls),
+          callTimings: Object.keys(callTimings)
+        };
+
+        logger.info('Cleanup process completed', {
           success: cleanupSuccess,
-          preCleanupState,
-          currentState: {
-            activeCalls: { ...activeCalls },
-            pendingCalls: { ...pendingCalls },
-            callTimings: { ...callTimings }
-          }
+          initialState,
+          finalState
         });
 
-        // Log rejected call in database with error handling
+        // Create call log with cleanup status
         try {
           await CallLog.create({
             caller: new mongoose.Types.ObjectId(callerId),
@@ -1020,45 +1043,43 @@ export const setupWebRTC = (io) => {
             endTime: new Date(),
             duration: 0,
             status: 'rejected',
-            cleanupSuccess // Add cleanup status to log
+            cleanupSuccess,
+            cleanupDetails: {
+              initialState,
+              finalState,
+              forceCleanupRequired: !cleanupSuccess
+            }
           });
-          logger.info('Call log created successfully');
         } catch (dbError) {
-          logger.error('Failed to create call log:', dbError);
-          // Continue execution despite logging error
+          logger.error('Failed to create call log', { error: dbError.message });
         }
 
-        // Notify caller about rejection with improved error handling
+        // Notify caller about rejection
         if (users[callerId]?.length > 0) {
-          const notificationPromises = users[callerId].map(socketId =>
-            new Promise((resolve) => {
-              try {
-                socket.to(socketId).emit('callRejected', {
-                  receiverId,
-                  timestamp: Date.now(),
-                  cleanupSuccess
-                });
-                resolve(true);
-              } catch (socketError) {
-                logger.error(`Error emitting callRejected to socket ${socketId}:`, socketError);
-                resolve(false);
-              }
-            })
+          const notificationResults = await Promise.all(
+            users[callerId].map(socketId =>
+              new Promise(resolve => {
+                try {
+                  socket.to(socketId).emit('callRejected', {
+                    receiverId,
+                    timestamp: Date.now(),
+                    cleanupSuccess
+                  });
+                  resolve(true);
+                } catch (e) {
+                  logger.error('Notification failed', { socketId, error: e.message });
+                  resolve(false);
+                }
+              })
+            )
           );
 
-          const notificationResults = await Promise.all(notificationPromises);
-          const successfulNotifications = notificationResults.filter(result => result).length;
-
-          logger.info(`Rejection notifications sent`, {
-            total: users[callerId].length,
-            successful: successfulNotifications
-          });
-        } else {
-          logger.warn(`Caller ${callerId} has no active connections`);
+          const successfulNotifications = notificationResults.filter(Boolean).length;
+          logger.info('Notifications sent', { total: users[callerId].length, successful: successfulNotifications });
         }
 
       } catch (error) {
-        logger.error('Error in rejectCall handler:', {
+        logger.error('Fatal error in rejectCall handler', {
           error: error.message,
           stack: error.stack,
           callerId,
