@@ -954,209 +954,149 @@ export const setupWebRTC = (io) => {
         delete callTimings[callerCallKey];
         delete callTimings[receiverCallKey];
 
-        logger.info('Call cleanup completed successfully');
+        logger.info('Call cleanup completed successfully', delete callTimings[receiverCallKey], delete activeCalls[receiverId]);
 
-        // Create call log with error handling
-        try {
-          await CallLog.create({
-            caller: new mongoose.Types.ObjectId(callerId),
-            receiver: new mongoose.Types.ObjectId(receiverId),
-            startTime: new Date(),
-            endTime: new Date(),
-            duration: 0,
-            status: 'rejected'
+    // Create call log with error handling
+    try {
+      await CallLog.create({
+        caller: new mongoose.Types.ObjectId(callerId),
+        receiver: new mongoose.Types.ObjectId(receiverId),
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: 0,
+        status: 'rejected'
+      });
+      logger.info('Call log created successfully');
+    } catch (dbError) {
+      logger.error('Failed to create call log:', dbError);
+      // Continue with cleanup even if logging fails
+    }
+
+    // Notify caller about rejection with error handling
+    if (users[callerId]) {
+      try {
+        users[callerId].forEach((socketId) => {
+          socket.to(socketId).emit('callRejected', {
+            receiverId,
+            timestamp: Date.now()
           });
-          logger.info('Call log created successfully');
-        } catch (dbError) {
-          logger.error('Failed to create call log:', dbError);
-          // Continue with cleanup even if logging fails
-        }
-
-        // Notify caller about rejection with error handling
-        if (users[callerId]) {
-          try {
-            users[callerId].forEach((socketId) => {
-              socket.to(socketId).emit('callRejected', {
-                receiverId,
-                timestamp: Date.now()
-              });
-            });
-            logger.info('Rejection notification sent successfully');
-          } catch (socketError) {
-            logger.error('Error emitting callRejected:', socketError);
-          }
-        } else {
-          logger.warn(`No active sockets found for caller: ${callerId}`);
-        }
-
-      } catch (error) {
-        logger.error('Error in rejectCall handler:', {
-          error: error.message,
-          stack: error.stack,
-          callerId,
-          receiverId
         });
-        socket.emit('callError', { message: 'Failed to reject call' });
+        logger.info('Rejection notification sent successfully');
+      } catch (socketError) {
+        logger.error('Error emitting callRejected:', socketError);
       }
+    } else {
+      logger.warn(`No active sockets found for caller: ${callerId}`);
+    }
+
+  } catch (error) {
+    logger.error('Error in rejectCall handler:', {
+      error: error.message,
+      stack: error.stack,
+      callerId,
+      receiverId
+    });
+    socket.emit('callError', { message: 'Failed to reject call' });
+  }
+});
+
+
+socket.on('endCall', async ({ receiverId, callerId }) => {
+  try {
+    logger.info('Attempting to end call', { callerId, receiverId });
+
+    // Debug log current state
+    logger.info('Current active calls:', activeCalls);
+    logger.info('Current call timings:', callTimings);
+
+    // Validate IDs
+    if (!callerId || !receiverId) {
+      logger.warn('Missing caller or receiver ID');
+      return;
+    }
+
+    // Check active calls with more detailed logging
+    const isCallerActive = activeCalls[callerId] === receiverId;
+    const isReceiverActive = activeCalls[receiverId] === callerId;
+
+    logger.info('Call status check:', {
+      isCallerActive,
+      isReceiverActive,
+      callerActivePair: `${callerId} -> ${activeCalls[callerId]}`,
+      receiverActivePair: `${receiverId} -> ${activeCalls[receiverId]}`
     });
 
+    if (isCallerActive || isReceiverActive) {
+      // Handle active call ending
+      logger.info(`Ending active call between ${callerId} and ${receiverId}`);
 
-    socket.on('endCall', async ({ receiverId, callerId }) => {
-      try {
-        logger.info('Attempting to end call', { callerId, receiverId });
+      // Notify receiver of call end
+      if (users[receiverId]) {
+        const receiverSockets = users[receiverId];
+        logger.info(`Found ${receiverSockets.length} sockets for receiver`);
 
-        // Debug log current state
-        logger.info('Current active calls:', activeCalls);
-        logger.info('Current call timings:', callTimings);
+        receiverSockets.forEach((socketId) => {
+          socket.to(socketId).emit('callEnded', {
+            callerId,
+            timestamp: Date.now()
+          });
 
-        // Validate IDs
-        if (!callerId || !receiverId) {
-          logger.warn('Missing caller or receiver ID');
-          return;
-        }
+          socket.to(socketId).emit('inactiveCall', {
+            callerId,
+            receiverId,
+            socketId: socket.id,
+            timestamp: Date.now()
+          });
 
-        // Check active calls with more detailed logging
-        const isCallerActive = activeCalls[callerId] === receiverId;
-        const isReceiverActive = activeCalls[receiverId] === callerId;
-
-        logger.info('Call status check:', {
-          isCallerActive,
-          isReceiverActive,
-          callerActivePair: `${callerId} -> ${activeCalls[callerId]}`,
-          receiverActivePair: `${receiverId} -> ${activeCalls[receiverId]}`
+          logger.info(`Sent end call notifications to socket: ${socketId}`);
         });
-
-        if (isCallerActive || isReceiverActive) {
-          // Handle active call ending
-          logger.info(`Ending active call between ${callerId} and ${receiverId}`);
-
-          // Notify receiver of call end
-          if (users[receiverId]) {
-            const receiverSockets = users[receiverId];
-            logger.info(`Found ${receiverSockets.length} sockets for receiver`);
-
-            receiverSockets.forEach((socketId) => {
-              socket.to(socketId).emit('callEnded', {
-                callerId,
-                timestamp: Date.now()
-              });
-
-              socket.to(socketId).emit('inactiveCall', {
-                callerId,
-                receiverId,
-                socketId: socket.id,
-                timestamp: Date.now()
-              });
-
-              logger.info(`Sent end call notifications to socket: ${socketId}`);
-            });
-          } else {
-            logger.warn(`No active sockets found for receiver: ${receiverId}`);
-          }
-
-          // Handle call duration calculation
-          const callerCallKey = `${callerId}_${receiverId}`;
-          const receiverCallKey = `${receiverId}_${callerId}`;
-
-          logger.info('Checking call timing keys:', {
-            callerCallKey,
-            receiverCallKey,
-            callerTiming: callTimings[callerCallKey],
-            receiverTiming: callTimings[receiverCallKey]
-          });
-
-          const startTime = callTimings[callerCallKey]?.startTime || callTimings[receiverCallKey]?.startTime;
-
-          if (!startTime) {
-            logger.warn('Call timing not found', {
-              callerCallKey,
-              receiverCallKey,
-              callTimings: JSON.stringify(callTimings)
-            });
-            return;
-          }
-
-          const endTime = new Date();
-          const duration = Math.round((endTime - new Date(startTime)) / 1000);
-
-          logger.info('Call duration calculated:', {
-            startTime,
-            endTime,
-            durationSeconds: duration
-          });
-
-          // Save call log
-          try {
-            await CallLog.create({
-              caller: new mongoose.Types.ObjectId(callerId),
-              receiver: new mongoose.Types.ObjectId(receiverId),
-              startTime: new Date(startTime),
-              endTime,
-              duration,
-              status: 'completed',
-            });
-
-
-            for (const key in pendingCalls) {
-              if (pendingCalls[key].socketId === socket.id) {
-                logger.info(`Cleaning up pending call: ${key}`);
-                delete pendingCalls[key];
-              }
-            }
-
-            logger.info('Call log saved successfully');
-          } catch (dbError) {
-            logger.error('Failed to save call log:', dbError);
-          }
-
-          // Cleanup with logging
-          logger.info('Cleaning up call data...');
-          delete activeCalls[callerId];
-          delete activeCalls[receiverId];
-          delete callTimings[callerCallKey];
-          delete callTimings[receiverCallKey];
-
-
-        } else {
-          // No active call found - log detailed state
-          logger.warn('No active call found', {
-            requestedPair: `${callerId} <-> ${receiverId}`,
-            activeCallsState: JSON.stringify(activeCalls),
-            callTimingsState: JSON.stringify(callTimings)
-          });
-
-
-          socket.emit('error', {
-            type: 'END_CALL_ERROR',
-            message: 'No active call found'
-          });
-        }
-      } catch (error) {
-        logger.error('Error in endCall handler:', {
-          error: error.message,
-          stack: error.stack,
-          callerId,
-          receiverId
-        });
-
-        socket.emit('error', {
-          type: 'END_CALL_ERROR',
-          message: 'Failed to end call'
-        });
+      } else {
+        logger.warn(`No active sockets found for receiver: ${receiverId}`);
       }
-    });
 
-    socket.on('disconnect', async () => {
+      // Handle call duration calculation
+      const callerCallKey = `${callerId}_${receiverId}`;
+      const receiverCallKey = `${receiverId}_${callerId}`;
+
+      logger.info('Checking call timing keys:', {
+        callerCallKey,
+        receiverCallKey,
+        callerTiming: callTimings[callerCallKey],
+        receiverTiming: callTimings[receiverCallKey]
+      });
+
+      const startTime = callTimings[callerCallKey]?.startTime || callTimings[receiverCallKey]?.startTime;
+
+      if (!startTime) {
+        logger.warn('Call timing not found', {
+          callerCallKey,
+          receiverCallKey,
+          callTimings: JSON.stringify(callTimings)
+        });
+        return;
+      }
+
+      const endTime = new Date();
+      const duration = Math.round((endTime - new Date(startTime)) / 1000);
+
+      logger.info('Call duration calculated:', {
+        startTime,
+        endTime,
+        durationSeconds: duration
+      });
+
+      // Save call log
       try {
-        logger.info(`Socket disconnected: ${socket.id}`);
+        await CallLog.create({
+          caller: new mongoose.Types.ObjectId(callerId),
+          receiver: new mongoose.Types.ObjectId(receiverId),
+          startTime: new Date(startTime),
+          endTime,
+          duration,
+          status: 'completed',
+        });
 
-        // Handle queue cleanup
-        removeUserFromQueue(socket.id);
-        logger.debug('Current queue after disconnect:', userQueue);
 
-        let disconnectedUserId = null;
-
-        // Clear any pending calls for this socket
         for (const key in pendingCalls) {
           if (pendingCalls[key].socketId === socket.id) {
             logger.info(`Cleaning up pending call: ${key}`);
@@ -1164,113 +1104,173 @@ export const setupWebRTC = (io) => {
           }
         }
 
+        logger.info('Call log saved successfully');
+      } catch (dbError) {
+        logger.error('Failed to save call log:', dbError);
+      }
+
+      // Cleanup with logging
+      logger.info('Cleaning up call data...');
+      delete activeCalls[callerId];
+      delete activeCalls[receiverId];
+      delete callTimings[callerCallKey];
+      delete callTimings[receiverCallKey];
+
+
+    } else {
+      // No active call found - log detailed state
+      logger.warn('No active call found', {
+        requestedPair: `${callerId} <-> ${receiverId}`,
+        activeCallsState: JSON.stringify(activeCalls),
+        callTimingsState: JSON.stringify(callTimings)
+      });
+
+
+      socket.emit('error', {
+        type: 'END_CALL_ERROR',
+        message: 'No active call found'
+      });
+    }
+  } catch (error) {
+    logger.error('Error in endCall handler:', {
+      error: error.message,
+      stack: error.stack,
+      callerId,
+      receiverId
+    });
+
+    socket.emit('error', {
+      type: 'END_CALL_ERROR',
+      message: 'Failed to end call'
+    });
+  }
+});
+
+socket.on('disconnect', async () => {
+  try {
+    logger.info(`Socket disconnected: ${socket.id}`);
+
+    // Handle queue cleanup
+    removeUserFromQueue(socket.id);
+    logger.debug('Current queue after disconnect:', userQueue);
+
+    let disconnectedUserId = null;
+
+    // Clear any pending calls for this socket
+    for (const key in pendingCalls) {
+      if (pendingCalls[key].socketId === socket.id) {
+        logger.info(`Cleaning up pending call: ${key}`);
+        delete pendingCalls[key];
+      }
+    }
 
 
 
-        // Find and handle the disconnected user
-        for (const [userId, socketIds] of Object.entries(users)) {
-          const index = socketIds.indexOf(socket.id);
 
-          if (index !== -1) {
-            // Remove the socket from user's socket list
-            socketIds.splice(index, 1);
-            disconnectedUserId = userId;
-            logger.info(`Removed socket ${socket.id} from user ${userId}. Remaining sockets: ${socketIds.length}`);
+    // Find and handle the disconnected user
+    for (const [userId, socketIds] of Object.entries(users)) {
+      const index = socketIds.indexOf(socket.id);
 
-            // If no more sockets, handle complete disconnection
-            if (socketIds.length === 0) {
-              delete users[userId];
-              logger.info(`User ${userId} has no more active sockets. Updating status to offline`);
+      if (index !== -1) {
+        // Remove the socket from user's socket list
+        socketIds.splice(index, 1);
+        disconnectedUserId = userId;
+        logger.info(`Removed socket ${socket.id} from user ${userId}. Remaining sockets: ${socketIds.length}`);
 
-              try {
-                // Update user status to offline in database
-                const updatedUser = await User.findOneAndUpdate(
-                  { _id: disconnectedUserId },
-                  { status: 'offline', lastSeen: new Date() },
-                  { new: true }
-                );
-
-                if (updatedUser) {
-                  // Broadcast status change to all connected users
-                  io.emit('userStatusChanged', {
-                    userId: disconnectedUserId,
-                    status: 'offline',
-                    lastSeen: updatedUser.lastSeen
-                  });
-                  logger.info(`Successfully updated offline status for user ${disconnectedUserId}`);
-                } else {
-                  logger.warn(`User ${disconnectedUserId} not found while updating offline status`);
-                }
-              } catch (error) {
-                logger.error(`Failed to update offline status for user ${disconnectedUserId}:`, error);
-              }
-            }
-            break;
-          }
-        }
-
-        // Handle active call disconnection if user was in a call
-        if (disconnectedUserId && activeCalls[disconnectedUserId]) {
-          const otherUserId = activeCalls[disconnectedUserId];
-          const callKey = `${Math.min(disconnectedUserId, otherUserId)}_${Math.max(disconnectedUserId, otherUserId)}`;
+        // If no more sockets, handle complete disconnection
+        if (socketIds.length === 0) {
+          delete users[userId];
+          logger.info(`User ${userId} has no more active sockets. Updating status to offline`);
 
           try {
-            // Get call timing information
-            const callTiming = callTimings[callKey];
+            // Update user status to offline in database
+            const updatedUser = await User.findOneAndUpdate(
+              { _id: disconnectedUserId },
+              { status: 'offline', lastSeen: new Date() },
+              { new: true }
+            );
 
-            if (callTiming?.startTime) {
-              const endTime = new Date();
-              const duration = Math.floor((endTime - callTiming.startTime) / 1000);
-
-              // Create call log
-              await CallLog.create({
-                caller: new mongoose.Types.ObjectId(callTiming.callerId),
-                receiver: new mongoose.Types.ObjectId(callTiming.receiverId),
-                startTime: callTiming.startTime,
-                endTime,
-                duration,
-                status: 'disconnected',
-                disconnectedBy: disconnectedUserId
+            if (updatedUser) {
+              // Broadcast status change to all connected users
+              io.emit('userStatusChanged', {
+                userId: disconnectedUserId,
+                status: 'offline',
+                lastSeen: updatedUser.lastSeen
               });
-
-              logger.info(`Call log created for disconnected call between ${disconnectedUserId} and ${otherUserId}`);
-
-              // Cleanup call timing
-              delete callTimings[callKey];
+              logger.info(`Successfully updated offline status for user ${disconnectedUserId}`);
+            } else {
+              logger.warn(`User ${disconnectedUserId} not found while updating offline status`);
             }
-
-            // Notify other user about call end
-            if (users[otherUserId]) {
-              users[otherUserId].forEach((socketId) => {
-                socket.to(socketId).emit('callEnded', {
-                  callerId: disconnectedUserId,
-                  reason: 'disconnect'
-                });
-              });
-              logger.info(`Notified user ${otherUserId} about call end due to disconnect`);
-            }
-
-            // Cleanup active calls
-            delete activeCalls[disconnectedUserId];
-            delete activeCalls[otherUserId];
-
-            logger.info(`Cleaned up call state for users ${disconnectedUserId} and ${otherUserId}`);
           } catch (error) {
-            logger.error(`Error handling call disconnection for user ${disconnectedUserId}:`, error);
+            logger.error(`Failed to update offline status for user ${disconnectedUserId}:`, error);
           }
         }
-
-        // Emit final disconnect event for other features that might need it
-        io.emit('userDisconnected', {
-          userId: disconnectedUserId,
-          socketId: socket.id,
-          timestamp: new Date()
-        });
-
-      } catch (error) {
-        logger.error('Unhandled error in disconnect handler:', error);
+        break;
       }
+    }
+
+    // Handle active call disconnection if user was in a call
+    if (disconnectedUserId && activeCalls[disconnectedUserId]) {
+      const otherUserId = activeCalls[disconnectedUserId];
+      const callKey = `${Math.min(disconnectedUserId, otherUserId)}_${Math.max(disconnectedUserId, otherUserId)}`;
+
+      try {
+        // Get call timing information
+        const callTiming = callTimings[callKey];
+
+        if (callTiming?.startTime) {
+          const endTime = new Date();
+          const duration = Math.floor((endTime - callTiming.startTime) / 1000);
+
+          // Create call log
+          await CallLog.create({
+            caller: new mongoose.Types.ObjectId(callTiming.callerId),
+            receiver: new mongoose.Types.ObjectId(callTiming.receiverId),
+            startTime: callTiming.startTime,
+            endTime,
+            duration,
+            status: 'disconnected',
+            disconnectedBy: disconnectedUserId
+          });
+
+          logger.info(`Call log created for disconnected call between ${disconnectedUserId} and ${otherUserId}`);
+
+          // Cleanup call timing
+          delete callTimings[callKey];
+        }
+
+        // Notify other user about call end
+        if (users[otherUserId]) {
+          users[otherUserId].forEach((socketId) => {
+            socket.to(socketId).emit('callEnded', {
+              callerId: disconnectedUserId,
+              reason: 'disconnect'
+            });
+          });
+          logger.info(`Notified user ${otherUserId} about call end due to disconnect`);
+        }
+
+        // Cleanup active calls
+        delete activeCalls[disconnectedUserId];
+        delete activeCalls[otherUserId];
+
+        logger.info(`Cleaned up call state for users ${disconnectedUserId} and ${otherUserId}`);
+      } catch (error) {
+        logger.error(`Error handling call disconnection for user ${disconnectedUserId}:`, error);
+      }
+    }
+
+    // Emit final disconnect event for other features that might need it
+    io.emit('userDisconnected', {
+      userId: disconnectedUserId,
+      socketId: socket.id,
+      timestamp: new Date()
     });
+
+  } catch (error) {
+    logger.error('Unhandled error in disconnect handler:', error);
+  }
+});
 
 
   });
