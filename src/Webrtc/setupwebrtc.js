@@ -904,26 +904,36 @@ export const setupWebRTC = (io) => {
       }
     });
 
-   
+
     socket.on('rejectCall', async ({ receiverId, callerId }) => {
       try {
         logger.info(`User ${receiverId} rejected call from User ${callerId}`);
 
-        // Clean up call status
-        delete activeCalls[callerId];
-        delete activeCalls[receiverId];
-
-        // Notify caller about rejection
+        // First: Immediately notify caller about rejection
         if (users[callerId]) {
           users[callerId].forEach((socketId) => {
             socket.to(socketId).emit('callRejected', { receiverId });
           });
         }
 
-        // Stop caller tune
+        // Second: Stop caller tune
         socket.emit('stopCallerTune', { callerId });
 
-        // Create call log
+        // Third: Immediate cleanup of all resources
+        const pendingCallKey = `${callerId}-${receiverId}`;
+        delete activeCalls[callerId];
+        delete activeCalls[receiverId];
+        if (pendingCalls[pendingCallKey]) {
+          delete pendingCalls[pendingCallKey];
+        }
+
+        // Fourth: Notify about missed call
+        socket.emit('callMissed', {
+          receiverId,
+          message: 'User is busy with another call. Please wait some time.'
+        });
+
+        // Finally: Create call log
         await CallLog.create({
           caller: new mongoose.Types.ObjectId(callerId),
           receiver: new mongoose.Types.ObjectId(receiverId),
@@ -932,18 +942,6 @@ export const setupWebRTC = (io) => {
           duration: 0,
           status: 'rejected'
         });
-
-        // await ChatMessage.call.push({
-
-        //   caller: new mongoose.Types.ObjectId(callerId),
-        //   receiver: new mongoose.Types.ObjectId(receiverId),
-        //   startTime: new Date(),
-        //   endTime: new Date(),
-        //   duration: 0,
-        //   status: 'rejected'
-
-
-        // })
 
       } catch (error) {
         logger.error(`Error in rejectCall handler: ${error.message}`);
