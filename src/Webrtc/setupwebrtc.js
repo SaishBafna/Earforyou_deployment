@@ -908,43 +908,39 @@ export const setupWebRTC = (io) => {
 
     socket.on('rejectCall', async ({ receiverId, callerId }) => {
       try {
+        // Input validation
+        if (!receiverId || !callerId) {
+          logger.warn('Missing caller or receiver ID');
+          return socket.emit('callError', { message: 'Invalid call parameters' });
+        }
+
         logger.info(`User ${receiverId} rejected call from User ${callerId}`);
 
+        // Validate active call state
+        if (!activeCalls[callerId] || activeCalls[callerId] !== receiverId) {
+          logger.warn('No active call found between these users');
+          return socket.emit('callError', { message: 'No active call found' });
+        }
+
+        // Define call keys
         const callerCallKey = `${callerId}_${receiverId}`;
         const receiverCallKey = `${receiverId}_${callerId}`;
 
-        // Clean up call status
-        delete activeCalls[callerId];
-        delete activeCalls[receiverId];
+        // Debug log current state
+        logger.info('Current active calls:', activeCalls);
+        logger.info('Current call timings:', callTimings);
 
-
-
-
-        // Notify caller about rejection
-        if (users[callerId]) {
-          users[callerId].forEach((socketId) => {
-            socket.to(socketId).emit('callRejected', { receiverId });
-          });
+        // Stop caller tune
+        try {
+          socket.emit('stopCallerTune', { callerId });
+        } catch (tuneError) {
+          logger.error('Error stopping caller tune:', tuneError);
         }
 
+        // Cleanup section - Do this first
         logger.info('Cleaning up call data...');
-        delete activeCalls[callerId];
-        delete activeCalls[receiverId];
-        delete callTimings[callerCallKey];
-        delete callTimings[receiverCallKey];
-        // Stop caller tune
-        socket.emit('stopCallerTune', { callerId });
 
-        // Create call log
-        await CallLog.create({
-          caller: new mongoose.Types.ObjectId(callerId),
-          receiver: new mongoose.Types.ObjectId(receiverId),
-          startTime: new Date(),
-          endTime: new Date(),
-          duration: 0,
-          status: 'rejected'
-        });
-
+        // Clean up pending calls
         for (const key in pendingCalls) {
           if (pendingCalls[key].socketId === socket.id) {
             logger.info(`Cleaning up pending call: ${key}`);
@@ -952,9 +948,54 @@ export const setupWebRTC = (io) => {
           }
         }
 
+        // Clean up active calls and timings
+        delete activeCalls[callerId];
+        delete activeCalls[receiverId];
+        delete callTimings[callerCallKey];
+        delete callTimings[receiverCallKey];
+
+        logger.info('Call cleanup completed successfully');
+
+        // Create call log with error handling
+        try {
+          await CallLog.create({
+            caller: new mongoose.Types.ObjectId(callerId),
+            receiver: new mongoose.Types.ObjectId(receiverId),
+            startTime: new Date(),
+            endTime: new Date(),
+            duration: 0,
+            status: 'rejected'
+          });
+          logger.info('Call log created successfully');
+        } catch (dbError) {
+          logger.error('Failed to create call log:', dbError);
+          // Continue with cleanup even if logging fails
+        }
+
+        // Notify caller about rejection with error handling
+        if (users[callerId]) {
+          try {
+            users[callerId].forEach((socketId) => {
+              socket.to(socketId).emit('callRejected', {
+                receiverId,
+                timestamp: Date.now()
+              });
+            });
+            logger.info('Rejection notification sent successfully');
+          } catch (socketError) {
+            logger.error('Error emitting callRejected:', socketError);
+          }
+        } else {
+          logger.warn(`No active sockets found for caller: ${callerId}`);
+        }
 
       } catch (error) {
-        logger.error(`Error in rejectCall handler: ${error.message}`);
+        logger.error('Error in rejectCall handler:', {
+          error: error.message,
+          stack: error.stack,
+          callerId,
+          receiverId
+        });
         socket.emit('callError', { message: 'Failed to reject call' });
       }
     });
