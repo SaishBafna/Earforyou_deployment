@@ -904,7 +904,6 @@ export const setupWebRTC = (io) => {
       }
     });
 
-
     socket.on('rejectCall', async ({ receiverId, callerId }) => {
       try {
         // Input validation with type checking
@@ -1054,13 +1053,15 @@ export const setupWebRTC = (io) => {
           logger.error('Failed to create call log', { error: dbError.message });
         }
 
-        // Notify caller about rejection
+        // Fixed: Notify caller about rejection using io.to() instead of socket.to()
         if (users[callerId]?.length > 0) {
+          const io = socket.nsp; // Get the namespace
           const notificationResults = await Promise.all(
             users[callerId].map(socketId =>
               new Promise(resolve => {
                 try {
-                  socket.to(socketId).emit('callRejected', {
+                  // Use io.to() for proper emission to specific socket
+                  io.to(socketId).emit('callRejected', {
                     receiverId,
                     timestamp: Date.now(),
                     cleanupSuccess
@@ -1074,8 +1075,23 @@ export const setupWebRTC = (io) => {
             )
           );
 
+          // Add debug logging for notification
           const successfulNotifications = notificationResults.filter(Boolean).length;
-          logger.info('Notifications sent', { total: users[callerId].length, successful: successfulNotifications });
+          logger.info('Notifications sent', {
+            total: users[callerId].length,
+            successful: successfulNotifications,
+            sockets: users[callerId]
+          });
+
+          // Emit an additional debug event to verify socket connection
+          users[callerId].forEach(socketId => {
+            io.to(socketId).emit('debug', {
+              event: 'callRejected',
+              timestamp: Date.now()
+            });
+          });
+        } else {
+          logger.warn('No active sockets found for caller', { callerId });
         }
 
       } catch (error) {
