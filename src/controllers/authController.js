@@ -1582,181 +1582,43 @@ export const getUserById = async (req, res) => {
 // };
 
 
+// Add these indexes to your User model schema
+
+
 export const getAllUsers1 = async (req, res) => {
   try {
-    const genderFilter = req.query.gender;
+    const genderFilter = req.query.gender?.toLowerCase();
     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+    const searchQuery = req.query.search?.trim() || "";
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = 21;
+    const skip = (page - 1) * limit;
 
-    console.log("Gender Filter (from params):", genderFilter);
-
+    // Validate gender parameter early
     if (genderFilter && !["male", "female"].includes(genderFilter)) {
       return res.status(400).json({
         message: "Invalid gender parameter. Must be 'male' or 'female'",
       });
     }
 
-    const page = parseInt(req.query.page) || 1;
-    const limit = 21;
-    const skip = (page - 1) * limit;
+    // Build base match conditions
+    const matchConditions = {
+      _id: { $ne: loggedInUserId },
+      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] }
+    };
 
-    const searchQuery = req.query.search || "";
-    console.log("Search Query:", searchQuery);
+    if (genderFilter) {
+      matchConditions.gender = genderFilter;
+    }
 
-    const currentTime = new Date();
-    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+    if (searchQuery) {
+      matchConditions.username = { $regex: searchQuery, $options: "i" };
+    }
 
-    const users = await User.aggregate([
-      {
-        $match: {
-          _id: { $ne: loggedInUserId },
-          UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
-          ...(genderFilter && { gender: genderFilter }),
-          ...(searchQuery && {
-            $or: [
-              { username: { $regex: searchQuery, $options: "i" } },
-            ],
-          }),
-        },
-      },
-      {
-        $lookup: {
-          from: "reviews",
-          localField: "_id",
-          foreignField: "user",
-          as: "ratings",
-        },
-      },
-      // Lookup chat for unread messages
-      {
-        $lookup: {
-          from: "chats",
-          let: { currentUserId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $setIsSubset: [[loggedInUserId, "$$currentUserId"], "$participants"] },
-                    { $eq: [{ $size: "$participants" }, 2] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: "chat"
-        }
-      },
-      // Lookup unread messages
-      {
-        $lookup: {
-          from: "chatmessages",
-          let: { 
-            chatId: { $arrayElemAt: ["$chat._id", 0] },
-            currentUserId: "$_id"
-          },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$chat", "$$chatId"] },
-                    { $eq: ["$sender", "$$currentUserId"] },
-                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } }
-                  ]
-                }
-              }
-            },
-            {
-              $count: "unreadCount"
-            }
-          ],
-          as: "unreadMessages"
-        }
-      },
-      {
-        $addFields: {
-          avgRating: { $avg: "$ratings.rating" },
-          reviewCount: { $size: "$ratings" },
-          isOnline: {
-            $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
-          },
-          lastSeenStatus: {
-            $switch: {
-              branches: [
-                {
-                  case: { $eq: ["$status", "Online"] },
-                  then: "online"
-                },
-                {
-                  case: { $gte: ["$lastSeen", twentyFourHoursAgo] },
-                  then: "recently"
-                }
-              ],
-              default: "away"
-            }
-          },
-          unreadMessageCount: {
-            $ifNull: [
-              { $arrayElemAt: ["$unreadMessages.unreadCount", 0] },
-              0
-            ]
-          },
-          chatId: {
-            $ifNull: [
-              { $arrayElemAt: ["$chat._id", 0] },
-              null
-            ]
-          }
-        },
-      },
-      {
-        $sort: {
-          isOnline: -1,
-          lastSeen: -1
-        },
-      },
-      {
-        $facet: {
-          metadata: [{ $count: "totalUsers" }],
-          users: [
-            { $skip: skip },
-            { $limit: limit },
-            {
-              $project: {
-                _id: 1,
-                username: 1,
-                name: 1,
-                email: 1,
-                gender: 1,
-                status: 1,
-                lastSeen: 1,
-                lastSeenStatus: 1,
-                avgRating: 1,
-                reviewCount: 1,
-                isOnline: 1,
-                profilePhoto: 1,
-                UserStatus: 1,
-                shortDecs: 1,
-                decs: 1,
-                Language: 1,
-                Bio: 1,
-                avatarUrl: 1,
-                userCategory: 1,
-                userType: 1,
-                report: 1,
-                unreadMessageCount: 1,
-                chatId: 1
-              },
-            },
-          ],
-        },
-      },
-    ]);
+    // Get total count separately for better performance
+    const totalUsers = await User.countDocuments(matchConditions);
 
-    const totalUsers = users[0]?.metadata[0]?.totalUsers || 0;
-    const userList = users[0]?.users || [];
-
-    if (userList.length === 0) {
+    if (totalUsers === 0) {
       return res.status(404).json({
         message: genderFilter
           ? `No ${genderFilter} users found`
@@ -1764,11 +1626,145 @@ export const getAllUsers1 = async (req, res) => {
       });
     }
 
+    const currentTime = new Date();
+    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+
+    // Optimized main aggregation pipeline
+    const users = await User.aggregate([
+      // Match stage first to reduce documents early
+      { $match: matchConditions },
+      
+      // Sort early to utilize indexes
+      {
+        $sort: {
+          status: -1,  // Online status first
+          lastSeen: -1 // Then by last seen
+        }
+      },
+
+      // Paginate before heavy operations
+      { $skip: skip },
+      { $limit: limit },
+
+      // Optimized review stats lookup
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$user", "$$userId"] }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          as: "reviewStats"
+        }
+      },
+
+      // Optimized chat lookup with specific fields
+      {
+        $lookup: {
+          from: "chats",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: [{ $size: "$participants" }, 2] },
+                    { $setIsSubset: [[loggedInUserId, "$$userId"], "$participants"] }
+                  ]
+                }
+              }
+            },
+            { $project: { _id: 1 } },
+            { $limit: 1 }
+          ],
+          as: "chat"
+        }
+      },
+
+      // Optimized unread messages count
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: {
+            chatId: { $arrayElemAt: ["$chat._id", 0] },
+            userId: "$_id"
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $eq: ["$sender", "$$userId"] },
+                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } }
+                  ]
+                }
+              }
+            },
+            { $count: "unreadCount" }
+          ],
+          as: "unreadMessages"
+        }
+      },
+
+      // Final projection with computed fields
+      {
+        $project: {
+          username: 1,
+          name: 1,
+          email: 1,
+          gender: 1,
+          status: 1,
+          lastSeen: 1,
+          profilePhoto: 1,
+          UserStatus: 1,
+          shortDecs: 1,
+          decs: 1,
+          Language: 1,
+          Bio: 1,
+          avatarUrl: 1,
+          userCategory: 1,
+          userType: 1,
+          report: 1,
+          avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
+          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          isOnline: { $eq: ["$status", "Online"] },
+          lastSeenStatus: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "Online"] }, then: "online" },
+                { case: { $gte: ["$lastSeen", twentyFourHoursAgo] }, then: "recently" }
+              ],
+              default: "away"
+            }
+          },
+          unreadMessageCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0]
+          },
+          chatId: {
+            $ifNull: [{ $arrayElemAt: ["$chat._id", 0] }, null]
+          }
+        }
+      }
+    ]).exec();
+
+    // Send response
     res.status(200).json({
       message: genderFilter
         ? `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`
         : "Users fetched successfully",
-      users: userList,
+      users,
       pagination: {
         totalUsers,
         currentPage: page,
