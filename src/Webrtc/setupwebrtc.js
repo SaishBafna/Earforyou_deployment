@@ -444,6 +444,11 @@ export const setupWebRTC = (io) => {
                 receiverId,
                 message: 'user is Busy Another Call Wait Some Time '
               });
+
+              socket.emit('callRejected', {
+                receiverId,
+                message: 'user is Busy Another Call Wait Some Time '
+              });
             }
           }, 60000);
 
