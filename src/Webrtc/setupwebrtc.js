@@ -925,6 +925,26 @@ export const setupWebRTC = (io) => {
           });
         }
 
+
+        const callerCallKey = `${callerId}_${receiverId}`;
+        const receiverCallKey = `${receiverId}_${callerId}`;
+
+
+        logger.info('Cleaning up call data...');
+
+        for (const key in pendingCalls) {
+          if (pendingCalls[key].socketId === socket.id) {
+            logger.info(`Cleaning up pending call: ${key}`);
+            delete pendingCalls[key];
+          }
+        }
+
+        delete activeCalls[callerId];
+        delete activeCalls[receiverId];
+        delete callTimings[callerCallKey];
+        delete callTimings[receiverCallKey];
+
+
         // Stop caller tune
         socket.emit('stopCallerTune', { callerId });
 
@@ -938,17 +958,6 @@ export const setupWebRTC = (io) => {
           status: 'rejected'
         });
 
-        // await ChatMessage.call.push({
-
-        //   caller: new mongoose.Types.ObjectId(callerId),
-        //   receiver: new mongoose.Types.ObjectId(receiverId),
-        //   startTime: new Date(),
-        //   endTime: new Date(),
-        //   duration: 0,
-        //   status: 'rejected'
-
-
-        // })
 
       } catch (error) {
         logger.error(`Error in rejectCall handler: ${error.message}`);
