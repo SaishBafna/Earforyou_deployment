@@ -450,7 +450,7 @@ export const setupWebRTC = (io) => {
                 message: 'user is Busy Another Call Wait Some Time '
               });
             }
-          }, 60000);
+          }, 40000);
 
           pendingCalls[pendingCallKey].cleanupTimeout = cleanupTimeout;
 
@@ -910,40 +910,84 @@ export const setupWebRTC = (io) => {
     });
 
 
+    // Enhanced cleanupCallResources function with comprehensive cleanup
+    async function cleanupCallResources1(pendingCallKey, callerId, receiverId, socket) {
+      try {
+        logger.info(`[CLEANUP_START] Beginning cleanup for call ${pendingCallKey}`);
+
+        // 1. Clean up pending calls with timeout
+        if (pendingCalls[pendingCallKey]) {
+          if (pendingCalls[pendingCallKey].cleanupTimeout) {
+            clearTimeout(pendingCalls[pendingCallKey].cleanupTimeout);
+            logger.debug(`[CLEANUP] Cleared timeout for ${pendingCallKey}`);
+          }
+          delete pendingCalls[pendingCallKey];
+          logger.debug(`[CLEANUP] Removed pending call ${pendingCallKey}`);
+        }
+
+        // 2. Clean up all pending calls for these users
+        Object.keys(pendingCalls).forEach(key => {
+          if (key.includes(callerId) || key.includes(receiverId)) {
+            if (pendingCalls[key].cleanupTimeout) {
+              clearTimeout(pendingCalls[key].cleanupTimeout);
+            }
+            delete pendingCalls[key];
+            logger.debug(`[CLEANUP] Removed related pending call ${key}`);
+          }
+        });
+
+        // 3. Clean up socket registrations
+        if (users[callerId]) {
+          users[callerId] = users[callerId].filter(id => id !== socket.id);
+          logger.debug(`[CLEANUP] Updated socket registrations for caller ${callerId}`);
+        }
+
+        // 4. Clean up active calls
+        if (activeCalls[callerId] === receiverId) {
+          delete activeCalls[callerId];
+          logger.debug(`[CLEANUP] Removed active call for caller ${callerId}`);
+        }
+        if (activeCalls[receiverId] === callerId) {
+          delete activeCalls[receiverId];
+          logger.debug(`[CLEANUP] Removed active call for receiver ${receiverId}`);
+        }
+
+        // 5. Clean up call timings
+        const callerCallKey = `${callerId}_${receiverId}`;
+        const receiverCallKey = `${receiverId}_${callerId}`;
+        delete callTimings[callerCallKey];
+        delete callTimings[receiverCallKey];
+        logger.debug(`[CLEANUP] Removed call timings`);
+
+        logger.info(`[CLEANUP_COMPLETE] Successfully cleaned up all resources for call ${pendingCallKey}`);
+        return true;
+      } catch (error) {
+        logger.error(`[CLEANUP_ERROR] Failed to cleanup resources: ${error.message}`);
+        throw error;
+      }
+    }
+
+    // Improved rejectCall handler with proper cleanup
     socket.on('rejectCall', async ({ receiverId, callerId }) => {
       try {
-        logger.info(`User ${receiverId} rejected call from User ${callerId}`);
+        logger.info(`[REJECT_CALL] User ${receiverId} rejecting call from User ${callerId}`);
 
-        // Clean up call status
-        delete activeCalls[callerId];
-        delete activeCalls[receiverId];
+        // Generate the pending call key consistently
+        const pendingCallKey = [callerId, receiverId].sort().join('_');
+
+        // Perform comprehensive cleanup
+        await cleanupCallResources1(pendingCallKey, callerId, receiverId, socket);
 
         // Notify caller about rejection
         if (users[callerId]) {
           users[callerId].forEach((socketId) => {
-            socket.to(socketId).emit('callRejected', { receiverId });
+            socket.to(socketId).emit('callRejected', {
+              receiverId,
+              message: 'Call was rejected'
+            });
+            logger.debug(`[REJECT_NOTIFY] Notified caller socket ${socketId}`);
           });
         }
-
-
-        const callerCallKey = `${callerId}_${receiverId}`;
-        const receiverCallKey = `${receiverId}_${callerId}`;
-
-
-        logger.info('Cleaning up call data...');
-
-        for (const key in pendingCalls) {
-          if (pendingCalls[key].socketId === socket.id) {
-            logger.info(`Cleaning up pending call: ${key}`);
-            delete pendingCalls[key];
-          }
-        }
-
-        delete activeCalls[callerId];
-        delete activeCalls[receiverId];
-        delete callTimings[callerCallKey];
-        delete callTimings[receiverCallKey];
-
 
         // Stop caller tune
         socket.emit('stopCallerTune', { callerId });
@@ -958,10 +1002,23 @@ export const setupWebRTC = (io) => {
           status: 'rejected'
         });
 
+        logger.info(`[REJECT_COMPLETE] Call rejection processed successfully`);
 
       } catch (error) {
-        logger.error(`Error in rejectCall handler: ${error.message}`);
-        socket.emit('callError', { message: 'Failed to reject call' });
+        logger.error(`[REJECT_ERROR] Error in rejectCall handler: ${error.message}`);
+
+        // Attempt cleanup even in case of error
+        try {
+          const pendingCallKey = [callerId, receiverId].sort().join('_');
+          await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+        } catch (cleanupError) {
+          logger.error(`[CLEANUP_ERROR] Failed to cleanup after error: ${cleanupError.message}`);
+        }
+
+        socket.emit('callError', {
+          message: 'Failed to reject call',
+          error: error.message
+        });
       }
     });
 
