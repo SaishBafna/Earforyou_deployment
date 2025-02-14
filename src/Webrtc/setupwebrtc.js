@@ -910,7 +910,6 @@ export const setupWebRTC = (io) => {
     });
 
 
-    // Enhanced cleanupCallResources function with comprehensive cleanup
     async function cleanupCallResources1(pendingCallKey, callerId, receiverId, socket) {
       try {
         logger.info(`[CLEANUP_START] Beginning cleanup for call ${pendingCallKey}`);
