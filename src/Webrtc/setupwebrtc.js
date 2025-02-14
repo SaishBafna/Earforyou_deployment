@@ -1072,6 +1072,16 @@ export const setupWebRTC = (io) => {
 
               logger.info(`Sent end call notifications to socket: ${socketId}`);
             });
+
+
+
+            // Attempt cleanup even in case of error
+            try {
+              const pendingCallKey = [callerId, receiverId].sort().join('_');
+              await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+            } catch (cleanupError) {
+              logger.error(`[CLEANUP_ERROR] Failed to cleanup after error: ${cleanupError.message}`);
+            }
           } else {
             logger.warn(`No active sockets found for receiver: ${receiverId}`);
           }
