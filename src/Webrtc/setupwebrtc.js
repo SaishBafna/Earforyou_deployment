@@ -819,6 +819,61 @@ export const setupWebRTC = (io) => {
       }
     });
 
+    async function cleanupCallResources1(pendingCallKey, callerId, receiverId, socket) {
+      try {
+        logger.info(`[CLEANUP_START] Beginning cleanup for call ${pendingCallKey}`);
+
+        // 1. Clean up pending calls with timeout
+        if (pendingCalls[pendingCallKey]) {
+          if (pendingCalls[pendingCallKey].cleanupTimeout) {
+            clearTimeout(pendingCalls[pendingCallKey].cleanupTimeout);
+            logger.debug(`[CLEANUP] Cleared timeout for ${pendingCallKey}`);
+          }
+          delete pendingCalls[pendingCallKey];
+          logger.debug(`[CLEANUP] Removed pending call ${pendingCallKey}`);
+        }
+
+        // 2. Clean up all pending calls for these users
+        Object.keys(pendingCalls).forEach(key => {
+          if (key.includes(callerId) || key.includes(receiverId)) {
+            if (pendingCalls[key].cleanupTimeout) {
+              clearTimeout(pendingCalls[key].cleanupTimeout);
+            }
+            delete pendingCalls[key];
+            logger.debug(`[CLEANUP] Removed related pending call ${key}`);
+          }
+        });
+
+        // 3. Clean up socket registrations
+        if (users[callerId]) {
+          users[callerId] = users[callerId].filter(id => id !== socket.id);
+          logger.debug(`[CLEANUP] Updated socket registrations for caller ${callerId}`);
+        }
+
+        // 4. Clean up active calls
+        if (activeCalls[callerId] === receiverId) {
+          delete activeCalls[callerId];
+          logger.debug(`[CLEANUP] Removed active call for caller ${callerId}`);
+        }
+        if (activeCalls[receiverId] === callerId) {
+          delete activeCalls[receiverId];
+          logger.debug(`[CLEANUP] Removed active call for receiver ${receiverId}`);
+        }
+
+        // 5. Clean up call timings
+        const callerCallKey = `${callerId}_${receiverId}`;
+        const receiverCallKey = `${receiverId}_${callerId}`;
+        delete callTimings[callerCallKey];
+        delete callTimings[receiverCallKey];
+        logger.debug(`[CLEANUP] Removed call timings`);
+
+        logger.info(`[CLEANUP_COMPLETE] Successfully cleaned up all resources for call ${pendingCallKey}`);
+        return true;
+      } catch (error) {
+        logger.error(`[CLEANUP_ERROR] Failed to cleanup resources: ${error.message}`);
+        throw error;
+      }
+    }
 
     socket.on('missedcall', async ({ receiverId, callerId }) => {
       try {
@@ -890,6 +945,16 @@ export const setupWebRTC = (io) => {
 
         logger.info('Cleaning up call data...');
 
+         // Attempt cleanup even in case of error
+         try {
+          const pendingCallKey = [callerId, receiverId].sort().join('_');
+          await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+          await cleanupCallResources1(pendingCallKey, callerId, receiverId, socket);
+        } catch (cleanupError) {
+          logger.error(`[CLEANUP_ERROR] Failed to cleanup after error: ${cleanupError.message}`);
+        }
+
+
         for (const key in pendingCalls) {
           if (pendingCalls[key].socketId === socket.id) {
             logger.info(`Cleaning up pending call: ${key}`);
@@ -910,61 +975,7 @@ export const setupWebRTC = (io) => {
     });
 
 
-    async function cleanupCallResources1(pendingCallKey, callerId, receiverId, socket) {
-      try {
-        logger.info(`[CLEANUP_START] Beginning cleanup for call ${pendingCallKey}`);
 
-        // 1. Clean up pending calls with timeout
-        if (pendingCalls[pendingCallKey]) {
-          if (pendingCalls[pendingCallKey].cleanupTimeout) {
-            clearTimeout(pendingCalls[pendingCallKey].cleanupTimeout);
-            logger.debug(`[CLEANUP] Cleared timeout for ${pendingCallKey}`);
-          }
-          delete pendingCalls[pendingCallKey];
-          logger.debug(`[CLEANUP] Removed pending call ${pendingCallKey}`);
-        }
-
-        // 2. Clean up all pending calls for these users
-        Object.keys(pendingCalls).forEach(key => {
-          if (key.includes(callerId) || key.includes(receiverId)) {
-            if (pendingCalls[key].cleanupTimeout) {
-              clearTimeout(pendingCalls[key].cleanupTimeout);
-            }
-            delete pendingCalls[key];
-            logger.debug(`[CLEANUP] Removed related pending call ${key}`);
-          }
-        });
-
-        // 3. Clean up socket registrations
-        if (users[callerId]) {
-          users[callerId] = users[callerId].filter(id => id !== socket.id);
-          logger.debug(`[CLEANUP] Updated socket registrations for caller ${callerId}`);
-        }
-
-        // 4. Clean up active calls
-        if (activeCalls[callerId] === receiverId) {
-          delete activeCalls[callerId];
-          logger.debug(`[CLEANUP] Removed active call for caller ${callerId}`);
-        }
-        if (activeCalls[receiverId] === callerId) {
-          delete activeCalls[receiverId];
-          logger.debug(`[CLEANUP] Removed active call for receiver ${receiverId}`);
-        }
-
-        // 5. Clean up call timings
-        const callerCallKey = `${callerId}_${receiverId}`;
-        const receiverCallKey = `${receiverId}_${callerId}`;
-        delete callTimings[callerCallKey];
-        delete callTimings[receiverCallKey];
-        logger.debug(`[CLEANUP] Removed call timings`);
-
-        logger.info(`[CLEANUP_COMPLETE] Successfully cleaned up all resources for call ${pendingCallKey}`);
-        return true;
-      } catch (error) {
-        logger.error(`[CLEANUP_ERROR] Failed to cleanup resources: ${error.message}`);
-        throw error;
-      }
-    }
 
     // Improved rejectCall handler with proper cleanup
     socket.on('rejectCall', async ({ receiverId, callerId }) => {
@@ -1010,6 +1021,8 @@ export const setupWebRTC = (io) => {
         try {
           const pendingCallKey = [callerId, receiverId].sort().join('_');
           await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+          await cleanupCallResources1(pendingCallKey, callerId, receiverId, socket);
+
         } catch (cleanupError) {
           logger.error(`[CLEANUP_ERROR] Failed to cleanup after error: ${cleanupError.message}`);
         }
@@ -1078,6 +1091,7 @@ export const setupWebRTC = (io) => {
             try {
               const pendingCallKey = [callerId, receiverId].sort().join('_');
               await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+              await cleanupCallResources1(pendingCallKey, callerId, receiverId, socket);
             } catch (cleanupError) {
               logger.error(`[CLEANUP_ERROR] Failed to cleanup after error: ${cleanupError.message}`);
             }
