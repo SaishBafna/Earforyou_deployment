@@ -431,28 +431,7 @@ export const setupWebRTC = (io) => {
           };
 
           // Set cleanup timeout
-          cleanupTimeout = setTimeout(() => {
-            if (pendingCalls[pendingCallKey] && !pendingCalls[pendingCallKey].conflict) {
-              logger.info(`[CALL_TIMEOUT] Cleaning up ${pendingCallKey}`);
-              cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
-              socket.emit('callTimeout', {
-                receiverId,
-                message: 'Call request timed out'
-              });
-
-              socket.emit('callMissed', {
-                receiverId,
-                message: 'user is Busy Another Call Wait Some Time '
-              });
-
-              socket.emit('callRejected', {
-                receiverId,
-                message: 'user is Busy Another Call Wait Some Time '
-              });
-            }
-          }, 40000);
-
-          pendingCalls[pendingCallKey].cleanupTimeout = cleanupTimeout;
+          
 
           // Initialize socket arrays and register caller ONLY if no conflict
           users[callerId] = users[callerId] || [];
@@ -945,8 +924,8 @@ export const setupWebRTC = (io) => {
 
         logger.info('Cleaning up call data...');
 
-         // Attempt cleanup even in case of error
-         try {
+        // Attempt cleanup even in case of error
+        try {
           const pendingCallKey = [callerId, receiverId].sort().join('_');
           await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
           await cleanupCallResources1(pendingCallKey, callerId, receiverId, socket);
