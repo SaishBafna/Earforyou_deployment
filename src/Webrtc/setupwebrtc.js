@@ -430,7 +430,6 @@ export const setupWebRTC = (io) => {
             status: 'initializing'
           };
 
-          // Set cleanup timeout
           
 
           // Initialize socket arrays and register caller ONLY if no conflict

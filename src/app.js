@@ -134,7 +134,7 @@ app.use('/api/v1/msg91', msg91Routes);
 app.use('/api/v1', CallRoute);
 // Added middleware
 
-/
+
 app.use("/api/v1", authRoutes);
 
 app.use('/api/v1/apprating', appRatingRoutes);
