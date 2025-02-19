@@ -1308,282 +1308,6 @@ export const getUserById = async (req, res) => {
 
 
 
-// export const getAllUsers1 = async (req, res) => {
-//   try {
-//     // Extract and normalize the gender filter from params or query
-//     const genderFilter = req.query.gender;
-//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-
-//     console.log("Gender Filter (from params):", genderFilter);
-
-//     // Validate the gender parameter
-//     if (genderFilter && !["male", "female"].includes(genderFilter)) {
-//       return res.status(400).json({
-//         message: "Invalid gender parameter. Must be 'male' or 'female'",
-//       });
-//     }
-
-//     // Pagination parameters
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = 21;
-//     const skip = (page - 1) * limit;
-
-//     // Search query from request
-//     const searchQuery = req.query.search || "";
-//     console.log("Search Query:", searchQuery);
-
-//     // Get current timestamp for lastSeen comparison
-//     const currentTime = new Date();
-//     const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
-
-//     // MongoDB aggregation pipeline
-//     const users = await User.aggregate([
-//       {
-//         $match: {
-//           _id: { $ne: loggedInUserId },
-//           UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
-//           ...(genderFilter && { gender: genderFilter }),
-//           ...(searchQuery && {
-//             $or: [
-//               { username: { $regex: searchQuery, $options: "i" } },
-
-//             ],
-//           }),
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: "reviews",
-//           localField: "_id",
-//           foreignField: "user",
-//           as: "ratings",
-//         },
-//       },
-//       {
-//         $addFields: {
-//           avgRating: { $avg: "$ratings.rating" },
-//           reviewCount: { $size: "$ratings" },
-// isOnline: {
-//   $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
-// },
-//           lastSeenStatus: {
-//             $switch: {
-//               branches: [
-//                 {
-//                   case: { $eq: ["$status", "Online"] },
-//                   then: "Online"
-//                 },
-//                 {
-//                   case: { $gte: ["$lastSeen", twentyFourHoursAgo] },
-//                   then: "recently"
-//                 }
-//               ],
-//               default: "away"
-//             }
-//           }
-//         },
-//       },
-//       {
-//         $sort: {
-//           isOnline: -1,
-//           lastSeen: -1
-//         },
-//       },
-//       {
-//         $facet: {
-//           metadata: [{ $count: "totalUsers" }],
-//           users: [
-//             { $skip: skip },
-//             { $limit: limit },
-//             {
-//               $project: {
-//                 _id: 1,
-//                 username: 1,
-//                 name: 1,
-//                 email: 1,
-//                 gender: 1,
-//                 status: 1,
-//                 lastSeen: 1,
-//                 lastSeenStatus: 1,
-//                 avgRating: 1,
-//                 reviewCount: 1,
-//                 isOnline: 1,
-//                 profilePhoto: 1,
-//                 UserStatus: 1,
-//                 shortDecs: 1,
-//                 decs: 1,
-//                 Language: 1,
-//                 Bio: 1,
-//                 avatarUrl: 1,
-//                 userCategory: 1,
-//                 userType: 1,
-//                 report: 1,
-//               },
-//             },
-//           ],
-//         },
-//       },
-//     ]);
-
-//     // Extract metadata and user list from the aggregation results
-//     const totalUsers = users[0]?.metadata[0]?.totalUsers || 0;
-//     const userList = users[0]?.users || [];
-
-//     if (userList.length === 0) {
-//       return res.status(404).json({
-//         message: genderFilter
-//           ? `No ${genderFilter} users found`
-//           : "No users found",
-//       });
-//     }
-
-//     // Send the response with users and pagination details
-//     res.status(200).json({
-//       message: genderFilter
-//         ? `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`
-//         : "Users fetched successfully",
-//       users: userList,
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error fetching users:", error);
-//     res.status(500).json({
-//       message: "Internal server error",
-//       error: error.message,
-//     });
-//   }
-// };
-
-// export const getAllUsers1 = async (req, res) => {
-//   try {
-//     // Extract and normalize the gender filter from params or query
-//     const genderFilter = req.query.gender;
-//     // Extract and normalize the gender filter from params or query
-//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-//     const loggedInUserGender = genderFilter || req.user.gender?.toLowerCase();
-
-//     console.log("Gender Filter (from params):", genderFilter);
-//     console.log("Logged-in User Gender:", loggedInUserGender);
-
-//     // Validate the gender parameter
-//     if (genderFilter && !["male", "female"].includes(genderFilter)) {
-//       return res.status(400).json({
-//         message: "Invalid gender parameter. Must be 'male' or 'female'",
-//       });
-//     }
-
-//     // Pagination parameters
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = 21;
-//     const skip = (page - 1) * limit;
-
-//     // Search query from request
-//     const searchQuery = req.query.search || "";
-//     console.log("Search Query:", searchQuery);
-
-//     // MongoDB aggregation pipeline
-//     const users = await User.aggregate([
-//       {
-//         $match: {
-// _id: { $ne: loggedInUserId },
-// UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
-//           ...(genderFilter && { gender: genderFilter }),
-//           ...(searchQuery && {
-//             $or: [
-//               { username: { $regex: searchQuery, $options: "i" } },
-//               { name: { $regex: searchQuery, $options: "i" } },
-//               { email: { $regex: searchQuery, $options: "i" } },
-//             ],
-//           }),
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: "reviews",
-//           localField: "_id",
-//           foreignField: "user",
-//           as: "ratings",
-//         },
-//       },
-//       {
-//         $addFields: {
-//           avgRating: { $avg: "$ratings.rating" },
-//           reviewCount: { $size: "$ratings" },
-//           isOppositeGender: {
-//             $cond: { if: { $ne: ["$gender", loggedInUserGender] }, then: 1, else: 0 },
-//           },
-//           isOnline: {
-//             $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
-//           },
-//         },
-//       },
-//       {
-//         $sort: {
-//           isOnline: -1,
-//           isOppositeGender: -1,
-//           avgRating: -1,
-//         },
-//       },
-//       {
-//         $facet: {
-//           metadata: [{ $count: "totalUsers" }],
-//           users: [
-//             { $skip: skip },
-//             { $limit: limit },
-//             {
-//               $project: {
-//                 password: 0,
-//                 refreshToken: 0,
-//                 ratings: 0,
-//               },
-//             },
-//           ],
-//         },
-//       },
-//     ]);
-
-//     // Extract metadata and user list from the aggregation results
-//     const totalUsers = users[0]?.metadata[0]?.totalUsers || 0;
-//     const userList = users[0]?.users || [];
-
-//     if (userList.length === 0) {
-//       return res.status(404).json({
-//         message: genderFilter
-//           ? `No ${genderFilter} users found`
-//           : "No users found",
-//       });
-//     }
-
-//     // Send the response with users and pagination details
-//     res.status(200).json({
-//       message: genderFilter
-//         ? `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`
-//         : "Users fetched successfully",
-//       users: userList,
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error fetching users:", error);
-//     res.status(500).json({
-//       message: "Internal server error",
-//       error: error.message,
-//     });
-//   }
-// };
-
-
-// Add these indexes to your User model schema
-
 
 export const getAllUsers1 = async (req, res) => {
   try {
@@ -2204,16 +1928,169 @@ export const subscribeUser = async (req, res) => {
 
 
 
+// export const getChatsWithLatestMessages = async (req, res) => {
+//   try {
+//     const userId = req.user.id || req.user._id;
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 20;
+//     const search = req.query.search || ""; // Add search parameter
+//     const skip = (page - 1) * limit;
+
+//     // Step 1: Find all chat IDs where the user is a participant
+//     const userChats = await Chat.find({ participants: userId });
+//     const chatIds = userChats.map(chat => chat._id);
+
+//     // Step 2: Get all participant IDs from these chats (excluding the current user)
+//     const participantIds = userChats.reduce((acc, chat) => {
+//       chat.participants.forEach(participantId => {
+//         if (participantId.toString() !== userId.toString()) {
+//           acc.add(participantId.toString());
+//         }
+//       });
+//       return acc;
+//     }, new Set());
+
+//     // Step 3: Fetch participants with search and Online status
+//     const participants = await User.aggregate([
+//       {
+//         $match: {
+//           _id: { $in: Array.from(participantIds).map(id => new mongoose.Types.ObjectId(id)) },
+//           ...(search && {
+//             username: { $regex: search, $options: 'i' }
+//           })
+//         }
+//       },
+//       {
+//         $addFields: {
+//           isOnline: { $cond: [{ $eq: ['$status', 'Online'] }, 1, 0] }
+//         }
+//       },
+//       {
+//         $sort: {
+//           updatedAt: -1, // Sort chats by update time        }
+//       }
+//     ]);
+
+//     if (!participants.length) {
+//       return res.json({ chats: [], page, limit });
+//     }
+
+//     // Step 4: Fetch chats with filtered participants
+//     const filteredChatIds = userChats.filter(chat =>
+//       chat.participants.some(participantId =>
+//         participants.some(p => p._id.toString() === participantId.toString())
+//       )
+//     ).map(chat => chat._id);
+
+//     const chats = await Chat.find({ _id: { $in: filteredChatIds } })
+//       .populate({
+//         path: 'participants',
+//         model: User,
+//         select: '-password -refreshToken',
+//       })
+//       .sort({ updatedAt: -1 })
+//       .skip(skip)
+//       .limit(limit);
+
+//     // Step 5: Fetch reviews for participants
+//     const reviews = await Review.find({
+//       user: { $in: participants.map(p => p._id) }
+//     });
+
+//     // Step 6: Calculate average ratings
+//     const userRatingsMap = {};
+//     reviews.forEach((review) => {
+//       const userId = review.user.toString();
+//       if (!userRatingsMap[userId]) {
+//         userRatingsMap[userId] = { sum: 0, count: 0 };
+//       }
+//       userRatingsMap[userId].sum += review.rating || 0;
+//       userRatingsMap[userId].count += 1;
+//     });
+
+//     const avgRatings = {};
+//     for (const [userId, ratingData] of Object.entries(userRatingsMap)) {
+//       avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
+//     }
+
+//     // Step 7: Format chat data with Online status and search results
+//     const uniqueUsersMap = new Map();
+
+//     for (const chat of chats) {
+//       chat.participants.forEach((participant) => {
+//         if (participant._id.toString() !== userId.toString()) {
+//           const matchingParticipant = participants.find(p =>
+//             p._id.toString() === participant._id.toString()
+//           );
+
+//           if (matchingParticipant && !uniqueUsersMap.has(participant._id.toString())) {
+//             uniqueUsersMap.set(participant._id.toString(), {
+//               user: {
+//                 ...participant.toObject(),
+//                 isOnline: matchingParticipant.isOnline === 1
+//               },
+//               chatId: chat._id,
+//               lastMessage: chat.lastMessage || null,
+//               updatedAt: chat.updatedAt,
+//             });
+//           }
+//         }
+//       });
+//     }
+
+//     const formattedChats = Array.from(uniqueUsersMap.values()).map((item) => {
+//       const avgRating = avgRatings[item.user._id.toString()] || 0;
+//       const { password, refreshToken, ...userDetails } = item.user;
+
+//       return {
+//         participants: [{
+//           ...userDetails,
+//           averageRating: avgRating
+//         }],
+//         chatId: item.chatId,
+//         lastMessage: item.lastMessage,
+//         updatedAt: item.updatedAt,
+//       };
+//     });
+
+//     // Sort formatted chats by Online status and then by updatedAt
+//     formattedChats.sort((a, b) => {
+//       if (a.participants[0].isOnline !== b.participants[0].isOnline) {
+//         return b.participants[0].isOnline ? 1 : -1;
+//       }
+//       return new Date(b.updatedAt) - new Date(a.updatedAt);
+//     });
+
+//     res.json({
+//       chats: formattedChats,
+//       page,
+//       limit,
+//       searchQuery: search ? {
+//         term: search,
+//         resultsCount: formattedChats.length
+//       } : null
+//     });
+
+//   } catch (error) {
+//     console.error('Error fetching chats with latest messages:', error);
+//     res.status(500).json({ error: 'Failed to fetch chats' });
+//   }
+// };
+
+
+
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
-    const search = req.query.search || ""; // Add search parameter
+    const search = req.query.search || "";
     const skip = (page - 1) * limit;
 
-    // Step 1: Find all chat IDs where the user is a participant
-    const userChats = await Chat.find({ participants: userId });
+    // Step 1: Find all chat IDs where the user is a participant, sorted by updatedAt
+    const userChats = await Chat.find({ participants: userId })
+      .sort({ updatedAt: -1 });
+
     const chatIds = userChats.map(chat => chat._id);
 
     // Step 2: Get all participant IDs from these chats (excluding the current user)
@@ -2243,8 +2120,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
       },
       {
         $sort: {
-          updatedAt: -1,
-          isOnline: -1,
+          updatedAt: -1
         }
       }
     ]);
@@ -2253,12 +2129,14 @@ export const getChatsWithLatestMessages = async (req, res) => {
       return res.json({ chats: [], page, limit });
     }
 
-    // Step 4: Fetch chats with filtered participants
-    const filteredChatIds = userChats.filter(chat =>
-      chat.participants.some(participantId =>
-        participants.some(p => p._id.toString() === participantId.toString())
+    // Step 4: Fetch chats with filtered participants, maintaining the latest order
+    const filteredChatIds = userChats
+      .filter(chat =>
+        chat.participants.some(participantId =>
+          participants.some(p => p._id.toString() === participantId.toString())
+        )
       )
-    ).map(chat => chat._id);
+      .map(chat => chat._id);
 
     const chats = await Chat.find({ _id: { $in: filteredChatIds } })
       .populate({
@@ -2291,7 +2169,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
       avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
     }
 
-    // Step 7: Format chat data with Online status and search results
+    // Step 7: Format chat data with latest messages first
     const uniqueUsersMap = new Map();
 
     for (const chat of chats) {
@@ -2316,28 +2194,22 @@ export const getChatsWithLatestMessages = async (req, res) => {
       });
     }
 
-    const formattedChats = Array.from(uniqueUsersMap.values()).map((item) => {
-      const avgRating = avgRatings[item.user._id.toString()] || 0;
-      const { password, refreshToken, ...userDetails } = item.user;
+    const formattedChats = Array.from(uniqueUsersMap.values())
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .map((item) => {
+        const avgRating = avgRatings[item.user._id.toString()] || 0;
+        const { password, refreshToken, ...userDetails } = item.user;
 
-      return {
-        participants: [{
-          ...userDetails,
-          averageRating: avgRating
-        }],
-        chatId: item.chatId,
-        lastMessage: item.lastMessage,
-        updatedAt: item.updatedAt,
-      };
-    });
-
-    // Sort formatted chats by Online status and then by updatedAt
-    formattedChats.sort((a, b) => {
-      if (a.participants[0].isOnline !== b.participants[0].isOnline) {
-        return b.participants[0].isOnline ? 1 : -1;
-      }
-      return new Date(b.updatedAt) - new Date(a.updatedAt);
-    });
+        return {
+          participants: [{
+            ...userDetails,
+            averageRating: avgRating
+          }],
+          chatId: item.chatId,
+          lastMessage: item.lastMessage,
+          updatedAt: item.updatedAt,
+        };
+      });
 
     res.json({
       chats: formattedChats,
@@ -2354,8 +2226,6 @@ export const getChatsWithLatestMessages = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch chats' });
   }
 };
-
-
 
 
 
