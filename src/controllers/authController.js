@@ -2078,7 +2078,6 @@ export const subscribeUser = async (req, res) => {
 // };
 
 
-
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
@@ -2117,11 +2116,6 @@ export const getChatsWithLatestMessages = async (req, res) => {
         $addFields: {
           isOnline: { $cond: [{ $eq: ['$status', 'Online'] }, 1, 0] }
         }
-      },
-      {
-        $sort: {
-          updatedAt: -1
-        }
       }
     ]);
 
@@ -2129,7 +2123,28 @@ export const getChatsWithLatestMessages = async (req, res) => {
       return res.json({ chats: [], page, limit });
     }
 
-    // Step 4: Fetch chats with filtered participants, maintaining the latest order
+    // Step 4: Fetch reviews for participants
+    const reviews = await Review.find({
+      user: { $in: participants.map(p => p._id) }
+    });
+
+    // Step 5: Calculate average ratings
+    const userRatingsMap = {};
+    reviews.forEach((review) => {
+      const userId = review.user.toString();
+      if (!userRatingsMap[userId]) {
+        userRatingsMap[userId] = { sum: 0, count: 0 };
+      }
+      userRatingsMap[userId].sum += review.rating || 0;
+      userRatingsMap[userId].count += 1;
+    });
+
+    const avgRatings = {};
+    for (const [userId, ratingData] of Object.entries(userRatingsMap)) {
+      avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
+    }
+
+    // Step 6: Fetch chats with filtered participants
     const filteredChatIds = userChats
       .filter(chat =>
         chat.participants.some(participantId =>
@@ -2148,27 +2163,6 @@ export const getChatsWithLatestMessages = async (req, res) => {
       .skip(skip)
       .limit(limit);
 
-    // Step 5: Fetch reviews for participants
-    const reviews = await Review.find({
-      user: { $in: participants.map(p => p._id) }
-    });
-
-    // Step 6: Calculate average ratings
-    const userRatingsMap = {};
-    reviews.forEach((review) => {
-      const userId = review.user.toString();
-      if (!userRatingsMap[userId]) {
-        userRatingsMap[userId] = { sum: 0, count: 0 };
-      }
-      userRatingsMap[userId].sum += review.rating || 0;
-      userRatingsMap[userId].count += 1;
-    });
-
-    const avgRatings = {};
-    for (const [userId, ratingData] of Object.entries(userRatingsMap)) {
-      avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
-    }
-
     // Step 7: Format chat data with latest messages first
     const uniqueUsersMap = new Map();
 
@@ -2183,27 +2177,27 @@ export const getChatsWithLatestMessages = async (req, res) => {
             uniqueUsersMap.set(participant._id.toString(), {
               user: {
                 ...participant.toObject(),
-                isOnline: matchingParticipant.isOnline === 1
+                isOnline: matchingParticipant.isOnline === 1,
+                averageRating: avgRatings[participant._id.toString()] || 0
               },
               chatId: chat._id,
               lastMessage: chat.lastMessage || null,
-              updatedAt: chat.updatedAt,
+              updatedAt: chat.updatedAt
             });
           }
         }
       });
     }
 
+    // Sort only by message recency
     const formattedChats = Array.from(uniqueUsersMap.values())
       .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
       .map((item) => {
-        const avgRating = avgRatings[item.user._id.toString()] || 0;
         const { password, refreshToken, ...userDetails } = item.user;
 
         return {
           participants: [{
-            ...userDetails,
-            averageRating: avgRating
+            ...userDetails
           }],
           chatId: item.chatId,
           lastMessage: item.lastMessage,
@@ -2226,7 +2220,6 @@ export const getChatsWithLatestMessages = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch chats' });
   }
 };
-
 
 
 
