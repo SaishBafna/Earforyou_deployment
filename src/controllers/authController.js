@@ -2086,13 +2086,17 @@ export const getChatsWithLatestMessages = async (req, res) => {
     const search = req.query.search || "";
     const skip = (page - 1) * limit;
 
-    // Step 1: Find all chat IDs where the user is a participant, sorted by updatedAt
+    // Step 1: Get current user's online status
+    const currentUser = await User.findById(userId);
+    const isCurrentUserOnline = currentUser.status === 'Online';
+
+    // Step 2: Find all chat IDs where the user is a participant
     const userChats = await Chat.find({ participants: userId })
       .sort({ updatedAt: -1 });
 
     const chatIds = userChats.map(chat => chat._id);
 
-    // Step 2: Get all participant IDs from these chats (excluding the current user)
+    // Step 3: Get all participant IDs from these chats (excluding the current user)
     const participantIds = userChats.reduce((acc, chat) => {
       chat.participants.forEach(participantId => {
         if (participantId.toString() !== userId.toString()) {
@@ -2102,7 +2106,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
       return acc;
     }, new Set());
 
-    // Step 3: Fetch participants with search and Online status
+    // Step 4: Fetch participants with search and Online status
     const participants = await User.aggregate([
       {
         $match: {
@@ -2123,12 +2127,12 @@ export const getChatsWithLatestMessages = async (req, res) => {
       return res.json({ chats: [], page, limit });
     }
 
-    // Step 4: Fetch reviews for participants
+    // Step 5: Fetch reviews for participants
     const reviews = await Review.find({
       user: { $in: participants.map(p => p._id) }
     });
 
-    // Step 5: Calculate average ratings
+    // Step 6: Calculate average ratings
     const userRatingsMap = {};
     reviews.forEach((review) => {
       const userId = review.user.toString();
@@ -2144,7 +2148,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
       avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
     }
 
-    // Step 6: Fetch chats with filtered participants
+    // Step 7: Fetch chats with filtered participants
     const filteredChatIds = userChats
       .filter(chat =>
         chat.participants.some(participantId =>
@@ -2163,7 +2167,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
       .skip(skip)
       .limit(limit);
 
-    // Step 7: Format chat data with latest messages first
+    // Step 8: Format chat data
     const uniqueUsersMap = new Map();
 
     for (const chat of chats) {
@@ -2182,16 +2186,35 @@ export const getChatsWithLatestMessages = async (req, res) => {
               },
               chatId: chat._id,
               lastMessage: chat.lastMessage || null,
-              updatedAt: chat.updatedAt
+              updatedAt: chat.updatedAt,
+              timestamp: new Date(chat.updatedAt).getTime() // Convert to timestamp for easier comparison
             });
           }
         }
       });
     }
 
-    // Sort only by message recency
+    // Sort with both message recency and online status
     const formattedChats = Array.from(uniqueUsersMap.values())
-      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .sort((a, b) => {
+        // First, check if both users are online
+        const bothOnline = isCurrentUserOnline && a.user.isOnline && isCurrentUserOnline && b.user.isOnline;
+
+        if (bothOnline) {
+          // If both are online, sort by timestamp
+          return b.timestamp - a.timestamp;
+        }
+
+        // If timestamps are the same (messages in the same second)
+        if (a.timestamp === b.timestamp) {
+          // Prioritize chats where both users are online
+          if (isCurrentUserOnline && a.user.isOnline) return -1;
+          if (isCurrentUserOnline && b.user.isOnline) return 1;
+        }
+
+        // Default to sorting by timestamp
+        return b.timestamp - a.timestamp;
+      })
       .map((item) => {
         const { password, refreshToken, ...userDetails } = item.user;
 
