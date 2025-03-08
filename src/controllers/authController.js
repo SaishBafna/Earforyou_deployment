@@ -20,7 +20,7 @@ import EarningWallet from "../models/Wallet/EarningWallet.js";
 import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
 import { Chat } from "../models/chat.modal.js";
-
+import Review from "../models/LeaderBoard/Review.js";
 
 
 
@@ -1274,9 +1274,7 @@ export const changeUserType = async (req, res) => {
   }
 };
 
-
 // get userby id
-
 export const getUserById = async (req, res) => {
   try {
     const { userId } = req.params;  // Extract userId from the request URL parameters
@@ -1667,8 +1665,6 @@ export const addBio = async (req, res) => {
 };
 
 
-
-
 // Edit a bio entry
 export const editBio = async (req, res) => {
   try {
@@ -1905,11 +1901,7 @@ export const getBankDetails = async (req, res) => {
   }
 };
 
-
-
-
 // addToMailingList
-
 export const subscribeUser = async (req, res) => {
   const { firstName, lastName, email } = req.body;
 
@@ -1925,22 +1917,25 @@ export const subscribeUser = async (req, res) => {
 };
 
 
-
-
-
 // export const getChatsWithLatestMessages = async (req, res) => {
 //   try {
 //     const userId = req.user.id || req.user._id;
 //     const page = parseInt(req.query.page) || 1;
 //     const limit = parseInt(req.query.limit) || 20;
-//     const search = req.query.search || ""; // Add search parameter
+//     const search = req.query.search || "";
 //     const skip = (page - 1) * limit;
 
-//     // Step 1: Find all chat IDs where the user is a participant
-//     const userChats = await Chat.find({ participants: userId });
+//     // Step 1: Get current user's online status
+//     const currentUser = await User.findById(userId);
+//     const isCurrentUserOnline = currentUser.status === 'Online';
+
+//     // Step 2: Find all chat IDs where the user is a participant
+//     const userChats = await Chat.find({ participants: userId })
+//       .sort({ updatedAt: -1 });
+
 //     const chatIds = userChats.map(chat => chat._id);
 
-//     // Step 2: Get all participant IDs from these chats (excluding the current user)
+//     // Step 3: Get all participant IDs from these chats (excluding the current user)
 //     const participantIds = userChats.reduce((acc, chat) => {
 //       chat.participants.forEach(participantId => {
 //         if (participantId.toString() !== userId.toString()) {
@@ -1950,7 +1945,7 @@ export const subscribeUser = async (req, res) => {
 //       return acc;
 //     }, new Set());
 
-//     // Step 3: Fetch participants with search and Online status
+//     // Step 4: Fetch participants with search and Online status
 //     const participants = await User.aggregate([
 //       {
 //         $match: {
@@ -1964,33 +1959,12 @@ export const subscribeUser = async (req, res) => {
 //         $addFields: {
 //           isOnline: { $cond: [{ $eq: ['$status', 'Online'] }, 1, 0] }
 //         }
-//       },
-//       {
-//         $sort: {
-//           updatedAt: -1, // Sort chats by update time        }
 //       }
 //     ]);
 
 //     if (!participants.length) {
 //       return res.json({ chats: [], page, limit });
 //     }
-
-//     // Step 4: Fetch chats with filtered participants
-//     const filteredChatIds = userChats.filter(chat =>
-//       chat.participants.some(participantId =>
-//         participants.some(p => p._id.toString() === participantId.toString())
-//       )
-//     ).map(chat => chat._id);
-
-//     const chats = await Chat.find({ _id: { $in: filteredChatIds } })
-//       .populate({
-//         path: 'participants',
-//         model: User,
-//         select: '-password -refreshToken',
-//       })
-//       .sort({ updatedAt: -1 })
-//       .skip(skip)
-//       .limit(limit);
 
 //     // Step 5: Fetch reviews for participants
 //     const reviews = await Review.find({
@@ -2013,7 +1987,26 @@ export const subscribeUser = async (req, res) => {
 //       avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
 //     }
 
-//     // Step 7: Format chat data with Online status and search results
+//     // Step 7: Fetch chats with filtered participants
+//     const filteredChatIds = userChats
+//       .filter(chat =>
+//         chat.participants.some(participantId =>
+//           participants.some(p => p._id.toString() === participantId.toString())
+//         )
+//       )
+//       .map(chat => chat._id);
+
+//     const chats = await Chat.find({ _id: { $in: filteredChatIds } })
+//       .populate({
+//         path: 'participants',
+//         model: User,
+//         select: '-password -refreshToken',
+//       })
+//       .sort({ updatedAt: -1 })
+//       .skip(skip)
+//       .limit(limit);
+
+//     // Step 8: Format chat data
 //     const uniqueUsersMap = new Map();
 
 //     for (const chat of chats) {
@@ -2027,39 +2020,52 @@ export const subscribeUser = async (req, res) => {
 //             uniqueUsersMap.set(participant._id.toString(), {
 //               user: {
 //                 ...participant.toObject(),
-//                 isOnline: matchingParticipant.isOnline === 1
+//                 isOnline: matchingParticipant.isOnline === 1,
+//                 averageRating: avgRatings[participant._id.toString()] || 0
 //               },
 //               chatId: chat._id,
 //               lastMessage: chat.lastMessage || null,
 //               updatedAt: chat.updatedAt,
+//               timestamp: new Date(chat.updatedAt).getTime() // Convert to timestamp for easier comparison
 //             });
 //           }
 //         }
 //       });
 //     }
 
-//     const formattedChats = Array.from(uniqueUsersMap.values()).map((item) => {
-//       const avgRating = avgRatings[item.user._id.toString()] || 0;
-//       const { password, refreshToken, ...userDetails } = item.user;
+//     // Sort with both message recency and online status
+//     const formattedChats = Array.from(uniqueUsersMap.values())
+//       .sort((a, b) => {
+//         // First, check if both users are online
+//         const bothOnline = isCurrentUserOnline && a.user.isOnline && isCurrentUserOnline && b.user.isOnline;
 
-//       return {
-//         participants: [{
-//           ...userDetails,
-//           averageRating: avgRating
-//         }],
-//         chatId: item.chatId,
-//         lastMessage: item.lastMessage,
-//         updatedAt: item.updatedAt,
-//       };
-//     });
+//         if (bothOnline) {
+//           // If both are online, sort by timestamp
+//           return b.timestamp - a.timestamp;
+//         }
 
-//     // Sort formatted chats by Online status and then by updatedAt
-//     formattedChats.sort((a, b) => {
-//       if (a.participants[0].isOnline !== b.participants[0].isOnline) {
-//         return b.participants[0].isOnline ? 1 : -1;
-//       }
-//       return new Date(b.updatedAt) - new Date(a.updatedAt);
-//     });
+//         // If timestamps are the same (messages in the same second)
+//         if (a.timestamp === b.timestamp) {
+//           // Prioritize chats where both users are online
+//           if (isCurrentUserOnline && a.user.isOnline) return -1;
+//           if (isCurrentUserOnline && b.user.isOnline) return 1;
+//         }
+
+//         // Default to sorting by timestamp
+//         return b.timestamp - a.timestamp;
+//       })
+//       .map((item) => {
+//         const { password, refreshToken, ...userDetails } = item.user;
+
+//         return {
+//           participants: [{
+//             ...userDetails
+//           }],
+//           chatId: item.chatId,
+//           lastMessage: item.lastMessage,
+//           updatedAt: item.updatedAt,
+//         };
+//       });
 
 //     res.json({
 //       chats: formattedChats,
@@ -2078,6 +2084,7 @@ export const subscribeUser = async (req, res) => {
 // };
 
 
+
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
@@ -2086,147 +2093,162 @@ export const getChatsWithLatestMessages = async (req, res) => {
     const search = req.query.search || "";
     const skip = (page - 1) * limit;
 
-    // Step 1: Get current user's online status
-    const currentUser = await User.findById(userId);
+    // Convert userId to ObjectId
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    // Get current user's online status in a single query
+    const currentUser = await User.findById(userId).select('status');
     const isCurrentUserOnline = currentUser.status === 'Online';
 
-    // Step 2: Find all chat IDs where the user is a participant
-    const userChats = await Chat.find({ participants: userId })
-      .sort({ updatedAt: -1 });
-
-    const chatIds = userChats.map(chat => chat._id);
-
-    // Step 3: Get all participant IDs from these chats (excluding the current user)
-    const participantIds = userChats.reduce((acc, chat) => {
-      chat.participants.forEach(participantId => {
-        if (participantId.toString() !== userId.toString()) {
-          acc.add(participantId.toString());
-        }
-      });
-      return acc;
-    }, new Set());
-
-    // Step 4: Fetch participants with search and Online status
-    const participants = await User.aggregate([
+    const pipeline = [
+      // Stage 1: Match chats where the current user is a participant
       {
         $match: {
-          _id: { $in: Array.from(participantIds).map(id => new mongoose.Types.ObjectId(id)) },
-          ...(search && {
-            username: { $regex: search, $options: 'i' }
-          })
+          participants: userObjectId
         }
       },
+
+      // Stage 2: Sort by most recent activity first
+      {
+        $sort: { updatedAt: -1 }
+      },
+
+      // Stage 3: Skip and limit for pagination
+      {
+        $skip: skip
+      },
+      {
+        $limit: limit
+      },
+
+      // Stage 4: Lookup to get participant details
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'participants',
+          foreignField: '_id',
+          as: 'participantDetails'
+        }
+      },
+
+      // Stage 5: Filter out the current user from participants
       {
         $addFields: {
-          isOnline: { $cond: [{ $eq: ['$status', 'Online'] }, 1, 0] }
-        }
-      }
-    ]);
-
-    if (!participants.length) {
-      return res.json({ chats: [], page, limit });
-    }
-
-    // Step 5: Fetch reviews for participants
-    const reviews = await Review.find({
-      user: { $in: participants.map(p => p._id) }
-    });
-
-    // Step 6: Calculate average ratings
-    const userRatingsMap = {};
-    reviews.forEach((review) => {
-      const userId = review.user.toString();
-      if (!userRatingsMap[userId]) {
-        userRatingsMap[userId] = { sum: 0, count: 0 };
-      }
-      userRatingsMap[userId].sum += review.rating || 0;
-      userRatingsMap[userId].count += 1;
-    });
-
-    const avgRatings = {};
-    for (const [userId, ratingData] of Object.entries(userRatingsMap)) {
-      avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
-    }
-
-    // Step 7: Fetch chats with filtered participants
-    const filteredChatIds = userChats
-      .filter(chat =>
-        chat.participants.some(participantId =>
-          participants.some(p => p._id.toString() === participantId.toString())
-        )
-      )
-      .map(chat => chat._id);
-
-    const chats = await Chat.find({ _id: { $in: filteredChatIds } })
-      .populate({
-        path: 'participants',
-        model: User,
-        select: '-password -refreshToken',
-      })
-      .sort({ updatedAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    // Step 8: Format chat data
-    const uniqueUsersMap = new Map();
-
-    for (const chat of chats) {
-      chat.participants.forEach((participant) => {
-        if (participant._id.toString() !== userId.toString()) {
-          const matchingParticipant = participants.find(p =>
-            p._id.toString() === participant._id.toString()
-          );
-
-          if (matchingParticipant && !uniqueUsersMap.has(participant._id.toString())) {
-            uniqueUsersMap.set(participant._id.toString(), {
-              user: {
-                ...participant.toObject(),
-                isOnline: matchingParticipant.isOnline === 1,
-                averageRating: avgRatings[participant._id.toString()] || 0
-              },
-              chatId: chat._id,
-              lastMessage: chat.lastMessage || null,
-              updatedAt: chat.updatedAt,
-              timestamp: new Date(chat.updatedAt).getTime() // Convert to timestamp for easier comparison
-            });
+          participantDetails: {
+            $filter: {
+              input: '$participantDetails',
+              as: 'participant',
+              cond: { $ne: ['$$participant._id', userObjectId] }
+            }
           }
         }
-      });
-    }
+      },
 
-    // Sort with both message recency and online status
-    const formattedChats = Array.from(uniqueUsersMap.values())
-      .sort((a, b) => {
-        // First, check if both users are online
-        const bothOnline = isCurrentUserOnline && a.user.isOnline && isCurrentUserOnline && b.user.isOnline;
-
-        if (bothOnline) {
-          // If both are online, sort by timestamp
-          return b.timestamp - a.timestamp;
+      // Stage 6: Match if search term provided
+      ...(search ? [{
+        $match: {
+          'participantDetails.username': { $regex: search, $options: 'i' }
         }
+      }] : []),
 
-        // If timestamps are the same (messages in the same second)
-        if (a.timestamp === b.timestamp) {
-          // Prioritize chats where both users are online
-          if (isCurrentUserOnline && a.user.isOnline) return -1;
-          if (isCurrentUserOnline && b.user.isOnline) return 1;
+      // Stage 7: Lookup reviews for participants
+      {
+        $lookup: {
+          from: 'reviews',
+          let: { participantIds: '$participantDetails._id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: ['$user', '$$participantIds']
+                }
+              }
+            }
+          ],
+          as: 'participantReviews'
         }
+      },
 
-        // Default to sorting by timestamp
-        return b.timestamp - a.timestamp;
-      })
-      .map((item) => {
-        const { password, refreshToken, ...userDetails } = item.user;
+      // Stage 8: Process and format the final output
+      {
+        $project: {
+          chatId: '$_id',
+          lastMessage: 1,
+          updatedAt: 1,
+          timestamp: { $toLong: '$updatedAt' },
+          participants: {
+            $map: {
+              input: '$participantDetails',
+              as: 'participant',
+              in: {
+                _id: '$$participant._id',
+                username: '$$participant.username',
+                email: '$$participant.email',
+                avatar: '$$participant.avatar',
+                status: '$$participant.status',
+                isOnline: { $eq: ['$$participant.status', 'Online'] },
+                averageRating: {
+                  $let: {
+                    vars: {
+                      userReviews: {
+                        $filter: {
+                          input: '$participantReviews',
+                          as: 'review',
+                          cond: { $eq: ['$$review.user', '$$participant._id'] }
+                        }
+                      }
+                    },
+                    in: {
+                      $cond: {
+                        if: { $gt: [{ $size: '$$userReviews' }, 0] },
+                        then: {
+                          $divide: [
+                            { $sum: '$$userReviews.rating' },
+                            { $size: '$$userReviews' }
+                          ]
+                        },
+                        else: 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
 
+      // Stage 9: Custom sort with online priority if current user is online
+      {
+        $sort: isCurrentUserOnline ? {
+          'participants.isOnline': -1,
+          timestamp: -1
+        } : {
+          timestamp: -1
+        }
+      }
+    ];
+
+    const chats = await Chat.aggregate(pipeline);
+
+    // Format the response to match the expected structure
+    const formattedChats = chats.map(chat => ({
+      participants: chat.participants.map(p => {
+        // Exclude password and refreshToken (already done by the projection)
         return {
-          participants: [{
-            ...userDetails
-          }],
-          chatId: item.chatId,
-          lastMessage: item.lastMessage,
-          updatedAt: item.updatedAt,
+          _id: p._id,
+          username: p.username,
+          email: p.email,
+          avatar: p.avatar,
+          status: p.status,
+          isOnline: p.isOnline,
+          averageRating: p.averageRating
         };
-      });
+      }),
+      chatId: chat.chatId,
+      lastMessage: chat.lastMessage,
+      updatedAt: chat.updatedAt
+    }));
 
     res.json({
       chats: formattedChats,
@@ -2244,7 +2266,37 @@ export const getChatsWithLatestMessages = async (req, res) => {
   }
 };
 
+const getReviews = async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const page = parseInt(req.query.page) || 1; // Default to page 1
+    const limit = parseInt(req.query.limit) || 10; // Default to 10 reviews per page
+    const skip = (page - 1) * limit;
 
+    // Fetch reviews with pagination
+    const reviews = await Review.find({ user: userId }) // Filter by user if needed
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 }); // Optional: Sort by latest reviews
+
+    // Get total count for pagination
+    const totalReviews = await Review.countDocuments({ user: userId });
+
+    res.status(200).json({
+      success: true,
+      page,
+      limit,
+      totalPages: Math.ceil(totalReviews / limit),
+      totalReviews,
+      data: reviews,
+    });
+  } catch (error) {
+    console.error("Error fetching reviews:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export default getReviews;
 
 async function sendNotification(userId, title, message) {
   // Assuming you have the FCM device token stored in your database

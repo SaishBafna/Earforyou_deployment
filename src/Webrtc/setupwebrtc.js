@@ -48,7 +48,10 @@ export const setupWebRTC = (io) => {
         // Update user's status in the database
         const updatedUser = await User.findByIdAndUpdate(
           userId,
-          { status: 'Online' }, // Assuming `status` is the field
+          {
+            status: 'Online',
+            lastSeen: new Date() // or Date.now()
+          }, // Assuming `status` is the field
           { new: true } // Returns the updated document
         );
 
@@ -430,7 +433,7 @@ export const setupWebRTC = (io) => {
             status: 'initializing'
           };
 
-          
+
 
           // Initialize socket arrays and register caller ONLY if no conflict
           users[callerId] = users[callerId] || [];
@@ -1066,13 +1069,13 @@ export const setupWebRTC = (io) => {
 
 
             // Attempt cleanup even in case of error
-            try {
-              const pendingCallKey = [callerId, receiverId].sort().join('_');
-              await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
-              await cleanupCallResources1(pendingCallKey, callerId, receiverId, socket);
-            } catch (cleanupError) {
-              logger.error(`[CLEANUP_ERROR] Failed to cleanup after error: ${cleanupError.message}`);
-            }
+            // try {
+            //   const pendingCallKey = [callerId, receiverId].sort().join('_');
+            //   await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+            //   await cleanupCallResources1(pendingCallKey, callerId, receiverId, socket);
+            // } catch (cleanupError) {
+            //   logger.error(`[CLEANUP_ERROR] Failed to cleanup after error: ${cleanupError.message}`);
+            // }
           } else {
             logger.warn(`No active sockets found for receiver: ${receiverId}`);
           }
@@ -1130,6 +1133,16 @@ export const setupWebRTC = (io) => {
             logger.info('Call log saved successfully');
           } catch (dbError) {
             logger.error('Failed to save call log:', dbError);
+          }
+
+
+          // Attempt cleanup even in case of error
+          try {
+            const pendingCallKey = [callerId, receiverId].sort().join('_');
+            await cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+            await cleanupCallResources1(pendingCallKey, callerId, receiverId, socket);
+          } catch (cleanupError) {
+            logger.error(`[CLEANUP_ERROR] Failed to cleanup after error: ${cleanupError.message}`);
           }
 
           // Cleanup with logging
