@@ -20,7 +20,6 @@ import EarningWallet from "../models/Wallet/EarningWallet.js";
 import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
 import { Chat } from "../models/chat.modal.js";
-import Review from "../models/LeaderBoard/Review.js";
 
 
 
