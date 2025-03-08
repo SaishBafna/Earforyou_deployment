@@ -2265,7 +2265,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
   }
 };
 
-const getReviews = async (req, res) => {
+export const getReviews = async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
     const page = parseInt(req.query.page) || 1; // Default to page 1
@@ -2295,7 +2295,6 @@ const getReviews = async (req, res) => {
   }
 };
 
-export default getReviews;
 
 async function sendNotification(userId, title, message) {
   // Assuming you have the FCM device token stored in your database
