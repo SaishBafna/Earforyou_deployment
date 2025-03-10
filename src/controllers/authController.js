@@ -2267,7 +2267,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
 
 export const getReviews = async (req, res) => {
   try {
-    const userId = req.user.id || req.user._id;
+    const userId = req.params.userId;
     const page = parseInt(req.query.page) || 1; // Default to page 1
     const limit = parseInt(req.query.limit) || 10; // Default to 10 reviews per page
     const skip = (page - 1) * limit;

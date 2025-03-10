@@ -94,6 +94,6 @@ router.post('/login/verify', verifyLoginOtp);
 router.get('/userStatics', protect, userStatics);
 
 router.get('/getUsersByLatestActivity', protect, getChatsWithLatestMessages);
-router.get('/getReviews', protect, getReviews);
+router.get('/getReviews/:userId', getReviews);
 
 export default router;
