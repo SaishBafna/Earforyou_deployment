@@ -1378,7 +1378,6 @@ export const getAllUsers1 = async (req, res) => {
       { $skip: skip },
       { $limit: limit },
 
-      // Lookups for additional data
       {
         $lookup: {
           from: "reviews",
@@ -1386,19 +1385,21 @@ export const getAllUsers1 = async (req, res) => {
           pipeline: [
             {
               $match: {
-                $expr: { $eq: ["$user", "$$userId"] }
-              }
+                $expr: { $eq: ["$user", "$$userId"] },
+              },
             },
+            // Optionally project only needed fields to reduce payload size
             {
-              $group: {
-                _id: null,
-                avgRating: { $avg: "$rating" },
-                count: { $sum: 1 }
-              }
-            }
+              $project: {
+                rating: 1,
+                comment: 1,
+                createdAt: 1,
+                reviewer: 1, // If you have a reviewer field (e.g., user who left the review)
+              },
+            },
           ],
-          as: "reviewStats"
-        }
+          as: "reviews",
+        },
       },
 
       {
@@ -1468,8 +1469,7 @@ export const getAllUsers1 = async (req, res) => {
           userType: 1,
           report: 1,
           avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
-          reviews: { $arrayElemAt: ["$reviewStats.reviews", 0] },  // Include review data
-          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          reviews: 1, // Include the full reviews array          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
           isOnline: { $eq: ["$status", "Online"] },
           lastSeenStatus: {
             $switch: {
