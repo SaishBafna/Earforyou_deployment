@@ -1385,6 +1385,27 @@ export const getAllUsers1 = async (req, res) => {
           pipeline: [
             {
               $match: {
+                $expr: { $eq: ["$user", "$$userId"] }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          as: "reviewStats"
+        }
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
                 $expr: { $eq: ["$user", "$$userId"] },
               },
             },
