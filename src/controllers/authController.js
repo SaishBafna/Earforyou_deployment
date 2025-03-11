@@ -1392,7 +1392,7 @@ export const getAllUsers1 = async (req, res) => {
             {
               $project: {
                 rating: 1,
-                comment: 1,
+                comments: 1,
                 createdAt: 1,
                 reviewer: 1, // If you have a reviewer field (e.g., user who left the review)
               },
