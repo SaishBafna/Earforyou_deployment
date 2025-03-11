@@ -1468,6 +1468,7 @@ export const getAllUsers1 = async (req, res) => {
           userType: 1,
           report: 1,
           avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
+          reviews: { $arrayElemAt: ["$reviewStats.reviews", 0] },  // Include review data
           reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
           isOnline: { $eq: ["$status", "Online"] },
           lastSeenStatus: {
