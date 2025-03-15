@@ -1483,6 +1483,7 @@ export const getAllUsers1 = async (req, res) => {
           profilePhoto: 1,
           UserStatus: 1,
           shortDecs: 1,
+          CallStatus: 1,
           decs: 1,
           Language: 1,
           Bio: 1,
