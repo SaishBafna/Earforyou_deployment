@@ -1088,6 +1088,7 @@ export const UserCategoryData = async (req, res) => {
 
 
 // ------------------------userController.js---------------------------------------
+
 export const updateDeviceToken = async (req, res) => {
   const { deviceToken } = req.body;
 
@@ -2105,7 +2106,6 @@ export const subscribeUser = async (req, res) => {
 // };
 
 
-
 export const getChatsWithLatestMessages = async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
@@ -2190,13 +2190,37 @@ export const getChatsWithLatestMessages = async (req, res) => {
         }
       },
 
-      // Stage 8: Process and format the final output
+      // Stage 8: Lookup unread messages count - FIXED
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: { chatId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $ne: ["$sender", userObjectId] },
+                    { $not: { $in: [userObjectId, { $ifNull: ["$seenBy", []] }] } }
+                  ]
+                }
+              }
+            },
+            { $count: "unreadCount" }
+          ],
+          as: "unreadMessages"
+        }
+      },
+      
+      // Stage 9: Process and format the final output
       {
         $project: {
           chatId: '$_id',
           lastMessage: 1,
           updatedAt: 1,
           timestamp: { $toLong: '$updatedAt' },
+          unreadCount: { $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0] },
           participants: {
             $map: {
               input: '$participantDetails',
@@ -2239,7 +2263,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
         }
       },
 
-      // Stage 9: Custom sort with online priority if current user is online
+      // Stage 10: Custom sort with online priority if current user is online
       {
         $sort: isCurrentUserOnline ? {
           'participants.isOnline': -1,
@@ -2255,7 +2279,6 @@ export const getChatsWithLatestMessages = async (req, res) => {
     // Format the response to match the expected structure
     const formattedChats = chats.map(chat => ({
       participants: chat.participants.map(p => {
-        // Exclude password and refreshToken (already done by the projection)
         return {
           _id: p._id,
           username: p.username,
@@ -2268,7 +2291,8 @@ export const getChatsWithLatestMessages = async (req, res) => {
       }),
       chatId: chat.chatId,
       lastMessage: chat.lastMessage,
-      updatedAt: chat.updatedAt
+      updatedAt: chat.updatedAt,
+      unreadCount: chat.unreadCount
     }));
 
     res.json({
