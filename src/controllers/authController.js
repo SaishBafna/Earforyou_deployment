@@ -2212,7 +2212,7 @@ export const getChatsWithLatestMessages = async (req, res) => {
           as: "unreadMessages"
         }
       },
-      
+
       // Stage 9: Process and format the final output
       {
         $project: {
@@ -2229,7 +2229,11 @@ export const getChatsWithLatestMessages = async (req, res) => {
                 _id: '$$participant._id',
                 username: '$$participant.username',
                 email: '$$participant.email',
-                avatar: '$$participant.avatar',
+                avatar: '$$participant.avatarUrl',
+                shortDecs: '$$participant.shortDecs',
+                lastSeen: '$$participant.lastSeen',
+                Bio: '$$participant.Bio',
+                decs: '$$participant.decs',
                 status: '$$participant.status',
                 isOnline: { $eq: ['$$participant.status', 'Online'] },
                 averageRating: {
@@ -2284,7 +2288,10 @@ export const getChatsWithLatestMessages = async (req, res) => {
           username: p.username,
           email: p.email,
           avatar: p.avatar,
+          shortDecs: p.shortDecs,
+          Bio: p.Bio,
           status: p.status,
+          decs: p.decs,
           isOnline: p.isOnline,
           averageRating: p.averageRating
         };
