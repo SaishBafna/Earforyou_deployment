@@ -73,6 +73,11 @@ const userSchema = new mongoose.Schema(
       default: 'User',
       index: true,
     },
+    CallStatus: {
+      type: String,
+      enum: ['Active', 'InActive'],
+      default: 'Active'
+    },
     email: {
       type: String,
       unique: true
@@ -131,7 +136,7 @@ const userSchema = new mongoose.Schema(
       index: true
     },
 
-    
+
     lastSeen: {
       type: Date, // Store the timestamp of the last seen activity
     },

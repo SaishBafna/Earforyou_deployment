@@ -23,6 +23,7 @@ import {
     getBankDetails,
     getAllUsers1,
     getAllUsers2,
+    UpdateCallStatus,
     UserCategoryData
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
@@ -95,5 +96,6 @@ router.get('/userStatics', protect, userStatics);
 
 router.get('/getUsersByLatestActivity', protect, getChatsWithLatestMessages);
 router.get('/getReviews/:userId', getReviews);
+router.post('/UpdateCallStatus', protect, UpdateCallStatus);
 
 export default router;

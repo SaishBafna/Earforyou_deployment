@@ -2349,6 +2349,47 @@ export const getReviews = async (req, res) => {
 };
 
 
+export const UpdateCallStatus = async (req, res) => {
+  const userid = req.user.id || req.user._id;
+  const { CallStats } = req.body;
+
+  // Check if userid and CallStats are provided
+  if (!userid || !CallStats) {
+    return res.status(400).json({
+      message: "Bad Request: userId and CallStats are required",
+    });
+  }
+
+  try {
+    // Find the user by userid and update the CallStatus
+    const updatedUser = await User.findByIdAndUpdate(
+      userid,
+      { CallStatus: CallStats },
+      { new: true, runValidators: true }
+    );
+
+    // If no user is found with the given userid
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: "Not Found: User not found",
+      });
+    }
+
+    // Return the updated user
+    res.status(200).json({
+      message: "CallStatus updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    // Handle any errors that occur during the update process
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+
+
 async function sendNotification(userId, title, message) {
   // Assuming you have the FCM device token stored in your database
   const user = await User.findById(userId);

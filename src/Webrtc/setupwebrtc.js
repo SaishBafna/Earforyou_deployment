@@ -422,6 +422,22 @@ export const setupWebRTC = (io) => {
           return;
         }
 
+        if (receiver.CallStatus === 'InActive') {
+          logger.warn(`[CALL_INACTIVE] Receiver ${receiverId} is inactive`);
+
+          // Notify caller without sound
+          socket.emit('userInactive', {
+            receiverId,
+            message: 'The user is currently unavailable.'
+          });
+
+          // Cleanup any potential pending call entries (if applicable)
+          const pendingCallKey = [callerId, receiverId].sort().join('_');
+          cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+
+          return;
+        }
+
         // Store new call attempt ONLY if no conflict exists
         if (!pendingCalls[pendingCallKey]) {
           pendingCalls[pendingCallKey] = {
