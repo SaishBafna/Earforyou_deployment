@@ -423,10 +423,10 @@ export const setupWebRTC = (io) => {
         }
 
         if (receiver.CallStatus == 'InActive') {
-          logger.warn(`[CALL_INACTIVE] Receiver ${receiverId} is inactive`);
+          logger.warn(`[InActive] Receiver ${receiverId} is inactive${receiver.CallStatus}`);
 
           // Notify caller without sound
-          socket.emit('userBusy', {
+          socket.emit('receiverOffline', {
             receiverId,
             message: 'The user is currently unavailable.'
           });
