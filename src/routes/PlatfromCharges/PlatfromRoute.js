@@ -13,7 +13,7 @@ router.get('/PlatfromChargesGet', getAllPlans);
 
 router.post('/buyPlanWithPayment', buyPlanWithPayment);
 
-router.get('/validatePayment', validatePayment);
+router.get('/validatePayment/:merchantTransactionId/:userId/:planId', validatePayment);
 
 // Export the router
 export default router;

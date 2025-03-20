@@ -21,7 +21,7 @@ export const initiatePayment = async (req, res) => {
     if (!planId || !userId) {
       return res.status(400).json({
         success: false,
-        message: 'User ID and Plan ID are required'
+        message: "User ID and Plan ID are required",
       });
     }
 
@@ -30,17 +30,16 @@ export const initiatePayment = async (req, res) => {
     if (!plan) {
       return res.status(404).json({
         success: false,
-        message: 'Plan not found'
+        message: "Plan not found",
       });
     }
 
-    const { price, talkTime } = plan;
+    const { price } = plan;
 
-    if (price < 100) {
-      await logTransaction(transactionId, 'VALIDATION_FAILED', new Error('Amount below minimum'));
+    if (price < 1) {
       return res.status(400).json({
         success: false,
-        message: 'Minimum recharge amount is 100'
+        message: "Minimum recharge amount is 100",
       });
     }
 
@@ -52,28 +51,37 @@ export const initiatePayment = async (req, res) => {
     if (!user || !user.mobileNumber) {
       return res.status(400).json({
         success: false,
-        message: 'User not found or mobile number is missing'
+        message: "User not found or mobile number is missing",
       });
     }
 
-    const normalPayLoad = {
+    const normalPayload = {
       merchantId: process.env.MERCHANT_ID,
       merchantTransactionId: merchantTransactionId,
       merchantUserId: userId,
       amount: price * 100, // Convert to paise
       redirectUrl: `${process.env.APP_BE_URL}/api/v1/validate/${merchantTransactionId}/${userId}`,
       redirectMode: "REDIRECT",
-      mobileNumber: user.mobileNumber, // Use actual mobile number
+      mobileNumber: user.mobileNumber,
       paymentInstrument: { type: "PAY_PAGE" },
     };
 
-    const bufferObj = Buffer.from(JSON.stringify(normalPayLoad), "utf8");
-    const base64EncodedPayload = bufferObj.toString("base64");
+    const base64EncodedPayload = Buffer.from(
+      JSON.stringify(normalPayload),
+      "utf8"
+    ).toString("base64");
 
-    const stringToHash = base64EncodedPayload + "/pg/v1/pay" + process.env.SALT_KEY;
-    const sha256Hash = sha256(stringToHash);
+    const stringToHash =
+      base64EncodedPayload + "/pg/v1/pay" + process.env.SALT_KEY;
+
+    const sha256Hash = crypto
+      .createHash("sha256")
+      .update(stringToHash)
+      .digest("hex");
+
     const xVerifyChecksum = `${sha256Hash}###${process.env.SALT_INDEX}`;
 
+    // Make API call to PhonePe
     const response = await axios.post(
       `${process.env.PHONE_PE_HOST_URL}/pg/v1/pay`,
       { request: base64EncodedPayload },
@@ -86,18 +94,33 @@ export const initiatePayment = async (req, res) => {
       }
     );
 
+    // Log API response for debugging
+    console.log("PhonePe Response:", response.data);
+
+    if (!response.data || !response.data.data) {
+      return res.status(500).json({
+        success: false,
+        message: "Invalid response from PhonePe",
+      });
+    }
+
     return res.status(200).json({
       success: true,
-      paymentUrl: response.data.data.instrumentResponse.redirectInfo.url
+      paymentUrl: response.data.data.instrumentResponse?.redirectInfo?.url || "",
     });
   } catch (error) {
-    console.error("Error in payment initiation:", error);
-    return res.status(500).send({ error: "Payment initiation failed" });
+    console.error("Error in payment initiation:", error?.response?.data || error);
+    return res.status(500).json({
+      success: false,
+      message: "Payment initiation failed",
+      error: error?.message || "Unknown error",
+    });
   }
 };
 
+
 export const validatePayment = async (req, res) => {
-  const { merchantTransactionId, userId ,planId} = req.body;
+  const { merchantTransactionId, userId, planId } = req.body;
 
   if (!merchantTransactionId || !userId) {
     return res.status(400).send("Invalid transaction ID or user ID");
@@ -113,16 +136,16 @@ export const validatePayment = async (req, res) => {
       headers: {
         "Content-Type": "application/json",
         "X-VERIFY": xVerifyChecksum,
-        "X-MERCHANT-ID":process.env.MERCHANT_ID,
+        "X-MERCHANT-ID": process.env.MERCHANT_ID,
         accept: "application/json",
       },
     });
 
-    console.log("response",response.data.data.state);
-    console.log("response1",response.data);
+    console.log("response", response.data.data.state);
+    console.log("response1", response.data);
 
     if (response.data && response.data.code === "PAYMENT_SUCCESS" && response.data.data.state === "COMPLETED") {
-      
+
       const { amount } = response.data.data;
       // const planId = response.data.data.planId; // Assuming planId is returned in response
 
@@ -142,26 +165,26 @@ export const validatePayment = async (req, res) => {
           currency: 'inr',
           recharges: [],
           deductions: [],
-          plan:[],
+          plan: [],
           lastUpdated: new Date()
         });
       }
 
       const newRecharge = {
-        amount: amount / 100, 
+        amount: amount / 100,
         merchantTransactionId,
         state: response.data.data.state || 'COMPLETED',
         responseCode: response.data.code,
         rechargeMethod: "PhonePe",
         rechargeDate: new Date(),
         transactionId: merchantTransactionId,
-        
+
         // validityDays:validityDays,
       };
 
       const newBalance = wallet.balance + talkTime;
       // const days=wallet.isvalidityDays+validityDays;
-      console.log("newBalance",newBalance)
+      console.log("newBalance", newBalance)
       wallet.balance = newBalance;
       // wallet.isvalidityDays=days
       wallet.recharges.push(newRecharge);
@@ -311,20 +334,20 @@ export const getAllPlans = async (req, res) => {
 
 
 export const transferEarningsToWallet = async (req, res) => {
-  
+
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
     const userId = req.user._id;
-    const {  amount } = req.body;
+    const { amount } = req.body;
 
     // Validate input
     if (!userId || !amount || amount <= 0) {
-      
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid transfer parameters' 
+
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid transfer parameters'
       });
     }
 
@@ -333,9 +356,9 @@ export const transferEarningsToWallet = async (req, res) => {
     if (!earningWallet) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Earning wallet not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Earning wallet not found'
       });
     }
 
@@ -344,27 +367,27 @@ export const transferEarningsToWallet = async (req, res) => {
       await session.abortTransaction();
       session.endSession();
 
-      const title="Insufficient earnings balance"
-      const message=`Your Blance is Low`
+      const title = "Insufficient earnings balance"
+      const message = `Your Blance is Low`
       await sendNotification(userId, title, message)
-      
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Insufficient earnings balance' 
+
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient earnings balance'
       });
     }
 
     // Find or create main wallet
     let wallet = await Wallet.findOne({ userId }).session(session);
 
-     
+
 
     if (!wallet) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Wallet Not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Wallet Not found'
       });
     }
 
@@ -377,7 +400,7 @@ export const transferEarningsToWallet = async (req, res) => {
 
     const newBalance = wallet.balance + amount;
     // const days=wallet.isvalidityDays+validityDays;
-    console.log("newBalance",newBalance)
+    console.log("newBalance", newBalance)
     wallet.balance = newBalance;
 
     // Add transfer to main wallet recharges
@@ -399,8 +422,8 @@ export const transferEarningsToWallet = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    const title="Balance transferred successfully"
-    const message=`Balance Added in Calling Wallet ${amount}`
+    const title = "Balance transferred successfully"
+    const message = `Balance Added in Calling Wallet ${amount}`
     await sendNotification(userId, title, message)
 
 
@@ -418,10 +441,10 @@ export const transferEarningsToWallet = async (req, res) => {
     session.endSession();
 
     console.error('Transfer error:', error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: 'Internal server error during transfer',
-      error: error.message 
+      error: error.message
     });
   }
 };

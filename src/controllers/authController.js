@@ -3,7 +3,7 @@ import { addToMailingList } from "../servises/ZohoServices.js";
 import jwt from "jsonwebtoken";
 import ROLES_LIST from "../config/Roles_list.js";
 import crypto from "crypto";
-import { generateOtp, sendOtpEmail } from "../utils/generateOtp.js";
+import { generateOtp, sendOtpEmail, SendTemplate } from "../utils/generateOtp.js";
 import bcrypt from "bcrypt";
 import multer from "multer";
 import unirest from "unirest";
@@ -20,6 +20,7 @@ import EarningWallet from "../models/Wallet/EarningWallet.js";
 import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
 import { Chat } from "../models/chat.modal.js";
+import Zhohocampain from "../models/ZohoCampainFrom.js";
 
 
 
@@ -2390,6 +2391,39 @@ export const UpdateCallStatus = async (req, res) => {
   }
 };
 
+
+export const RegisterEnquiry = async (req, res) => {
+  try {
+
+    const { name, email, instagram } = req.body;
+    
+    const existingEnquiry = await Zhohocampain.findOne({ email });
+
+    if (existingEnquiry) {
+      return res.status(400).json({
+        success: false,
+        message: "An enquiry with this email already exists.",
+      });
+    }
+    // Create the enquiry in the database
+    const enquiry = await Zhohocampain.create({ name, email, instagram });
+    await SendTemplate(email);
+
+    // Respond with success message
+    res.status(201).json({
+      success: true,
+      message: "Enquiry registered successfully",
+      data: enquiry,
+    });
+  } catch (error) {
+    console.error("Error registering enquiry:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to register enquiry",
+      error: error.message,
+    });
+  }
+};
 
 async function sendNotification(userId, title, message) {
   // Assuming you have the FCM device token stored in your database

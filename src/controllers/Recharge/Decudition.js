@@ -322,6 +322,10 @@ export const deductPlanMinutes = async (req, res) => {
 
 
 
+
+/**
+ * Deduct balance per minute based on dynamic call rates.
+ */
 export const deductPerMinute = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -333,49 +337,33 @@ export const deductPerMinute = async (req, res) => {
     if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid input. Caller ID, receiver ID, and valid duration are required.',
+        message: "Invalid input. Caller ID, receiver ID, and valid duration are required.",
       });
     }
 
     // Fetch receiver's user type and category
-    const receiver = await User.findById(receiverId).select('userType userCategory').session(session);
+    const receiver = await User.findById(receiverId).select("userType userCategory").session(session);
     if (!receiver) {
       await session.abortTransaction();
-      return res.status(404).json({ success: false, message: 'Receiver not found' });
+      return res.status(404).json({ success: false, message: "Receiver not found" });
     }
 
-    let ratePerMinute;
-    let adminCommissionPercent = 10; // Default commission
+    // Fetch rate per minute dynamically based on category and type
+    const callRateData = await CallRatePerMin.findOne({
+      userCategory: receiver.userCategory,
+      userType: receiver.userType || undefined, // If userType is not needed, it will not be used in query
+    }).session(session);
 
-    // **Check userCategory first**
-    if (receiver.userCategory) {
-      if (receiver.userCategory === 'Psychologist') {
-        ratePerMinute = 25;
-      } else if (receiver.userCategory === 'Profisnal_listner') {
-        ratePerMinute = 7;
-      } else if (receiver.userCategory === 'User') {
-        // Check userType when category is 'User'
-        if (receiver.userType === 'CALLER') {
-          ratePerMinute = 2;
-        } else if (receiver.userType === 'RECEIVER') {
-          ratePerMinute = 4;
-        }
-      }
+    if (!callRateData) {
+      await session.abortTransaction();
+      return res.status(500).json({
+        success: false,
+        message: "Call rate configuration not found for this user category/type",
+      });
     }
 
-    // **Fallback to userType if no userCategory is found**
-    if (!ratePerMinute) {
-      const callRateData = await CallRatePerMin.findOne({ userType: receiver.userType }).session(session);
-      if (!callRateData) {
-        await session.abortTransaction();
-        return res.status(500).json({
-          success: false,
-          message: 'Call rate configuration not found for this user type',
-        });
-      }
-      ratePerMinute = callRateData.ratePerMinute;
-      adminCommissionPercent = callRateData.adminCommissionPercent;
-    }
+    const ratePerMinute = callRateData.ratePerMinute;
+    const adminCommissionPercent = callRateData.adminCommissionPercent;
 
     console.log("User Type:", receiver.userType, "User Category:", receiver.userCategory, "Rate:", ratePerMinute, "Commission:", adminCommissionPercent);
 
@@ -384,7 +372,7 @@ export const deductPerMinute = async (req, res) => {
       await session.abortTransaction();
       return res.status(400).json({
         success: false,
-        message: 'Rate per minute must be a valid number greater than 0',
+        message: "Rate per minute must be a valid number greater than 0",
       });
     }
 
@@ -397,7 +385,7 @@ export const deductPerMinute = async (req, res) => {
       await session.abortTransaction();
       return res.status(500).json({
         success: false,
-        message: 'Error calculating amounts. Please try again.',
+        message: "Error calculating amounts. Please try again.",
       });
     }
 
@@ -407,7 +395,7 @@ export const deductPerMinute = async (req, res) => {
       await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        message: 'Caller wallet not found',
+        message: "Caller wallet not found",
       });
     }
 
@@ -416,7 +404,7 @@ export const deductPerMinute = async (req, res) => {
       await session.abortTransaction();
       return res.status(400).json({
         success: false,
-        message: 'Insufficient balance for the call',
+        message: "Insufficient balance for the call",
       });
     }
 
@@ -427,7 +415,7 @@ export const deductPerMinute = async (req, res) => {
     callerWallet.balance -= totalDeduction;
     callerWallet.deductions.push({
       amount: totalDeduction,
-      deductionReason: 'call',
+      deductionReason: "call",
       transactionId,
       createdAt: new Date(),
     });
@@ -438,7 +426,7 @@ export const deductPerMinute = async (req, res) => {
       receiverWallet = new EarningWallet({
         userId: receiverId,
         balance: 0,
-        currency: 'INR',
+        currency: "INR",
         earnings: [],
         deductions: [],
         lastUpdated: new Date(),
@@ -449,11 +437,11 @@ export const deductPerMinute = async (req, res) => {
     receiverWallet.balance += amountForReceiver;
     receiverWallet.earnings.push({
       amount: amountForReceiver,
-      source: 'CALL',
+      source: "CALL",
       transactionId,
       createdAt: new Date(),
-      responseCode: 'SUCCESS',
-      state: 'COMPLETED',
+      responseCode: "SUCCESS",
+      state: "COMPLETED",
       merchantTransactionId: transactionId,
     });
 
@@ -467,21 +455,22 @@ export const deductPerMinute = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Balance deducted and receiver credited successfully',
+      message: "Balance deducted and receiver credited successfully",
       callerBalance: callerWallet.balance,
       receiverBalance: receiverWallet.balance,
       transactionId,
     });
   } catch (error) {
-    console.error('Transaction error:', error);
+    console.error("Transaction error:", error);
     await session.abortTransaction();
     session.endSession();
     res.status(500).json({
       success: false,
-      message: 'Failed to process the transaction',
+      message: "Failed to process the transaction",
       error: error.message,
     });
   }
 };
+
 
 

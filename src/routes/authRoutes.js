@@ -24,12 +24,14 @@ import {
     getAllUsers1,
     getAllUsers2,
     UpdateCallStatus,
-    UserCategoryData
+    UserCategoryData,
+    RegisterEnquiry
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
 import multer from 'multer';
 import { userStatics } from '../controllers/UserData/UserData.js';
+import { expirePlatformCharges } from '../controllers/CronJob/Expiry.js';
 
 
 const router = express.Router();
@@ -97,5 +99,9 @@ router.get('/userStatics', protect, userStatics);
 router.get('/getUsersByLatestActivity', protect, getChatsWithLatestMessages);
 router.get('/getReviews/:userId', getReviews);
 router.post('/UpdateCallStatus', protect, UpdateCallStatus);
+
+router.get('/expirePlatformCharges', expirePlatformCharges);
+
+router.post('/RegisterEnquiry', RegisterEnquiry);
 
 export default router;

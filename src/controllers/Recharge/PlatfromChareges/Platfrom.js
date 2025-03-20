@@ -1,4 +1,5 @@
 import PlatformCharges from "../../../models/Wallet/PlatfromCharges/Platfrom.js";
+import { createHash } from 'crypto'; // Correct import
 import axios from 'axios';
 import sha256 from "sha256";
 import uniqid from "uniqid";
@@ -172,7 +173,6 @@ export const validatePayment = async (req, res) => {
         const { merchantTransactionId, userId, planId } = req.params;
 
         // Step 1: Validate parameters
-        console.log('Step 1 - Parameters:', { merchantTransactionId, userId, planId });
         if (!merchantTransactionId || !userId || !planId) {
             return res.status(400).json({
                 success: false,
@@ -183,29 +183,12 @@ export const validatePayment = async (req, res) => {
         // Step 2: Construct the status URL and checksum
         const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
         const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
-        console.log('Step 2 - Status URL:', statusUrl);
-        console.log('Step 2 - String to Hash:', stringToHash);
-        console.log('Step 2 - Env Variables:', {
-            PHONE_PE_HOST_URL: process.env.PHONE_PE_HOST_URL,
-            MERCHANT_ID: process.env.MERCHANT_ID,
-            SALT_KEY: process.env.SALT_KEY ? '[REDACTED]' : 'undefined',
-            SALT_INDEX: process.env.SALT_INDEX
-        });
 
         // Step 3: Generate SHA256 hash and X-VERIFY checksum
-        const sha256 = require('crypto').createHash('sha256'); // Ensure this is defined
-        const sha256Hash = sha256.update(stringToHash).digest('hex');
+        const sha256Hash = createHash('sha256').update(stringToHash).digest('hex');
         const xVerifyChecksum = `${sha256Hash}###${process.env.SALT_INDEX}`;
-        console.log('Step 3 - SHA256 Hash:', sha256Hash);
-        console.log('Step 3 - X-VERIFY Checksum:', xVerifyChecksum);
 
         // Step 4: Make the API request
-        console.log('Step 4 - Request Headers:', {
-            "Content-Type": "application/json",
-            "X-VERIFY": xVerifyChecksum,
-            "X-MERCHANT-ID": process.env.MERCHANT_ID,
-            "accept": "application/json"
-        });
         const response = await axios.get(statusUrl, {
             headers: {
                 "Content-Type": "application/json",
@@ -214,15 +197,14 @@ export const validatePayment = async (req, res) => {
                 "accept": "application/json",
             },
         });
-        console.log('Step 4 - PhonePe Response:', response.data);
 
-        // Step 5: Process successful payment
-        if (response.data.code === "PAYMENT_SUCCESS" && response.data.data.state === "COMPLETED") {
-            const plan = await PlatformCharges.findOne({
-                transactionId: merchantTransactionId,
-                userId
-            });
-            console.log('Step 5 - Plan Found:', plan);
+        const responseData = response.data;
+        console.log("Step 4 - PhonePe Payment Status Response:", responseData);
+
+        // Step 5: Handle different payment states
+        if (responseData.code === "PAYMENT_SUCCESS" && responseData.data.state === "COMPLETED") {
+            // Payment was successful
+            const plan = await PlatformCharges.findOne({ transactionId: merchantTransactionId, userId });
 
             if (!plan) {
                 return res.status(404).json({
@@ -234,14 +216,11 @@ export const validatePayment = async (req, res) => {
             if (plan.status === 'pending') {
                 plan.status = 'active';
                 await plan.save();
-                console.log('Step 5 - Plan Updated:', plan);
             }
 
             return res.status(200).json({
                 success: true,
-                message: plan.status === 'active' ?
-                    'Payment successful and plan activated' :
-                    'Payment successful and plan queued',
+                message: 'Payment successful and plan activated',
                 data: {
                     planId: plan._id,
                     planName: plan.planName,
@@ -251,20 +230,29 @@ export const validatePayment = async (req, res) => {
                     status: plan.status
                 }
             });
+        } else if (responseData.code === "PAYMENT_PENDING" || responseData.data.state === "PENDING") {
+            // Payment is still pending
+            return res.status(202).json({
+                success: false,
+                message: 'Payment is still pending. Please check again later.',
+                data: responseData
+            });
         } else {
-            console.log('Step 5 - Payment Failed:', response.data);
+            // Payment failed
             return res.status(400).json({
                 success: false,
                 message: 'Payment validation failed',
-                data: response.data
+                data: responseData
             });
         }
     } catch (error) {
-        console.error('Step 6 - Error in validatePayment:', {
+        console.error("Step 6 - Error in validatePayment:", {
             message: error.message,
+            responseData: error.response?.data,
             status: error.response?.status,
-            data: error.response?.data
+            headers: error.response?.headers
         });
+
         return res.status(500).json({
             success: false,
             message: 'Payment validation failed',
