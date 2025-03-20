@@ -24,7 +24,8 @@ import {
     getAllUsers1,
     getAllUsers2,
     UpdateCallStatus,
-    UserCategoryData
+    UserCategoryData,
+    RegisterEnquiry
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -97,5 +98,6 @@ router.get('/userStatics', protect, userStatics);
 router.get('/getUsersByLatestActivity', protect, getChatsWithLatestMessages);
 router.get('/getReviews/:userId', getReviews);
 router.post('/UpdateCallStatus', protect, UpdateCallStatus);
+router.post('/RegisterEnquiry', RegisterEnquiry);
 
 export default router;
