@@ -3,151 +3,152 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid'; // Import uuid
 import { CallRate } from '../../models/Wallet/AdminCharges.js';
 import EarningWallet from '../../models/Wallet/EarningWallet.js';
+import CallRatePerMin from '../../models/Wallet/RatePerMin.js';
 
-export const deductPerMinute = async (req, res) => {
-  const session = await mongoose.startSession(); // Start a session for atomic transactions
-  session.startTransaction();
+// export const deductPerMinute = async (req, res) => {
+//   const session = await mongoose.startSession(); // Start a session for atomic transactions
+//   session.startTransaction();
 
-  try {
-    const { callerId, receiverId, durationInMinutes } = req.body;
+//   try {
+//     const { callerId, receiverId, durationInMinutes } = req.body;
 
-    // Validate the request body
-    if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid input. Caller ID, receiver ID, and valid duration are required.',
-      });
-    }
+//     // Validate the request body
+//     if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid input. Caller ID, receiver ID, and valid duration are required.',
+//       });
+//     }
 
-    // Fetch the call rate configuration
-    const callRateData = await CallRate.findOne().session(session); 
-    
-    if (!callRateData) {
-      await session.abortTransaction();
-      return res.status(500).json({
-        success: false,
-        message: 'Call rate configuration not found',
-      });
-    }
+//     // Fetch the call rate configuration
+//     const callRateData = await CallRate.findOne().session(session);
 
-    const { adminCommissionPercent, ratePerMinute } = callRateData;
-    
-    console.log("pre:",adminCommissionPercent, "pre:",ratePerMinute );
+//     if (!callRateData) {
+//       await session.abortTransaction();
+//       return res.status(500).json({
+//         success: false,
+//         message: 'Call rate configuration not found',
+//       });
+//     }
 
-    // Validate the rate per minute
-    // if (isNaN(ratePerMinute) || ratePerMinute <= 0) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: 'Rate per minute must be a valid number greater than 0',
-    //   });
-    // }
+//     const { adminCommissionPercent, ratePerMinute } = callRateData;
 
-    // Calculate total deduction and receiver's earnings
-    const totalDeduction = ratePerMinute * durationInMinutes;
-    const commission = (adminCommissionPercent / 100) * totalDeduction;
-    const amountForReceiver = totalDeduction - commission;
+//     console.log("pre:", adminCommissionPercent, "pre:", ratePerMinute);
 
-    // Ensure that the calculations do not result in NaN
-    if (isNaN(totalDeduction) || isNaN(amountForReceiver)) {
-      return res.status(500).json({
-        success: false,
-        message: 'Error calculating amounts. Please try again.',
-      });
-    }
+//     // Validate the rate per minute
+//     if (isNaN(ratePerMinute) || ratePerMinute <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Rate per minute must be a valid number greater than 0',
+//       });
+//     }
 
-    // Fetch the caller's wallet
-    const callerWallet = await Wallet.findOne({ userId: callerId }).session(session);
-    if (!callerWallet) {
-      await session.abortTransaction();
-      return res.status(404).json({
-        success: false,
-        message: 'Caller wallet not found',
-      });
-    }
+//     // Calculate total deduction and receiver's earnings
+//     const totalDeduction = ratePerMinute * durationInMinutes;
+//     const commission = (adminCommissionPercent / 100) * totalDeduction;
+//     const amountForReceiver = totalDeduction - commission;
 
-    // Check if the caller has sufficient balance
-    if (callerWallet.balance < totalDeduction) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: 'Insufficient balance for the call',
-      });
-    }
+//     // Ensure that the calculations do not result in NaN
+//     if (isNaN(totalDeduction) || isNaN(amountForReceiver)) {
+//       return res.status(500).json({
+//         success: false,
+//         message: 'Error calculating amounts. Please try again.',
+//       });
+//     }
 
-    // Generate a unique transaction ID
-    const transactionId = uuidv4();
+//     // Fetch the caller's wallet
+//     const callerWallet = await Wallet.findOne({ userId: callerId }).session(session);
+//     if (!callerWallet) {
+//       await session.abortTransaction();
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Caller wallet not found',
+//       });
+//     }
 
-    // Deduct from the caller's wallet
-    callerWallet.balance -= totalDeduction;
-    callerWallet.deductions.push({
-      amount: totalDeduction,
-      deductionReason: 'call',
-      transactionId, // Store the generated transaction ID
-      createdAt: new Date(),
-    });
+//     // Check if the caller has sufficient balance
+//     if (callerWallet.balance < totalDeduction) {
+//       await session.abortTransaction();
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Insufficient balance for the call',
+//       });
+//     }
 
-    // Fetch the receiver's wallet
-    const receiverWallet = await EarningWallet.findOne({ userId: receiverId }).session(session);
-    if (!receiverWallet) {
-      //  new EarningWallet({
-      //   userId: receiverId,
-      //   balance: 0, // Default balance
-      //   totalDeductions: 0, // Default total deductions
-      //   currency: "INR",
-      //   deductions: [],
-      //   earnings: [],
-      // });
-      
-      await EarningWallet.create([{
-        userId: receiverId,
-        balance: 0,
-        currency: 'inr',
-        earnings: [],
-        deductions: [],
-        lastUpdated: new Date()
-      }]);
-   
-    }
+//     // Generate a unique transaction ID
+//     const transactionId = uuidv4();
 
-    // Add the amount (minus commission) to the receiver's wallet
-    receiverWallet.balance += amountForReceiver;
-    receiverWallet.earnings.push({
-      amount: amountForReceiver,
-      source: 'CALL', // Indicate income source
-      transactionId, // Use the same transaction ID for consistency
-      createdAt: new Date(),
-      responseCode: 'SUCCESS', // Assuming a success response from the transaction
-      state: 'COMPLETED', // Indicate the transaction is complete
-      merchantTransactionId: transactionId, // Use the same transaction ID
-    });
+//     // Deduct from the caller's wallet
+//     callerWallet.balance -= totalDeduction;
+//     callerWallet.deductions.push({
+//       amount: totalDeduction,
+//       deductionReason: 'call',
+//       transactionId, // Store the generated transaction ID
+//       createdAt: new Date(),
+//     });
 
-    // Save both wallets
-    await callerWallet.save({ session });
-    await receiverWallet.save({ session });
+//     // Fetch the receiver's wallet
+//     const receiverWallet = await EarningWallet.findOne({ userId: receiverId }).session(session);
+//     if (!receiverWallet) {
+//       //  new EarningWallet({
+//       //   userId: receiverId,
+//       //   balance: 0, // Default balance
+//       //   totalDeductions: 0, // Default total deductions
+//       //   currency: "INR",
+//       //   deductions: [],
+//       //   earnings: [],
+//       // });
 
-    // Commit the transaction
-    await session.commitTransaction();
-    session.endSession();
+//       await EarningWallet.create([{
+//         userId: receiverId,
+//         balance: 0,
+//         currency: 'inr',
+//         earnings: [],
+//         deductions: [],
+//         lastUpdated: new Date()
+//       }]);
 
-    res.status(200).json({
-      success: true,
-      message: 'Balance deducted and receiver credited successfully',
-      callerBalance: callerWallet.balance,
-      receiverBalance: receiverWallet.balance,
-      transactionId, // Return the transaction ID in the response
-    });
-  } catch (error) {
-    console.error('Transaction error:', error);
-    // Ensure the session is aborted if an error occurs
-    await session.abortTransaction();
-    session.endSession();
-    res.status(500).json({
-      success: false,
-      message: 'Failed to process the transaction',
-      error: error.message,
-    });
-  }
-};
+//     }
+
+//     // Add the amount (minus commission) to the receiver's wallet
+//     receiverWallet.balance += amountForReceiver;
+//     receiverWallet.earnings.push({
+//       amount: amountForReceiver,
+//       source: 'CALL', // Indicate income source
+//       transactionId, // Use the same transaction ID for consistency
+//       createdAt: new Date(),
+//       responseCode: 'SUCCESS', // Assuming a success response from the transaction
+//       state: 'COMPLETED', // Indicate the transaction is complete
+//       merchantTransactionId: transactionId, // Use the same transaction ID
+//     });
+
+//     // Save both wallets
+//     await callerWallet.save({ session });
+//     await receiverWallet.save({ session });
+
+//     // Commit the transaction
+//     await session.commitTransaction();
+//     session.endSession();
+
+//     res.status(200).json({
+//       success: true,
+//       message: 'Balance deducted and receiver credited successfully',
+//       callerBalance: callerWallet.balance,
+//       receiverBalance: receiverWallet.balance,
+//       transactionId, // Return the transaction ID in the response
+//     });
+//   } catch (error) {
+//     console.error('Transaction error:', error);
+//     // Ensure the session is aborted if an error occurs
+//     await session.abortTransaction();
+//     session.endSession();
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to process the transaction',
+//       error: error.message,
+//     });
+//   }
+// };
 
 
 
@@ -318,4 +319,169 @@ export const deductPlanMinutes = async (req, res) => {
     });
   }
 };
+
+
+
+export const deductPerMinute = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { callerId, receiverId, durationInMinutes } = req.body;
+
+    // Validate input
+    if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid input. Caller ID, receiver ID, and valid duration are required.',
+      });
+    }
+
+    // Fetch receiver's user type and category
+    const receiver = await User.findById(receiverId).select('userType userCategory').session(session);
+    if (!receiver) {
+      await session.abortTransaction();
+      return res.status(404).json({ success: false, message: 'Receiver not found' });
+    }
+
+    let ratePerMinute;
+    let adminCommissionPercent = 10; // Default commission
+
+    // **Check userCategory first**
+    if (receiver.userCategory) {
+      if (receiver.userCategory === 'Psychologist') {
+        ratePerMinute = 25;
+      } else if (receiver.userCategory === 'Profisnal_listner') {
+        ratePerMinute = 7;
+      } else if (receiver.userCategory === 'User') {
+        // Check userType when category is 'User'
+        if (receiver.userType === 'CALLER') {
+          ratePerMinute = 2;
+        } else if (receiver.userType === 'RECEIVER') {
+          ratePerMinute = 4;
+        }
+      }
+    }
+
+    // **Fallback to userType if no userCategory is found**
+    if (!ratePerMinute) {
+      const callRateData = await CallRatePerMin.findOne({ userType: receiver.userType }).session(session);
+      if (!callRateData) {
+        await session.abortTransaction();
+        return res.status(500).json({
+          success: false,
+          message: 'Call rate configuration not found for this user type',
+        });
+      }
+      ratePerMinute = callRateData.ratePerMinute;
+      adminCommissionPercent = callRateData.adminCommissionPercent;
+    }
+
+    console.log("User Type:", receiver.userType, "User Category:", receiver.userCategory, "Rate:", ratePerMinute, "Commission:", adminCommissionPercent);
+
+    // Validate rate
+    if (isNaN(ratePerMinute) || ratePerMinute <= 0) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: 'Rate per minute must be a valid number greater than 0',
+      });
+    }
+
+    // **Calculate total deduction and earnings**
+    const totalDeduction = ratePerMinute * durationInMinutes;
+    const commission = (adminCommissionPercent / 100) * totalDeduction;
+    const amountForReceiver = totalDeduction - commission;
+
+    if (isNaN(totalDeduction) || isNaN(amountForReceiver)) {
+      await session.abortTransaction();
+      return res.status(500).json({
+        success: false,
+        message: 'Error calculating amounts. Please try again.',
+      });
+    }
+
+    // Fetch caller's wallet
+    const callerWallet = await Wallet.findOne({ userId: callerId }).session(session);
+    if (!callerWallet) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        message: 'Caller wallet not found',
+      });
+    }
+
+    // Check caller balance
+    if (callerWallet.balance < totalDeduction) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient balance for the call',
+      });
+    }
+
+    // **Generate unique transaction ID**
+    const transactionId = uuidv4();
+
+    // Deduct from caller's wallet
+    callerWallet.balance -= totalDeduction;
+    callerWallet.deductions.push({
+      amount: totalDeduction,
+      deductionReason: 'call',
+      transactionId,
+      createdAt: new Date(),
+    });
+
+    // Fetch or create receiver's wallet
+    let receiverWallet = await EarningWallet.findOne({ userId: receiverId }).session(session);
+    if (!receiverWallet) {
+      receiverWallet = new EarningWallet({
+        userId: receiverId,
+        balance: 0,
+        currency: 'INR',
+        earnings: [],
+        deductions: [],
+        lastUpdated: new Date(),
+      });
+    }
+
+    // Add earnings to receiver's wallet
+    receiverWallet.balance += amountForReceiver;
+    receiverWallet.earnings.push({
+      amount: amountForReceiver,
+      source: 'CALL',
+      transactionId,
+      createdAt: new Date(),
+      responseCode: 'SUCCESS',
+      state: 'COMPLETED',
+      merchantTransactionId: transactionId,
+    });
+
+    // Save wallets
+    await callerWallet.save({ session });
+    await receiverWallet.save({ session });
+
+    // Commit transaction
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(200).json({
+      success: true,
+      message: 'Balance deducted and receiver credited successfully',
+      callerBalance: callerWallet.balance,
+      receiverBalance: receiverWallet.balance,
+      transactionId,
+    });
+  } catch (error) {
+    console.error('Transaction error:', error);
+    await session.abortTransaction();
+    session.endSession();
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process the transaction',
+      error: error.message,
+    });
+  }
+};
+
 

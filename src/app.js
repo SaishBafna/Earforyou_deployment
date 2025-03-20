@@ -109,6 +109,7 @@ import appRatingRoutes from './routes/LeaderBoard/apprateRoute.js'
 import { checkUserStatus } from "./middlewares/auth/CheckBlock.js";
 import { protect } from "./middlewares/auth/authMiddleware.js";
 import ZohoRoute from './routes/ZohoRoute/ZohoRoute.js'
+import PlatformRoute from './routes/PlatfromCharges/PlatfromRoute.js'
 
 app.get("/", (req, res) => {
   try {
@@ -135,6 +136,9 @@ app.use('/api/v1', CallRoute);
 
 
 app.use("/api/v1", authRoutes);
+
+
+app.use("/api/v1", PlatformRoute);
 
 app.use('/api/v1/apprating', appRatingRoutes);
 

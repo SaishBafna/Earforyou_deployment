@@ -3,7 +3,8 @@ import express from 'express';
 import { initiatePayment, validatePayment, getRechargeHistory, getAllPlans, transferEarningsToWallet, getEarningHistory } from '../../controllers/Recharge/RechargeWallet.js'
 import { deductPerMinute } from '../../controllers/Recharge/Decudition.js'
 import { protect } from '../../middlewares/auth/authMiddleware.js'
-import { requestWithdrawal,getWithdrawal } from '../../controllers/Withdrawal/Withdrawal.js';
+import { requestWithdrawal, getWithdrawal } from '../../controllers/Withdrawal/Withdrawal.js';
+import { createCallRate, updateCallRate, getAllCallRates, getCallRateByCategory } from '../../controllers/Recharge/RatePerMinController.js';
 const router = express.Router();
 
 router.post("/pay", initiatePayment);
@@ -33,5 +34,13 @@ router.post('/requestWithdrawal', protect, requestWithdrawal);
 router.get('/getWithdrawal', protect, getWithdrawal);
 
 // router.get('/balance/:userId', getWalletAmount);
+
+
+
+
+router.post('/create', createCallRate);
+router.put('/update', updateCallRate);
+router.get('/all', getAllCallRates);
+router.get('/category', getCallRateByCategory);
 
 export default router;
