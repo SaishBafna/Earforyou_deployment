@@ -6,14 +6,17 @@ const PlatformChargesSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    planId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'MyPlan',
+        required: true
+    },
+
     planName: {
         type: String,
         required: true
     },
-    amount: {
-        type: Number,
-        required: true
-    },
+    
     startDate: {
         type: Date,
         required: true
@@ -36,7 +39,7 @@ const PlatformChargesSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
-    
+
 });
 
 const PlatformCharges = mongoose.model('PlatformCharges', PlatformChargesSchema);

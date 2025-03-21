@@ -182,6 +182,34 @@ export const validatePayment = async (req, res) => {
             });
         }
 
+        // Check if transaction already exists
+        const existingTransaction = await PlatformCharges.findOne({
+            where: { transactionId: merchantTransactionId }
+        });
+
+        // If it exists, return a 400 error
+        if (existingTransaction) {
+            return res.status(400).json({
+                success: false,
+                message: "Transaction with this ID already exists"
+            });
+        }
+
+        // Create the new transaction record
+        const newTransaction = await PlatformCharges.create({
+            transactionId: merchantTransactionId,
+            userId,
+            planId,
+            status: 'pending' // Add initial status
+        });
+
+        if (!newTransaction) {
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to create transaction record'
+            });
+        }
+
         // Step 2: Construct the status URL and checksum
         const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
         const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
@@ -201,16 +229,33 @@ export const validatePayment = async (req, res) => {
                 "X-MERCHANT-ID": process.env.MERCHANT_ID,
                 "accept": "application/json",
             },
+            timeout: 10000 // Add timeout to prevent hanging requests
         });
 
         const responseData = response.data;
         console.log("Step 4 - PhonePe Payment Status Response:", responseData);
 
+        // Validate response data
+        if (!responseData || !responseData.code) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid response from payment gateway',
+                data: responseData
+            });
+        }
+
         // Step 5: Handle different payment states
-        if (responseData.code === "PAYMENT_SUCCESS" && responseData.data.state === "COMPLETED") {
+        if (responseData.code === "PAYMENT_SUCCESS" && responseData.data?.state === "COMPLETED") {
             console.log("Step 5 - Payment successful, processing plan");
-            // Payment was successful
-            const plan = await PlatformCharges.findOne({ transactionId: merchantTransactionId, userId });
+
+            // Fetch the plan by planId (was previously trying to find by transactionId which is incorrect)
+            const plan = await PlatformCharges.findOne({
+                where: {
+                    planId: planId,
+                    userId: userId,
+                    transactionId: merchantTransactionId
+                }
+            });
 
             if (!plan) {
                 console.log("Step 5 - Plan not found for transaction:", merchantTransactionId);
@@ -221,51 +266,74 @@ export const validatePayment = async (req, res) => {
             }
 
             console.log("Step 5 - Found plan:", {
-                id: plan._id,
+                id: plan.id, // Changed from _id to id to match Sequelize convention
                 status: plan.status,
                 startDate: plan.startDate,
                 endDate: plan.endDate
             });
 
+            // Update transaction record with payment details
+            await newTransaction.update({
+                amount: responseData.data.amount / 100, // Convert from paisa to rupees
+                paymentMethod: responseData.data.paymentInstrument?.type || 'unknown',
+                paymentTimestamp: new Date(responseData.data.responseTimestamp),
+                gatewayResponse: JSON.stringify(responseData)
+            });
+
             // Handle different plan statuses
             if (plan.status === 'pending') {
                 console.log("Step 5 - Activating pending plan");
+
+                // Set current time as start date if not already set
+                if (!plan.startDate) {
+                    plan.startDate = new Date();
+
+                    // Calculate end date based on plan duration (assuming plan duration is stored somewhere)
+                    // This would need to be adjusted based on your plan structure
+                    const planDurationDays = await getPlanDurationDays(planId);
+                    const endDate = new Date(plan.startDate);
+                    endDate.setDate(endDate.getDate() + planDurationDays);
+                    plan.endDate = endDate;
+                }
+
                 plan.status = 'active';
                 await plan.save();
             } else if (plan.status === 'queued') {
                 console.log("Step 5 - Processing queued plan");
 
-                // Check if there's an active plan that should end before this one starts
+                // Check if there's an active plan
                 const activePlan = await PlatformCharges.findOne({
-                    userId,
-                    status: 'active'
-                }).sort({ endDate: -1 });
+                    where: {
+                        userId: userId,
+                        status: 'active'
+                    },
+                    order: [['endDate', 'DESC']]
+                });
 
                 if (activePlan) {
                     console.log("Step 5 - Found active plan ending at:", activePlan.endDate);
-                    // If the queued plan's start date matches the current active plan's end date,
-                    // we can safely set it as queued with confirmed payment
                     plan.status = 'queued_confirmed';
-                    // Ensure the start and end dates are correct
-                    plan.startDate = new Date(activePlan.endDate);
-                    plan.endDate = new Date(plan.startDate.getTime() + (plan.validityDays * 24 * 60 * 60 * 1000));
-                    console.log("Step 5 - Updated queued plan dates:", {
-                        startDate: plan.startDate,
-                        endDate: plan.endDate
-                    });
                 } else {
                     console.log("Step 5 - No active plan found, activating queued plan immediately");
-                    // If there's no active plan, activate this one immediately
                     plan.status = 'active';
-                    plan.startDate = new Date();
-                    plan.endDate = new Date(plan.startDate.getTime() + (plan.validityDays * 24 * 60 * 60 * 1000));
+
+                    // Set start and end dates if not already set
+                    if (!plan.startDate) {
+                        plan.startDate = new Date();
+
+                        // Calculate end date based on plan duration
+                        const planDurationDays = await getPlanDurationDays(planId);
+                        const endDate = new Date(plan.startDate);
+                        endDate.setDate(endDate.getDate() + planDurationDays);
+                        plan.endDate = endDate;
+                    }
                 }
 
                 await plan.save();
             }
 
             console.log("Step 5 - Plan updated successfully:", {
-                id: plan._id,
+                id: plan.id,
                 status: plan.status,
                 startDate: plan.startDate,
                 endDate: plan.endDate
@@ -276,29 +344,51 @@ export const validatePayment = async (req, res) => {
                 message: 'Payment successful and plan ' +
                     (plan.status === 'active' ? 'activated' : 'queued for activation'),
                 data: {
-                    planId: plan._id,
+                    planId: plan.id,
                     planName: plan.planName,
                     amount: plan.amount,
                     startDate: plan.startDate,
                     endDate: plan.endDate,
-                    status: plan.status
+                    status: plan.status,
+                    transactionId: merchantTransactionId
                 }
             });
-        } else if (responseData.code === "PAYMENT_PENDING" || responseData.data.state === "PENDING") {
+        } else if (responseData.code === "PAYMENT_PENDING" || responseData.data?.state === "PENDING") {
             // Payment is still pending
             console.log("Step 5 - Payment is still pending");
+
+            // Update transaction status
+            await newTransaction.update({
+                status: 'pending',
+                gatewayResponse: JSON.stringify(responseData)
+            });
+
             return res.status(202).json({
                 success: false,
                 message: 'Payment is still pending. Please check again later.',
-                data: responseData
+                data: {
+                    transactionId: merchantTransactionId,
+                    gatewayStatus: responseData.data?.state || 'PENDING'
+                }
             });
         } else {
             // Payment failed
             console.log("Step 5 - Payment failed:", responseData);
+
+            // Update transaction status
+            await newTransaction.update({
+                status: 'failed',
+                gatewayResponse: JSON.stringify(responseData)
+            });
+
             return res.status(400).json({
                 success: false,
                 message: 'Payment validation failed',
-                data: responseData
+                data: {
+                    transactionId: merchantTransactionId,
+                    gatewayStatus: responseData.data?.state || 'FAILED',
+                    code: responseData.code
+                }
             });
         }
     } catch (error) {
@@ -309,6 +399,15 @@ export const validatePayment = async (req, res) => {
             headers: error.response?.headers
         });
 
+        // Handle specific error cases
+        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+            return res.status(503).json({
+                success: false,
+                message: 'Payment gateway service unavailable',
+                error: 'Connection to payment service failed'
+            });
+        }
+
         return res.status(500).json({
             success: false,
             message: 'Payment validation failed',
@@ -317,6 +416,22 @@ export const validatePayment = async (req, res) => {
     }
 };
 
+// Helper function to get plan duration in days
+const getPlanDurationDays = async (planId) => {
+    try {
+        // Replace this with your actual plan retrieval logic
+        const planDetails = await Plan.findByPk(planId);
+
+        if (!planDetails) {
+            return 30; // Default to 30 days if plan not found
+        }
+
+        return planDetails.durationDays || 30;
+    } catch (error) {
+        console.error("Error fetching plan duration:", error);
+        return 30; // Default to 30 days on error
+    }
+};
 
 export const createPlan = async (req, res) => {
     try {
