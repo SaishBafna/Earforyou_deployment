@@ -110,6 +110,7 @@ import { checkUserStatus } from "./middlewares/auth/CheckBlock.js";
 import { protect } from "./middlewares/auth/authMiddleware.js";
 import ZohoRoute from './routes/ZohoRoute/ZohoRoute.js'
 import PlatformRoute from './routes/PlatfromCharges/PlatfromRoute.js'
+import { scheduleNextRun } from "./controllers/CronJob/Expiry.js";
 
 app.get("/", (req, res) => {
   try {
@@ -119,15 +120,17 @@ app.get("/", (req, res) => {
     logger.error(error);
   }
 });
+
+scheduleNextRun();
 // watchUserChanges()
 
 
 
 
-  // Apply global middlewares
+// Apply global middlewares
 
 
-  + app.use("/api/", apiLimiter);
++ app.use("/api/", apiLimiter);
 
 app.use('/api/v1/msg91', msg91Routes);
 
@@ -151,7 +154,7 @@ app.use('/api/v1', reviewRoutes); // Prefix all review routes with /api
 app.use('/api/v1', userRoutes);
 app.use('/api/v1', RechargeRoute);
 
-app.use('/api/zoho',ZohoRoute);
+app.use('/api/zoho', ZohoRoute);
 // FairBaseNotification
 
 app.use('/api/v1/notify', SendNotificationRoute)

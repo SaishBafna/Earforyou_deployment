@@ -25,7 +25,8 @@ import {
     getAllUsers2,
     UpdateCallStatus,
     UserCategoryData,
-    RegisterEnquiry
+    RegisterEnquiry,
+    getAllUserCategory
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -70,6 +71,8 @@ router.get('/user/:userId', getUserById);
 
 // router.get('/users', protect, getAllUsers);
 router.get('/users', protect, getAllUsers1);
+
+router.get('/getAllUserCategory', protect, getAllUserCategory);
 
 router.get('/getAllUsers2', protect, getAllUsers2);
 

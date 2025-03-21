@@ -12,42 +12,98 @@ export const expirePlatformCharges = async () => {
         const endOfDay = new Date(today);
         endOfDay.setHours(23, 59, 59, 999); // End of day (11:59:59 PM)
 
-        // Expire plans whose `endDate` is exactly today (not earlier)
-        const expiredResult = await PlatformCharges.updateMany(
+        // Activate plans that are queued or whose start date is today
+        const activateResult = await PlatformCharges.updateMany(
             {
-                endDate: {
-                    $gte: startOfDay,
-                    $lte: endOfDay
-                },
-                status: { $ne: 'expired' }
-            },
-            { $set: { status: 'expired' } }
-        );
-
-        // Activate plans whose `startDate` is exactly today and are still pending
-        const activeResult = await PlatformCharges.updateMany(
-            {
-                startDate: {
-                    $gte: startOfDay,
-                    $lte: endOfDay
-                },
-                status: 'pending'
+                status: { $in: ['queued'] }, // Plans that are queued or pending
+                startDate: { $gte: startOfDay, $lte: endOfDay }
             },
             { $set: { status: 'active' } }
         );
 
-        console.log(`[CRON] Platform charges expired: ${expiredResult.modifiedCount}`);
-        console.log(`[CRON] Platform charges activated: ${activeResult.modifiedCount}`);
+        // Expire plans that are active and whose end date is today
+        const expireResult = await PlatformCharges.updateMany(
+            {
+                status: 'active',
+                endDate: { $gte: startOfDay, $lte: endOfDay }
+            },
+            { $set: { status: 'expired' } }
+        );
+
+        console.log(`[CRON] Platform charges activated: ${activateResult.modifiedCount}`);
+        console.log(`[CRON] Platform charges expired: ${expireResult.modifiedCount}`);
 
     } catch (error) {
         console.error('[CRON] Error updating platform charges:', error);
     }
 };
 
-// Schedule the cron job to run daily at 11:50 PM
-cron.schedule('50 23 * * *', expirePlatformCharges, {
+// Schedule the cron job to run daily at 11:55 PM IST
+cron.schedule('59 23 * * *', expirePlatformCharges, {
     scheduled: true,
-    timezone: 'Asia/Kolkata' // Set your server timezone if needed
+    timezone: 'Asia/Kolkata'
 });
+
+
+
+
+// Function to update platform charges
+const updatePlatformCharges = async () => {
+    try {
+        // Get today's date at start and end of day
+        const today = new Date();
+        const startOfDay = new Date(today);
+        startOfDay.setHours(0, 0, 0, 0); // Start of day (12:00:00 AM)
+
+        const endOfDay = new Date(today);
+        endOfDay.setHours(23, 59, 59, 999); // End of day (11:59:59 PM)
+
+        // Activate plans that are queued or whose start date is today
+        const activateResult = await PlatformCharges.updateMany(
+            {
+                status: { $in: ['queued', 'pending'] }, // Plans that are queued or pending
+                startDate: { $gte: startOfDay, $lte: endOfDay }
+            },
+            { $set: { status: 'active' } }
+        );
+
+        // Expire plans that are active and whose end date is today
+        const expireResult = await PlatformCharges.updateMany(
+            {
+                status: 'active',
+                endDate: { $gte: startOfDay, $lte: endOfDay }
+            },
+            { $set: { status: 'expired' } }
+        );
+
+        console.log(`[SCHEDULED] Platform charges activated: ${activateResult.modifiedCount}`);
+        console.log(`[SCHEDULED] Platform charges expired: ${expireResult.modifiedCount}`);
+
+    } catch (error) {
+        console.error('[SCHEDULED] Error updating platform charges:', error);
+    }
+
+    // Schedule next run at exactly 11:59 PM
+    scheduleNextRun();
+};
+
+// Function to calculate time until the next 11:59 PM and schedule the next execution
+export const scheduleNextRun = () => {
+    console.log("Run THe Function scheduleNextRun")
+    const now = new Date();
+    const nextRun = new Date();
+    nextRun.setHours(23, 59, 0, 0); // Set time to 11:59 PM
+
+    if (now >= nextRun) {
+        // If current time is already past 11:59 PM, schedule for tomorrow
+        nextRun.setDate(nextRun.getDate() + 1);
+    }
+
+    const timeUntilNextRun = nextRun - now; // Milliseconds until next run
+
+    console.log(`[SCHEDULED] Next execution at: ${nextRun.toLocaleString()}`);
+
+    setTimeout(updatePlatformCharges, timeUntilNextRun);
+};
 
 
