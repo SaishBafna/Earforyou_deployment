@@ -14,16 +14,15 @@ const PlatformChargesSchema = new mongoose.Schema({
 
     planName: {
         type: String,
-        required: true
+        default:"PlatFrom Charges"
     },
     
     startDate: {
         type: Date,
-        required: true
     },
     endDate: {
         type: Date,
-        required: true
+        
     },
     status: {
         type: String,
