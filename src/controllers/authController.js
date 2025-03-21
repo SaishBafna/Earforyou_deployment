@@ -2396,7 +2396,7 @@ export const RegisterEnquiry = async (req, res) => {
   try {
 
     const { name, email, instagram } = req.body;
-    
+
     const existingEnquiry = await Zhohocampain.findOne({ email });
 
     if (existingEnquiry) {
@@ -2407,7 +2407,8 @@ export const RegisterEnquiry = async (req, res) => {
     }
     // Create the enquiry in the database
     const enquiry = await Zhohocampain.create({ name, email, instagram });
-    await SendTemplate(email);
+    await SendTemplate(email, name);
+    addToMailingList(email)
 
     // Respond with success message
     res.status(201).json({
