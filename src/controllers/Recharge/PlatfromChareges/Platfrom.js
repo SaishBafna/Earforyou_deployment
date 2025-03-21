@@ -168,50 +168,43 @@ export const buyPlanWithPayment = async (req, res) => {
     }
 };
 
+
+// Adjust model imports as needed
+
 export const validatePayment = async (req, res) => {
     try {
         const { merchantTransactionId, userId, planId } = req.params;
         console.log("Step 1 - Validating payment with params:", { merchantTransactionId, userId, planId });
 
-        // Step 1: Validate parameters
         if (!merchantTransactionId || !userId || !planId) {
             console.log("Step 1 - Missing required parameters");
-            return res.status(400).json({
-                success: false,
-                message: 'Missing required parameters'
-            });
+            return res.status(400).json({ success: false, message: 'Missing required parameters' });
         }
 
-
-        const existingTransaction = await PlatformCharges.findOne({
-            where: { transactionId: merchantTransactionId }
-        });
-
-        // If it exists, return a 400 error
+        const existingTransaction = await PlatformCharges.findOne({ where: { transactionId: merchantTransactionId } });
         if (existingTransaction) {
-            return res.status(400).json({
-                error: "Transaction with this ID already exists"
-            });
+            return res.status(400).json({ error: "Transaction with this ID already exists" });
         }
 
-        // Otherwise create the new transaction
-        await PlatformCharges.create({
-            transactionId: merchantTransactionId,
-            userId,
-            planId
-        });
+        // Get plan details
+        const planDetails = await MyPlan.findOne({ where: { id: planId } });
+        if (!planDetails) {
+            console.log("Step 1.5 - Plan details not found for planId:", planId);
+            return res.status(404).json({ success: false, message: 'Plan details not found' });
+        }
+        const validityDays = planDetails.validityDays;
+        console.log("Step 1.5 - Found plan with validity days:", validityDays);
 
-        // Step 2: Construct the status URL and checksum
+        // Create transaction entry
+        await PlatformCharges.create({ transactionId: merchantTransactionId, userId, planId, status: 'pending' });
+
+        // Construct the PhonePe status URL and checksum
         const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
         const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
-        console.log("Step 2 - Status URL:", statusUrl);
-
-        // Step 3: Generate SHA256 hash and X-VERIFY checksum
         const sha256Hash = createHash('sha256').update(stringToHash).digest('hex');
         const xVerifyChecksum = `${sha256Hash}###${process.env.SALT_INDEX}`;
-        console.log("Step 3 - Generated checksum:", xVerifyChecksum);
 
-        // Step 4: Make the API request
+        // Make request to PhonePe
         console.log("Step 4 - Making status request to PhonePe");
         const response = await axios.get(statusUrl, {
             headers: {
@@ -225,79 +218,68 @@ export const validatePayment = async (req, res) => {
         const responseData = response.data;
         console.log("Step 4 - PhonePe Payment Status Response:", responseData);
 
-        // Step 5: Handle different payment states
         if (responseData.code === "PAYMENT_SUCCESS" && responseData.data.state === "COMPLETED") {
             console.log("Step 5 - Payment successful, processing plan");
-            // Payment was successful
-            const plan = await PlatformCharges.findOne({ transactionId: merchantTransactionId, userId });
+
+            const plan = await PlatformCharges.findOne({
+                where: { transactionId: merchantTransactionId, userId }
+            });
 
             if (!plan) {
                 console.log("Step 5 - Plan not found for transaction:", merchantTransactionId);
-                return res.status(404).json({
-                    success: false,
-                    message: 'Plan not found'
-                });
+                return res.status(404).json({ success: false, message: 'Plan not found' });
             }
 
-            console.log("Step 5 - Found plan:", {
-                id: plan._id,
-                status: plan.status,
-                startDate: plan.startDate,
-                endDate: plan.endDate
+            console.log("Step 5 - Found plan:", { id: plan.id, status: plan.status });
+
+            // Get the last queued or active plan for the user
+            const lastPlan = await PlatformCharges.findOne({
+                where: { userId, status: ['active', 'queued', 'queued_confirmed'] },
+                order: [['endDate', 'DESC']]
             });
 
-            // Handle different plan statuses
-            if (plan.status === 'pending') {
-                console.log("Step 5 - Activating pending plan");
-                plan.status = 'active';
-                // No need to modify dates as they're already set correctly
-                await plan.save();
-            } else if (plan.status === 'queued') {
-                console.log("Step 5 - Processing queued plan");
+            let now = new Date();
+            let startDate = now;
+            let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
-                // Check if there's an active plan
-                const activePlan = await PlatformCharges.findOne({
-                    userId,
-                    status: 'active'
-                }).sort({ endDate: -1 });
+            if (lastPlan) {
+                console.log("Step 5 - Last plan found:", { id: lastPlan.id, status: lastPlan.status, endDate: lastPlan.endDate });
 
-                if (activePlan) {
-                    console.log("Step 5 - Found active plan ending at:", activePlan.endDate);
-                    // Just mark as queued_confirmed without recalculating dates
-                    plan.status = 'queued';
-                    // Dates are already set correctly from buyPlanWithPayment
-                } else {
-                    console.log("Step 5 - No active plan found, activating queued plan immediately");
-                    // If there's no active plan, activate this one immediately
-                    plan.status = 'active';
-                    // No need to modify dates as they're already set correctly
+                if (lastPlan.status === 'active' || lastPlan.status === 'queued' || lastPlan.status === 'queued_confirmed') {
+                    startDate = new Date(lastPlan.endDate);
+                    endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
                 }
-
-                await plan.save();
             }
 
+            if (plan.status === 'pending') {
+                plan.status = 'active';
+                plan.startDate = startDate;
+                plan.endDate = endDate;
+            } else if (plan.status === 'queued') {
+                plan.status = 'queued_confirmed';
+                plan.startDate = startDate;
+                plan.endDate = endDate;
+            }
+
+            await plan.save();
+
             console.log("Step 5 - Plan updated successfully:", {
-                id: plan._id,
-                status: plan.status,
-                startDate: plan.startDate,
-                endDate: plan.endDate
+                id: plan.id, status: plan.status, startDate: plan.startDate, endDate: plan.endDate
             });
 
             return res.status(200).json({
                 success: true,
-                message: 'Payment successful and plan ' +
-                    (plan.status === 'active' ? 'activated' : 'queued for activation'),
+                message: `Payment successful and plan ${plan.status === 'active' ? 'activated' : 'queued for activation'}`,
                 data: {
-                    planId: plan._id,
-                    planName: plan.planName,
-                    amount: plan.amount,
+                    planId: plan.id,
+                    planName: planDetails.planName,
+                    amount: planDetails.amount,
                     startDate: plan.startDate,
                     endDate: plan.endDate,
                     status: plan.status
                 }
             });
         } else if (responseData.code === "PAYMENT_PENDING" || responseData.data.state === "PENDING") {
-            // Payment is still pending
             console.log("Step 5 - Payment is still pending");
             return res.status(202).json({
                 success: false,
@@ -305,7 +287,6 @@ export const validatePayment = async (req, res) => {
                 data: responseData
             });
         } else {
-            // Payment failed
             console.log("Step 5 - Payment failed:", responseData);
             return res.status(400).json({
                 success: false,
@@ -328,6 +309,8 @@ export const validatePayment = async (req, res) => {
         });
     }
 };
+
+
 
 
 export const createPlan = async (req, res) => {
