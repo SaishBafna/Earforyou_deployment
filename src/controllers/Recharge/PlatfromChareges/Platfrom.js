@@ -237,6 +237,7 @@ export const validatePayment = async (req, res) => {
                 order: [['endDate', 'DESC']]
             });
 
+            
             let now = new Date();
             let startDate = now;
             let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
@@ -254,8 +255,8 @@ export const validatePayment = async (req, res) => {
                 plan.status = 'active';
                 plan.startDate = startDate;
                 plan.endDate = endDate;
-            } else if (plan.status === 'queued') {
-                plan.status = 'queued_confirmed';
+            } else if (plan.status === 'active') {
+                plan.status = 'queued';
                 plan.startDate = startDate;
                 plan.endDate = endDate;
             }
