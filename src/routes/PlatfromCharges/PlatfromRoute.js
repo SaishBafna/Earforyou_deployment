@@ -1,6 +1,6 @@
 // routes/plans.js
 import express from 'express';
-import { createPlan, getAllPlans, buyPlanWithPayment, validatePayment } from "../../controllers/Recharge/PlatfromChareges/Platfrom.js";
+import { createPlan, getAllPlans, buyPlanWithPayment, validatePayment,getUserPlatformCharge } from "../../controllers/Recharge/PlatfromChareges/Platfrom.js";
 
 // Create a new router instance
 const router = express.Router();
@@ -14,6 +14,9 @@ router.get('/PlatfromChargesGet', getAllPlans);
 router.post('/buyPlanWithPayment', buyPlanWithPayment);
 
 router.get('/validatePayment/:merchantTransactionId/:userId/:planId', validatePayment);
+
+router.get("/getUserPlatformCharge/:userId", getUserPlatformCharge);
+
 
 // Export the router
 export default router;

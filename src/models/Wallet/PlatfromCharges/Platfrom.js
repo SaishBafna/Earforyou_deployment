@@ -6,6 +6,7 @@ const PlatformChargesSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+
     planId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'MyPlan',
@@ -14,19 +15,19 @@ const PlatformChargesSchema = new mongoose.Schema({
 
     planName: {
         type: String,
-        default:"PlatFrom Charges"
+        default: "PlatFrom Charges"
     },
-    
+
     startDate: {
         type: Date,
     },
     endDate: {
         type: Date,
-        
+
     },
     status: {
         type: String,
-        enum: ['pending', 'active', 'expired','queued','queued_confirmed'], // Updated enum to match controller
+        enum: ['pending', 'active', 'expired', 'queued', 'queued_confirmed'], // Updated enum to match controller
         default: 'pending' // Default changed to 'pending' as per buyPlanWithPayment
     },
     transactionId: { // Added to store payment gateway transaction ID

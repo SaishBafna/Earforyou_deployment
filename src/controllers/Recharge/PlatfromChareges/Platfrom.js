@@ -318,6 +318,40 @@ export const validatePayment = async (req, res) => {
 
 
 
+export const getUserPlatformCharge = async (req, res) => {
+    try {
+        const { userId } = req.params; // Get userId from request params
+
+        // Find the latest active charge
+        let charge = await PlatformCharges.findOne({ userId, status: "active" }).sort({ createdAt: -1 });
+
+        // If no active charge is found, get the latest expired charge
+        if (!charge) {
+            charge = await PlatformCharges.findOne({ userId, status: "expired" }).sort({ createdAt: -1 });
+        }
+
+        // If no charges found, return 404
+        if (!charge) {
+            return res.status(404).json({ message: 'No platform charges found for this user.' });
+        }
+
+        // Format startDate and endDate
+        const processedCharge = {
+            ...charge._doc, // Spread existing charge data
+            startDate: charge.startDate ? new Date(charge.startDate) : null,
+            endDate: charge.endDate ? new Date(charge.endDate) : null
+        };
+
+        res.status(200).json(processedCharge);
+    } catch (error) {
+        console.error('Error fetching platform charges:', error);
+        res.status(500).json({ error: 'Failed to fetch platform charges' });
+    }
+};
+
+
+
+
 
 export const createPlan = async (req, res) => {
     try {
