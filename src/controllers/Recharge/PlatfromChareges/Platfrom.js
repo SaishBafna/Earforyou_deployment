@@ -231,13 +231,12 @@ export const validatePayment = async (req, res) => {
 
             console.log("Step 5 - Found plan:", { id: plan.id, status: plan.status });
 
-            // Get the last queued or active plan for the user
+            // Corrected query for last active or queued plan
             const lastPlan = await PlatformCharges.findOne({
-                where: { userId, status: ['active', 'queued', 'queued_confirmed'] },
-                order: [['endDate', 'DESC']]
-            });
+                userId,
+                status: { $in: ['active', 'queued', 'queued_confirmed'] }
+            }).sort({ endDate: -1 });
 
-            
             let now = new Date();
             let startDate = now;
             let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
@@ -245,18 +244,24 @@ export const validatePayment = async (req, res) => {
             if (lastPlan) {
                 console.log("Step 5 - Last plan found:", { id: lastPlan.id, status: lastPlan.status, endDate: lastPlan.endDate });
 
-                if (lastPlan.status === 'active' || lastPlan.status === 'queued' || lastPlan.status === 'queued_confirmed') {
+                if (['active', 'queued', 'queued_confirmed'].includes(lastPlan.status)) {
+                    // If there's an active/queued plan, start new plan after the last one ends
                     startDate = new Date(lastPlan.endDate);
                     endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
                 }
             }
 
             if (plan.status === 'pending') {
-                plan.status = 'active';
+                // If there's already an active or queued plan, queue this plan
+                if (lastPlan && lastPlan.status === 'active') {
+                    plan.status = 'queued';
+                } else {
+                    plan.status = 'active';
+                }
                 plan.startDate = startDate;
                 plan.endDate = endDate;
-            } else if (plan.status === 'active') {
-                plan.status = 'queued';
+            } else if (plan.status === 'queued') {
+                plan.status = 'queued_confirmed';
                 plan.startDate = startDate;
                 plan.endDate = endDate;
             }
@@ -294,6 +299,7 @@ export const validatePayment = async (req, res) => {
                 data: responseData
             });
         }
+
     } catch (error) {
         console.error("Step 6 - Error in validatePayment:", {
             message: error.message,
