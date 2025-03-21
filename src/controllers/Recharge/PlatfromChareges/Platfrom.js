@@ -222,9 +222,7 @@ export const validatePayment = async (req, res) => {
         if (responseData.code === "PAYMENT_SUCCESS" && responseData.data.state === "COMPLETED") {
             console.log("Step 5 - Payment successful, processing plan");
 
-            const plan = await PlatformCharges.findOne({
-                where: { transactionId: merchantTransactionId, userId }
-            });
+            const plan = await PlatformCharges.findOne({ transactionId: merchantTransactionId, userId });
 
             if (!plan) {
                 console.log("Step 5 - Plan not found for transaction:", merchantTransactionId);
