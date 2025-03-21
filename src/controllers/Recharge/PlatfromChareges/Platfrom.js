@@ -187,7 +187,8 @@ export const validatePayment = async (req, res) => {
         }
 
         // Get plan details
-        const planDetails = await MyPlan.findOne({ where: { id: planId } });
+        const planDetails = await MyPlan.findById(planId);
+
         if (!planDetails) {
             console.log("Step 1.5 - Plan details not found for planId:", planId);
             return res.status(404).json({ success: false, message: 'Plan details not found' });
