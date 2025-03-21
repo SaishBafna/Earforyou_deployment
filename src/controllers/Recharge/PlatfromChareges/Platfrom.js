@@ -5,6 +5,7 @@ import sha256 from "sha256";
 import uniqid from "uniqid";
 import User from "../../../models/Users.js";
 import MyPlan from "../../../models/Wallet/PlatfromCharges/myPlanSchema.js";
+import { title } from "process";
 
 export const buyPlanWithPayment = async (req, res) => {
     try {
@@ -255,8 +256,20 @@ export const validatePayment = async (req, res) => {
                 // If there's already an active or queued plan, queue this plan
                 if (lastPlan && lastPlan.status === 'active') {
                     plan.status = 'queued';
+                    const title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
+                    const message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days. Stay tuned! 🚀`;
+
+                    await sendNotification({ userId, title, message });
+
+
                 } else {
+
                     plan.status = 'active';
+                    const title = `${planDetails.validityDays} Days Plan Activated! 🎉`;
+                    const message = `You can use the platform for ${planDetails.validityDays} days. Enjoy your experience! 🚀`;
+
+                    await sendNotification({ userId, title, message });
+
                 }
                 plan.startDate = startDate;
                 plan.endDate = endDate;
@@ -286,6 +299,11 @@ export const validatePayment = async (req, res) => {
             });
         } else if (responseData.code === "PAYMENT_PENDING" || responseData.data.state === "PENDING") {
             console.log("Step 5 - Payment is still pending");
+            const title = `Your ${planDetails.validityDays}-Day Plan is pending ⏳`;
+            const message = `Payment is still pending. Please check again later`;
+
+            await sendNotification({ userId, title, message });
+
             return res.status(202).json({
                 success: false,
                 message: 'Payment is still pending. Please check again later.',
@@ -293,11 +311,17 @@ export const validatePayment = async (req, res) => {
             });
         } else {
             console.log("Step 5 - Payment failed:", responseData);
+            const title = `Payment Failed ❌`;
+            const message = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
+
+            await sendNotification({ userId, title, message });
+
             return res.status(400).json({
                 success: false,
                 message: 'Payment validation failed',
                 data: responseData
             });
+
         }
 
     } catch (error) {
@@ -455,3 +479,31 @@ export const getAllPlans = async (req, res) => {
         });
     }
 };
+
+
+
+async function sendNotification(userId, title, message) {
+    // Assuming you have the FCM device token stored in your database
+    const user = await User.findById(userId);
+    const deviceToken = user.deviceToken;
+
+    if (!deviceToken) {
+        console.error("No device token found for user:", userId);
+        return;
+    }
+
+    const payload = {
+        notification: {
+            title: title,
+            body: message,
+        },
+        token: deviceToken,
+    };
+
+    try {
+        const response = await admin.messaging().send(payload);
+        console.log("Notification sent successfully:", response);
+    } catch (error) {
+        console.error("Error sending notification:", error);
+    }
+}
