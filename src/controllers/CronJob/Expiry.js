@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import mongoose from 'mongoose';
 import PlatformCharges from '../../models/Wallet/PlatfromCharges/Platfrom.js';
 
-export const expirePlatformCharges = async () => {
+export const expirePlatformCharges = async (req, res) => {
     try {
         // Get today's date at start and end of day
         const today = new Date();
@@ -30,19 +30,25 @@ export const expirePlatformCharges = async () => {
             { $set: { status: 'expired' } }
         );
 
-        console.log(`[CRON] Platform charges activated: ${activateResult.modifiedCount}`);
-        console.log(`[CRON] Platform charges expired: ${expireResult.modifiedCount}`);
+        // console.log(`[CRON] Platform charges activated: ${activateResult.modifiedCount}`);
+        // console.log(`[CRON] Platform charges expired: ${expireResult.modifiedCount}`);
+
+        res.status(200).json({
+            message: "Success ",
+            activateResult,
+            expireResult
+        })
 
     } catch (error) {
         console.error('[CRON] Error updating platform charges:', error);
     }
 };
 
-// Schedule the cron job to run daily at 11:55 PM IST
-cron.schedule('59 23 * * *', expirePlatformCharges, {
-    scheduled: true,
-    timezone: 'Asia/Kolkata'
-});
+// // Schedule the cron job to run daily at 11:55 PM IST
+// cron.schedule('59 23 * * *', expirePlatformCharges, {
+//     scheduled: true,
+//     timezone: 'Asia/Kolkata'
+// });
 
 
 
@@ -89,7 +95,7 @@ const updatePlatformCharges = async () => {
 
 // Function to calculate time until the next 11:59 PM and schedule the next execution
 export const scheduleNextRun = () => {
-    console.log("Run THe Function scheduleNextRun")
+    console.log("Run THe Function ")
     const now = new Date();
     const nextRun = new Date();
     nextRun.setHours(23, 59, 0, 0); // Set time to 11:59 PM

@@ -26,7 +26,8 @@ import {
     UpdateCallStatus,
     UserCategoryData,
     RegisterEnquiry,
-    getAllUserCategory
+    getAllUserCategory,
+    GetRegisterEnquiry
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -104,6 +105,8 @@ router.get('/getReviews/:userId', getReviews);
 router.post('/UpdateCallStatus', protect, UpdateCallStatus);
 
 router.get('/expirePlatformCharges', expirePlatformCharges);
+
+router.get('/GetRegisterEnquiry', GetRegisterEnquiry);
 
 router.post('/RegisterEnquiry', RegisterEnquiry);
 

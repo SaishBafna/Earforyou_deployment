@@ -1581,8 +1581,8 @@ export const getAllUserCategory = async (req, res) => {
       let message = "No users found";
       if (genderFilter) message = `No ${genderFilter} users found`;
       if (categoryFilter) {
-        message = genderFilter 
-          ? `No ${genderFilter} users found in category '${categoryFilter}'` 
+        message = genderFilter
+          ? `No ${genderFilter} users found in category '${categoryFilter}'`
           : `No users found in category '${categoryFilter}'`;
       }
       return res.status(404).json({ message });
@@ -2671,6 +2671,47 @@ export const RegisterEnquiry = async (req, res) => {
     });
   }
 };
+
+export const GetRegisterEnquiry = async (req, res) => {
+  try {
+    const { startDate, endDate, page = 1, limit = 10 } = req.query;
+
+    // Convert dates to ISO format if provided
+    let filter = {};
+    if (startDate && endDate) {
+      filter.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      };
+    }
+
+    // Get total count of records matching the filter
+    const totalCount = await Zhohocampain.countDocuments(filter);
+
+    // Fetch paginated data
+    const enquiryData = await Zhohocampain.find(filter)
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit))
+      .sort({ createdAt: -1 }); // Sorting by latest entries
+
+    res.status(200).json({
+      success: true,
+      message: "Enquiries retrieved successfully",
+      totalRecords: totalCount,
+      currentPage: page,
+      totalPages: Math.ceil(totalCount / limit),
+      data: enquiryData,
+    });
+  } catch (error) {
+    console.error("Error fetching enquiries:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch enquiries",
+      error: error.message,
+    });
+  }
+};
+
 
 async function sendNotification(userId, title, message) {
   // Assuming you have the FCM device token stored in your database

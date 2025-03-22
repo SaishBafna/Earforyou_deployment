@@ -259,7 +259,7 @@ export const validatePayment = async (req, res) => {
                     const title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
                     const message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days. Stay tuned! 🚀`;
 
-                    await sendNotification({ userId, title, message });
+                    await sendNotification(userId, title, message);
 
 
                 } else {
@@ -268,7 +268,7 @@ export const validatePayment = async (req, res) => {
                     const title = `${planDetails.validityDays} Days Plan Activated! 🎉`;
                     const message = `You can use the platform for ${planDetails.validityDays} days. Enjoy your experience! 🚀`;
 
-                    await sendNotification({ userId, title, message });
+                    await sendNotification(userId, title, message);
 
                 }
                 plan.startDate = startDate;
@@ -302,7 +302,7 @@ export const validatePayment = async (req, res) => {
             const title = `Your ${planDetails.validityDays}-Day Plan is pending ⏳`;
             const message = `Payment is still pending. Please check again later`;
 
-            await sendNotification({ userId, title, message });
+            await sendNotification(userId, title, message);
 
             return res.status(202).json({
                 success: false,
@@ -314,7 +314,7 @@ export const validatePayment = async (req, res) => {
             const title = `Payment Failed ❌`;
             const message = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
 
-            await sendNotification({ userId, title, message });
+            await sendNotification(userId, title, message);
 
             return res.status(400).json({
                 success: false,
@@ -334,7 +334,7 @@ export const validatePayment = async (req, res) => {
         const title = `Payment Failed ❌`;
         const message = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
 
-        await sendNotification({ userId, title, message });
+        await sendNotification(userId, title, message);
         return res.status(500).json({
             success: false,
             message: 'Payment validation failed',
