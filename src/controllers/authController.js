@@ -21,7 +21,17 @@ import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
 import { Chat } from "../models/chat.modal.js";
 import Zhohocampain from "../models/ZohoCampainFrom.js";
+import PlatformCharges from "../models/Wallet/PlatfromCharges/Platfrom.js";
+import MyPlan from "../models/Wallet/PlatfromCharges/myPlanSchema.js";
 
+export const generateTransactionId = async () => {
+  const timestamp = Date.now().toString(36); // Convert timestamp to base36
+  const randomString = await crypto.randomBytes(8).toString('hex'); // Generate a random 16-character hex string
+  return `TXN-${timestamp}-${randomString}`; // Format the transaction ID
+};
+
+
+// Example usage
 
 
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -375,6 +385,23 @@ export const initiateRegistration = async (req, res) => {
 
     try {
       await newUser.save({ session });
+
+      const platform = await PlatformCharges.findOne({ userId: newUser._id }).session(session);
+
+      const plan = await MyPlan.findOne().sort({ createdAt: -1 }); 
+
+      const token = await generateTransactionId();
+
+      if (!platform) {
+        const data = await PlatformCharges.create([{
+          userId: newUser._id,
+          status: 'expired',
+          transactionId: token,
+          planId: plan._id
+        }], { session });
+
+      }
+
 
       const callRateData = await CallRate.findOne().session(session);
       if (!callRateData) {
