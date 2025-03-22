@@ -5,7 +5,8 @@ import sha256 from "sha256";
 import uniqid from "uniqid";
 import User from "../../../models/Users.js";
 import MyPlan from "../../../models/Wallet/PlatfromCharges/myPlanSchema.js";
-import { title } from "process";
+import admin from 'firebase-admin';
+
 
 export const buyPlanWithPayment = async (req, res) => {
     try {
