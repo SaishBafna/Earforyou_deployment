@@ -364,6 +364,7 @@ export const setupWebRTC = (io) => {
           // Cleanup any potential pending call entries (if applicable)
           const pendingCallKey = [callerId, receiverId].sort().join('_');
           cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+          return;
         }
 
         if (!pc) {
@@ -380,6 +381,7 @@ export const setupWebRTC = (io) => {
           // Cleanup any potential pending call entries (if applicable)
           const pendingCallKey = [callerId, receiverId].sort().join('_');
           cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+          return;
         }
 
         // Now `pr` and `pc` will hold either an active record or the latest expired one
