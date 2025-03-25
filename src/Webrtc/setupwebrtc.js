@@ -4,6 +4,7 @@ import logger from '../logger/winston.logger.js';
 import User from '../models/Users.js';
 import Wallet from '../models/Wallet/Wallet.js'
 import admin from 'firebase-admin';
+import PlatformCharges from '../models/Wallet/PlatfromCharges/Platfrom.js';
 // import { ChatMessage } from '../models/message.models.js';
 
 export const setupWebRTC = (io) => {
@@ -333,6 +334,57 @@ export const setupWebRTC = (io) => {
     socket.on('call', async ({ callerId, receiverId }) => {
       let cleanupTimeout;
       try {
+
+
+
+
+        const [pr, pc] = await Promise.all([
+          PlatformCharges.findOne({ userId: receiverId, status: 'active' })
+            .sort({ createdAt: -1 }) // Sort by latest if multiple
+            .lean(),
+          PlatformCharges.findOne({ userId: callerId, status: 'active' })
+            .sort({ createdAt: -1 })
+            .lean(),
+        ]).catch(error => {
+          logger.error(`[DB_ERROR] Failed to fetch users: ${error.message}`);
+          throw new Error('Failed to fetch user details');
+        });
+
+        // If no active record is found, fetch the latest expired one
+        if (!pr) {
+          pr = await PlatformCharges.findOne({ userId: receiverId, status: 'expired' })
+            .sort({ createdAt: -1 }) // Fetch the latest expired
+            .lean();
+          // Notify caller without sound
+          socket.emit('expiredr', {
+            receiverId,
+            message: 'Platform Charges is  expired.'
+          });
+
+          // Cleanup any potential pending call entries (if applicable)
+          const pendingCallKey = [callerId, receiverId].sort().join('_');
+          cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+        }
+
+        if (!pc) {
+          pc = await PlatformCharges.findOne({ userId: callerId, status: 'expired' })
+            .sort({ createdAt: -1 })
+            .lean();
+
+          // Notify caller without sound
+          socket.emit('expiredc', {
+            receiverId,
+            message: 'Platform Charges is expired. '
+          });
+
+          // Cleanup any potential pending call entries (if applicable)
+          const pendingCallKey = [callerId, receiverId].sort().join('_');
+          cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+        }
+
+        // Now `pr` and `pc` will hold either an active record or the latest expired one
+
+
         logger.info(`[CALL_START] User ${callerId} is calling User ${receiverId}`);
 
         // Input validation
@@ -422,6 +474,21 @@ export const setupWebRTC = (io) => {
           return;
         }
 
+        if (receiver.CallStatus == 'InActive') {
+          logger.warn(`[InActive] Receiver ${receiverId} is inactive${receiver.CallStatus}`);
+
+          // Notify caller without sound
+          socket.emit('receiverOffline', {
+            receiverId,
+            message: 'The user is currently unavailable.'
+          });
+
+          // Cleanup any potential pending call entries (if applicable)
+          const pendingCallKey = [callerId, receiverId].sort().join('_');
+          cleanupCallResources(pendingCallKey, callerId, receiverId, socket);
+
+          return;
+        }
         if (receiver.CallStatus == 'InActive') {
           logger.warn(`[InActive] Receiver ${receiverId} is inactive${receiver.CallStatus}`);
 
