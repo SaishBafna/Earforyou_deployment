@@ -338,7 +338,7 @@ export const setupWebRTC = (io) => {
 
 
 
-        const [pr, pc] = await Promise.all([
+        let [pr, pc] = await Promise.all([
           PlatformCharges.findOne({ userId: receiverId, status: 'active' })
             .sort({ createdAt: -1 }) // Sort by latest if multiple
             .lean(),
