@@ -3,6 +3,8 @@ import logger from '../../logger/winston.logger.js';
 import CallLog from '../../models/Talk-to-friend/callLogModel.js';
 import User from '../../models/Users.js';
 
+import Review from '../../models/LeaderBoard/Review.js';
+
 
 
 // export const getRecentCalls = async (req, res) => {
@@ -31,7 +33,7 @@ import User from '../../models/Users.js';
 
 export const getRecentCalls = async (req, res) => {
   try {
-    const userId =  req.user.id;
+    const userId = req.user.id;
     const { page = 1 } = req.query; // Default page number is 1
     const PAGE_SIZE = 20; // 20 calls per page
 
@@ -52,8 +54,8 @@ export const getRecentCalls = async (req, res) => {
       .sort({ startTime: -1, endTime: -1 })
       .skip(skip) // Skip calls for previous pages
       .limit(PAGE_SIZE) // Limit results to 20 per page
-      .populate('caller', 'username userType userCategory phone avatarUrl')
-      .populate('receiver', 'username userType userCategory phone avatarUrl')
+      .populate('caller', 'username userType userCategory gender Language phone avatarUrl')
+      .populate('receiver', 'username userType userCategory gender Language phone avatarUrl')
       .lean()
       .exec();
 
@@ -61,6 +63,9 @@ export const getRecentCalls = async (req, res) => {
     if (!recentCalls || recentCalls.length === 0) {
       return res.status(404).json({ message: 'No call history found for this page.' });
     }
+
+
+    
 
     // Format calls and hide logged-in user's data
     const formattedCalls = recentCalls.map(call => {
