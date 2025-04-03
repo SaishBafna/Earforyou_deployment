@@ -1207,6 +1207,15 @@ export const setupWebRTC = (io) => {
               status: 'completed',
             });
 
+            await CallLog.create({
+              caller: new mongoose.Types.ObjectId(receiverId),
+              receiver: new mongoose.Types.ObjectId(callerId),
+              startTime: new Date(startTime),
+              endTime,
+              duration,
+              status: 'completed',
+            });
+
 
             for (const key in pendingCalls) {
               if (pendingCalls[key].socketId === socket.id) {
