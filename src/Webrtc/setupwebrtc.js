@@ -5,6 +5,7 @@ import User from '../models/Users.js';
 import Wallet from '../models/Wallet/Wallet.js'
 import admin from 'firebase-admin';
 import PlatformCharges from '../models/Wallet/PlatfromCharges/Platfrom.js';
+import Streak from '../models/Streak.js';
 // import { ChatMessage } from '../models/message.models.js';
 
 export const setupWebRTC = (io) => {

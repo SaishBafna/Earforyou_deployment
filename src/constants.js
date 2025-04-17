@@ -22,10 +22,25 @@ export const ChatEventEnum = Object.freeze({
   TYPING_EVENT: "typing",
   // ? when message is deleted
   MESSAGE_DELETE_EVENT: "messageDeleted",
-  
+
   MESSAGE_READ_EVENT: "messageRead",
   // ? when user's last seen status is updated
   LAST_SEEN_EVENT: "lastSeen",
+
+  NEW_GROUP_CHAT_EVENT: "newGroupChat",
+  // ? when group chat is updated
+  REMOVED_FROM_GROUP_EVENT: "removedFromGroup",
+  // ? when message is edited
+  UPDATE_GROUP_EVENT: "updateGroup",
+  // ? when group is deleted
+  LEFT_GROUP_EVENT: "leftGroup",
+  // ? when group is deleted
+  GROUP_DELETED_EVENT: "groupDeleted",
+
+  // ? when user requests to join a group
+  JOIN_REQUEST_APPROVED_EVENT: "joinRequestApproved",
+  // ? when user requests to join a group
+  JOIN_REQUEST_REJECTED_EVENT: "joinRequestRejected",
 });
 
 export const AvailableChatEvents = Object.values(ChatEventEnum);
