@@ -68,4 +68,4 @@ chatSchema.index({ updatedAt: -1 });
 chatSchema.index({ pendingJoinRequests: 1 }); // Index for join requests
 chatSchema.index({ "pendingJoinRequests.user": 1 }); // Index for user-specific join requests
 
-export const Chat = mongoose.model("Chat", chatSchema);
+export const Chat = mongoose.model("GroupChat", chatSchema);

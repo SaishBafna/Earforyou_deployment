@@ -7,8 +7,9 @@ import { emitSocketEvent } from "../../../socket/index.js";
 import { ApiError } from "../../../utils/ApiError.js";
 import { ApiResponse } from "../../../utils/ApiResponse.js";
 import { asyncHandler } from "../../../utils/asyncHandler.js";
-import { removeLocalFile } from "../../../utils/helpers.js";
+import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
 
+// Common aggregation pipeline for chat queries
 const chatCommonAggregation = (userId) => [
   {
     $lookup: {
@@ -90,23 +91,279 @@ const chatCommonAggregation = (userId) => [
   { $sort: { sortField: -1 } },
 ];
 
+// Helper function to delete all messages and attachments for a chat
 const deleteCascadeChatMessages = async (chatId) => {
-  const messages = await ChatMessage.find({ chat: new mongoose.Types.ObjectId(chatId) })
+  const messages = await ChatMessage.find({ chat: chatId })
     .select("attachments")
     .lean();
 
-  await Promise.all(
-    messages.flatMap((message) =>
-      message.attachments.map((attachment) =>
-        attachment.localPath ? removeLocalFile(attachment.localPath) : null
-      )
-    )
+  const fileDeletions = messages.flatMap((message) =>
+    message.attachments
+      .filter((attachment) => attachment.localPath)
+      .map((attachment) => removeLocalFile(attachment.localPath))
   );
 
-  await ChatMessage.deleteMany({ chat: new mongoose.Types.ObjectId(chatId) });
+  await Promise.all([
+    ...fileDeletions,
+    ChatMessage.deleteMany({ chat: chatId }),
+  ]);
 };
 
+// Helper function to get paginated messages
+const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
+  const skip = (page - 1) * limit;
+  
+  const [messages, totalCount] = await Promise.all([
+    ChatMessage.aggregate([
+      {
+        $match: {
+          chat: new mongoose.Types.ObjectId(chatId),
+          deletedFor: { $ne: userId }
+        }
+      },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: "users",
+          localField: "sender",
+          foreignField: "_id",
+          as: "sender",
+          pipeline: [{ $project: { username: 1, avatar: 1, email: 1 } }]
+        }
+      },
+      { $unwind: "$sender" },
+      {
+        $project: {
+          content: 1,
+          attachments: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          sender: 1,
+          isRead: 1,
+          seenBy: 1,
+          edited: 1,
+          replyTo: 1,
+          reactions: 1
+        }
+      }
+    ]),
+    ChatMessage.countDocuments({
+      chat: chatId,
+      deletedFor: { $ne: userId }
+    })
+  ]);
 
+  return {
+    messages,
+    totalCount,
+    totalPages: Math.ceil(totalCount / limit),
+    page,
+    limit
+  };
+};
+
+/**
+ * @route GET /api/v1/chats/group/:chatId/messages
+ * @description Get all messages for a group chat with pagination
+ */
+const getAllGroupMessages = asyncHandler(async (req, res) => {
+  const { chatId } = req.params;
+  let { page = 1, limit = 20 } = req.query;
+  
+  page = parseInt(page);
+  limit = parseInt(limit);
+
+  if (isNaN(page) || isNaN(limit) || page < 1 || limit < 1) {
+    throw new ApiError(400, "Invalid page or limit parameters");
+  }
+
+  // Verify user is a participant
+  const isParticipant = await Chat.exists({
+    _id: chatId,
+    isGroupChat: true,
+    participants: req.user._id
+  });
+
+  if (!isParticipant) {
+    throw new ApiError(404, "Group chat not found or you're not a participant");
+  }
+
+  // Get paginated messages
+  const { messages, totalCount, totalPages } = await getPaginatedMessages(
+    chatId,
+    req.user._id,
+    page,
+    limit
+  );
+
+  // Mark messages as read in bulk
+  await Promise.all([
+    ChatMessage.updateMany(
+      {
+        chat: chatId,
+        seenBy: { $ne: req.user._id },
+        sender: { $ne: req.user._id }
+      },
+      { $addToSet: { seenBy: req.user._id }, $set: { isRead: true } }
+    ),
+    Chat.updateOne(
+      { _id: chatId, "unreadCounts.user": req.user._id },
+      { $set: { "unreadCounts.$.count": 0 } }
+    )
+  ]);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      { messages, page, limit, totalCount, totalPages },
+      "Group messages fetched successfully"
+    )
+  );
+});
+
+/**
+ * @route POST /api/v1/chats/group/:chatId/messages
+ * @description Send a message to a group chat
+ */
+const sendGroupMessage = asyncHandler(async (req, res) => {
+  const { chatId } = req.params;
+  const { content, replyTo } = req.body;
+
+  if (!content && !req.files?.attachments?.length) {
+    throw new ApiError(400, "Message content or attachment is required");
+  }
+
+  // Get group chat in single query
+  const groupChat = await Chat.findOneAndUpdate(
+    {
+      _id: chatId,
+      isGroupChat: true,
+      participants: req.user._id
+    },
+    { $set: { lastActivity: new Date() } },
+    { new: true, lean: true }
+  );
+
+  if (!groupChat) {
+    throw new ApiError(404, "Group chat not found or you're not a participant");
+  }
+
+  // Validate replyTo message if provided
+  let replyToMessage = null;
+  if (replyTo) {
+    replyToMessage = await ChatMessage.findOne({
+      _id: replyTo,
+      chat: chatId
+    }).lean();
+    if (!replyToMessage) {
+      throw new ApiError(400, "Replied message not found in this chat");
+    }
+  }
+
+  // Process attachments
+  const messageFiles = (req.files?.attachments || []).map((attachment) => ({
+    url: getStaticFilePath(req, attachment.filename),
+    localPath: getLocalPath(attachment.filename),
+    fileType: attachment.mimetype.split("/")[0] || "other",
+    fileName: attachment.originalname,
+    size: attachment.size
+  }));
+
+  // Create the message
+  const message = await ChatMessage.create({
+    sender: req.user._id,
+    content: content || "",
+    chat: chatId,
+    attachments: messageFiles,
+    replyTo: replyToMessage?._id
+  });
+
+  // Prepare update operations for unread counts
+  const participantsToUpdate = groupChat.participants
+    .filter(p => !p.equals(req.user._id))
+    .map(p => p.toString());
+
+  const updateOps = {
+    $set: { lastMessage: message._id },
+    $inc: { ...participantsToUpdate.reduce((acc, p) => {
+      acc[`unreadCounts.${p}.count`] = 1;
+      return acc;
+    }, {})}
+  };
+
+  await Chat.findByIdAndUpdate(chatId, updateOps);
+
+  // Get populated message in single aggregation
+  const [populatedMessage] = await ChatMessage.aggregate([
+    { $match: { _id: message._id } },
+    {
+      $lookup: {
+        from: "users",
+        localField: "sender",
+        foreignField: "_id",
+        as: "sender",
+        pipeline: [{ $project: { username: 1, avatar: 1, email: 1 } }]
+      }
+    },
+    { $unwind: "$sender" },
+    {
+      $lookup: {
+        from: "chatmessages",
+        localField: "replyTo",
+        foreignField: "_id",
+        as: "replyTo",
+        pipeline: [
+          {
+            $lookup: {
+              from: "users",
+              localField: "sender",
+              foreignField: "_id",
+              as: "sender",
+              pipeline: [{ $project: { username: 1, avatar: 1 } }]
+            }
+          },
+          { $unwind: "$sender" },
+          { $project: { content: 1, sender: 1, attachments: 1 } }
+        ]
+      }
+    },
+    { $unwind: { path: "$replyTo", preserveNullAndEmptyArrays: true } }
+  ]);
+
+  if (!populatedMessage) {
+    throw new ApiError(500, "Failed to send message");
+  }
+
+  // Get sender info for notifications
+  const sender = await User.findById(req.user._id)
+    .select("username name avatar")
+    .lean();
+
+  const senderName = sender.name || sender.username;
+  const notificationMessage = content 
+    ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
+    : `${senderName} sent an attachment`;
+
+  // Emit socket events to participants
+  const socketEvents = groupChat.participants
+    .filter(p => !p.equals(req.user._id))
+    .map(participantId => 
+      emitSocketEvent(
+        req,
+        participantId.toString(),
+        ChatEventEnum.MESSAGE_RECEIVED_EVENT,
+        populatedMessage
+      )
+    );
+
+  await Promise.all(socketEvents);
+
+  return res
+    .status(201)
+    .json(new ApiResponse(201, populatedMessage, "Message sent successfully"));
+});
 
 /**
  * @route GET /api/v1/chats/group
@@ -134,9 +391,10 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
         lastMessage: 1,
         unreadCount: 1,
         createdAt: 1,
+        lastActivity: 1
       },
     },
-  ]).exec();
+  ]);
 
   return res
     .status(200)
@@ -144,111 +402,67 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
 });
 
 /**
- * @route GET /api/v1/chats/group/:userId
- * @description Get all group chats for a specific user (admin access required)
+ * @route GET /api/v1/chats/group/:chatId
+ * @description Get group chat details with paginated messages
  */
-const getGroupChatsForUser = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
-  const { search } = req.query;
+const getGroupChatDetails = asyncHandler(async (req, res) => {
+  const { chatId } = req.params;
+  let { page = 1, limit = 20 } = req.query;
+  
+  page = parseInt(page);
+  limit = parseInt(limit);
 
-
-
-  const targetUser = await User.findById(userId).select("_id").lean();
-  if (!targetUser) {
-    throw new ApiError(404, "User not found");
+  if (isNaN(page) || isNaN(limit) || page < 1 || limit < 1) {
+    throw new ApiError(400, "Invalid page or limit parameters");
   }
 
-  const matchStage = {
-    isGroupChat: true,
-    participants: new mongoose.Types.ObjectId(userId),
-    ...(search && { name: { $regex: search.trim(), $options: "i" } }),
-  };
-
-  const groupChats = await Chat.aggregate([
-    { $match: matchStage },
-    ...chatCommonAggregation(new mongoose.Types.ObjectId(userId)),
-    {
-      $project: {
-        name: 1,
-        avatar: 1,
-        participants: 1,
-        admins: 1,
-        createdBy: 1,
-        lastMessage: 1,
-        unreadCount: 1,
-        createdAt: 1,
-      },
+  // Get group chat with common aggregation
+  const [groupChat] = await Chat.aggregate([
+    { 
+      $match: { 
+        _id: new mongoose.Types.ObjectId(chatId),
+        isGroupChat: true,
+        participants: req.user._id
+      } 
     },
-  ]).exec();
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, groupChats, `Group chats for user ${userId} fetched successfully`));
-});
-
-/**
- * @route POST /api/v1/messages/:messageId/read
- * @description Mark a message as read and update seen status
- */
-const markMessageAsRead = asyncHandler(async (req, res) => {
-  const { messageId } = req.params;
-
-  const message = await ChatMessage.findById(messageId)
-    .select("chat seenBy isRead sender")
-    .lean();
-
-  if (!message) {
-    throw new ApiError(404, "Message not found");
-  }
-
-  const chat = await Chat.findById(message.chat)
-    .select("participants")
-    .lean();
-
-  if (!chat.participants.some((p) => p.equals(req.user._id))) {
-    throw new ApiError(403, "You are not a participant in this chat");
-  }
-
-  if (message.seenBy.some((user) => user.equals(req.user._id))) {
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          { messageId, seenBy: message.seenBy, isRead: message.isRead },
-          "Message already marked as read"
-        )
-      );
-  }
-
-  const [updatedMessage] = await Promise.all([
-    ChatMessage.findByIdAndUpdate(
-      messageId,
-      { $addToSet: { seenBy: req.user._id }, $set: { isRead: true } },
-      { new: true, select: "seenBy isRead" }
-    ),
-    Chat.updateOne(
-      { _id: message.chat, "unreadCounts.user": req.user._id },
-      { $inc: { "unreadCounts.$.count": -1 } }
-    ),
+    ...chatCommonAggregation(req.user._id),
   ]);
 
-  emitSocketEvent(req, message.chat.toString(), ChatEventEnum.MESSAGE_READ_EVENT, {
-    messageId,
-    seenBy: updatedMessage.seenBy,
-    chatId: message.chat,
-    readBy: req.user._id,
-  });
+  if (!groupChat) {
+    throw new ApiError(404, "Group chat not found or you're not a participant");
+  }
 
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        { messageId, seenBy: updatedMessage.seenBy, isRead: updatedMessage.isRead },
-        "Message marked as read successfully"
-      )
-    );
+  // Get paginated messages
+  const { messages, totalCount, totalPages } = await getPaginatedMessages(
+    chatId,
+    req.user._id,
+    page,
+    limit
+  );
+
+  // Mark messages as read in bulk
+  await Promise.all([
+    ChatMessage.updateMany(
+      {
+        chat: chatId,
+        seenBy: { $ne: req.user._id },
+        sender: { $ne: req.user._id }
+      },
+      { $addToSet: { seenBy: req.user._id }, $set: { isRead: true } }
+    ),
+    Chat.updateOne(
+      { _id: chatId, "unreadCounts.user": req.user._id },
+      { $set: { "unreadCounts.$.count": 0 } }
+    )
+  ]);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      { ...groupChat, messages, page, limit, totalCount, totalPages },
+      "Group chat details fetched successfully"
+    )
+  );
 });
 
 /**
@@ -262,25 +476,31 @@ const createGroupChat = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Name and at least two participants are required");
   }
 
-  const participantIds = [...new Set([req.user._id, ...participants.map((id) => new mongoose.Types.ObjectId(id))])];
-  const users = await User.find({ _id: { $in: participantIds } }).select("_id").lean();
-  if (users.length !== participantIds.length) {
+  // Validate participants
+  const participantIds = [...new Set([
+    req.user._id, 
+    ...participants.map(id => new mongoose.Types.ObjectId(id))
+  ])];
+
+  const usersCount = await User.countDocuments({ _id: { $in: participantIds } });
+  if (usersCount !== participantIds.length) {
     throw new ApiError(404, "One or more users not found");
   }
 
-  const unreadCounts = participantIds
-    .filter((id) => !id.equals(req.user._id))
-    .map((user) => ({ user, count: 1 }));
-
+  // Create group chat with initial unread counts
   const groupChat = await Chat.create({
     name: name.trim(),
     isGroupChat: true,
     participants: participantIds,
     admins: [req.user._id],
     createdBy: req.user._id,
-    unreadCounts,
+    unreadCounts: participantIds
+      .filter(id => !id.equals(req.user._id))
+      .map(user => ({ user, count: 1 })),
+    lastActivity: new Date()
   });
 
+  // Get populated group chat
   const [createdGroupChat] = await Chat.aggregate([
     { $match: { _id: groupChat._id } },
     ...chatCommonAggregation(req.user._id),
@@ -290,106 +510,23 @@ const createGroupChat = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Failed to create group chat");
   }
 
-  await Promise.all(
-    createdGroupChat.participants.map((participant) =>
-      !participant._id.equals(req.user._id)
-        ? emitSocketEvent(req, participant._id.toString(), ChatEventEnum.NEW_GROUP_CHAT_EVENT, createdGroupChat)
-        : null
-    )
-  );
+  // Notify participants
+  const notificationEvents = createdGroupChat.participants
+    .filter(p => !p._id.equals(req.user._id))
+    .map(participant =>
+      emitSocketEvent(
+        req,
+        participant._id.toString(),
+        ChatEventEnum.NEW_GROUP_CHAT_EVENT,
+        createdGroupChat
+      )
+    );
+
+  await Promise.all(notificationEvents);
 
   return res
     .status(201)
     .json(new ApiResponse(201, createdGroupChat, "Group chat created successfully"));
-});
-
-/**
- * @route GET /api/v1/chats/group/:chatId
- * @description Get group chat details with paginated messages
- */
-const getGroupChatDetails = asyncHandler(async (req, res) => {
-  const { chatId } = req.params;
-  const { page = 1, limit = 20 } = req.query;
-
-  const pageNum = parseInt(page);
-  const limitNum = parseInt(limit);
-
-  if (pageNum < 1 || limitNum < 1) {
-    throw new ApiError(400, "Invalid page or limit");
-  }
-
-  const [groupChat] = await Chat.aggregate([
-    { $match: { _id: new mongoose.Types.ObjectId(chatId), isGroupChat: true } },
-    ...chatCommonAggregation(req.user._id),
-  ]);
-
-  if (!groupChat) {
-    throw new ApiError(404, "Group chat not found");
-  }
-
-  if (!groupChat.participants.some((p) => p._id.equals(req.user._id))) {
-    throw new ApiError(403, "You are not a member of this group");
-  }
-
-  const [messages] = await Promise.all([
-    ChatMessage.aggregate([
-      {
-        $match: {
-          chat: new mongoose.Types.ObjectId(chatId),
-          deletedFor: { $ne: req.user._id },
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $skip: (pageNum - 1) * limitNum },
-      { $limit: limitNum },
-      {
-        $lookup: {
-          from: "users",
-          localField: "sender",
-          foreignField: "_id",
-          as: "sender",
-          pipeline: [{ $project: { username: 1, avatar: 1, email: 1 } }],
-        },
-      },
-      { $unwind: "$sender" },
-      {
-        $project: {
-          content: 1,
-          attachments: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          sender: 1,
-          isRead: 1,
-          seenBy: 1,
-          edited: 1,
-          replyTo: 1,
-          reactions: 1,
-        },
-      },
-    ]),
-    ChatMessage.updateMany(
-      {
-        chat: chatId,
-        seenBy: { $ne: req.user._id },
-        sender: { $ne: req.user._id },
-      },
-      { $addToSet: { seenBy: req.user._id }, $set: { isRead: true } }
-    ),
-    Chat.updateOne(
-      { _id: chatId, "unreadCounts.user": req.user._id },
-      { $set: { "unreadCounts.$.count": 0 } }
-    ),
-  ]);
-
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        { ...groupChat, messages, page: pageNum, limit: limitNum },
-        "Group chat details fetched successfully"
-      )
-    );
 });
 
 /**
@@ -407,6 +544,7 @@ const updateGroupChatDetails = asyncHandler(async (req, res) => {
   const updateFields = {};
   if (name?.trim()) updateFields.name = name.trim();
   if (avatar) updateFields.avatar = avatar;
+  updateFields.lastActivity = new Date();
 
   const updatedGroupChat = await Chat.findOneAndUpdate(
     { _id: chatId, isGroupChat: true, admins: req.user._id },
@@ -418,11 +556,17 @@ const updateGroupChatDetails = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Group chat not found or you're not an admin");
   }
 
-  await Promise.all(
-    updatedGroupChat.participants.map((pId) =>
-      emitSocketEvent(req, pId.toString(), ChatEventEnum.UPDATE_GROUP_EVENT, updatedGroupChat)
+  // Notify all participants
+  const notificationEvents = updatedGroupChat.participants.map(pId =>
+    emitSocketEvent(
+      req,
+      pId.toString(),
+      ChatEventEnum.UPDATE_GROUP_EVENT,
+      updatedGroupChat
     )
   );
+
+  await Promise.all(notificationEvents);
 
   return res
     .status(200)
@@ -437,55 +581,92 @@ const addParticipantsToGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { participants } = req.body;
 
-  if (!Array.isArray(participants) || !participants.length) {
+  if (!Array.isArray(participants) || participants.length === 0) {
     throw new ApiError(400, "Participants array is required");
   }
 
-  const groupChat = await Chat.findOne({ _id: chatId, isGroupChat: true, admins: req.user._id })
-    .select("participants")
-    .lean();
+  // Get group chat and validate admin status
+  const groupChat = await Chat.findOne({
+    _id: chatId,
+    isGroupChat: true,
+    admins: req.user._id
+  }).lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found or you're not an admin");
   }
 
-  const newParticipants = participants.filter(
-    (p) => !groupChat.participants.some((existing) => existing.equals(p))
-  );
+  // Filter out existing participants
+  const newParticipants = participants
+    .map(id => new mongoose.Types.ObjectId(id))
+    .filter(p => !groupChat.participants.some(existing => existing.equals(p)));
 
-  if (!newParticipants.length) {
+  if (newParticipants.length === 0) {
     throw new ApiError(400, "All users are already in the group");
   }
 
-  const users = await User.find({ _id: { $in: newParticipants } }).select("_id").lean();
-  if (users.length !== newParticipants.length) {
+  // Validate users exist
+  const usersCount = await User.countDocuments({ _id: { $in: newParticipants } });
+  if (usersCount !== newParticipants.length) {
     throw new ApiError(404, "One or more users not found");
   }
 
-  const unreadUpdates = await Promise.all(
-    newParticipants.map(async (user) => ({
-      user,
-      count: await ChatMessage.countDocuments({ chat: chatId, sender: { $ne: user } }),
-    }))
-  );
+  // Calculate unread counts for new participants
+  const unreadCounts = await ChatMessage.aggregate([
+    {
+      $match: {
+        chat: new mongoose.Types.ObjectId(chatId),
+        sender: { $nin: newParticipants }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  const totalUnread = unreadCounts[0]?.count || 0;
+
+  // Prepare updates
+  const updates = {
+    $addToSet: { participants: { $each: newParticipants } },
+    $push: {
+      unreadCounts: {
+        $each: newParticipants.map(user => ({ user, count: totalUnread }))
+      }
+    },
+    $set: { lastActivity: new Date() }
+  };
 
   const updatedGroupChat = await Chat.findByIdAndUpdate(
     chatId,
-    {
-      $addToSet: { participants: { $each: newParticipants } },
-      $push: { unreadCounts: { $each: unreadUpdates } },
-    },
+    updates,
     { new: true, lean: true }
   );
 
-  await Promise.all([
-    ...groupChat.participants.map((pId) =>
-      emitSocketEvent(req, pId.toString(), ChatEventEnum.UPDATE_GROUP_EVENT, updatedGroupChat)
+  // Notify existing participants and new members
+  const notificationEvents = [
+    ...groupChat.participants.map(pId =>
+      emitSocketEvent(
+        req,
+        pId.toString(),
+        ChatEventEnum.UPDATE_GROUP_EVENT,
+        updatedGroupChat
+      )
     ),
-    ...newParticipants.map((pId) =>
-      emitSocketEvent(req, pId.toString(), ChatEventEnum.NEW_GROUP_CHAT_EVENT, updatedGroupChat)
-    ),
-  ]);
+    ...newParticipants.map(pId =>
+      emitSocketEvent(
+        req,
+        pId.toString(),
+        ChatEventEnum.NEW_GROUP_CHAT_EVENT,
+        updatedGroupChat
+      )
+    )
+  ];
+
+  await Promise.all(notificationEvents);
 
   return res
     .status(200)
@@ -504,42 +685,67 @@ const removeParticipantFromGroup = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Participant ID is required");
   }
 
-  const groupChat = await Chat.findOne({ _id: chatId, isGroupChat: true, admins: req.user._id })
-    .select("participants")
-    .lean();
+  // Validate participant ID format
+  let participantObjectId;
+  try {
+    participantObjectId = new mongoose.Types.ObjectId(participantId);
+  } catch (err) {
+    throw new ApiError(400, "Invalid participant ID format");
+  }
+
+  // Get group chat and validate admin status
+  const groupChat = await Chat.findOne({
+    _id: chatId,
+    isGroupChat: true,
+    admins: req.user._id
+  }).lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found or you're not an admin");
   }
 
-  if (!groupChat.participants.some((p) => p.equals(participantId))) {
+  // Check if participant is in the group
+  if (!groupChat.participants.some(p => p.equals(participantObjectId))) {
     throw new ApiError(400, "User is not in this group");
   }
 
-  if (participantId === req.user._id.toString()) {
+  if (participantObjectId.equals(req.user._id)) {
     throw new ApiError(400, "Use leave group endpoint instead");
   }
 
+  // Remove participant
   const updatedGroupChat = await Chat.findByIdAndUpdate(
     chatId,
     {
       $pull: {
-        participants: participantId,
-        admins: participantId,
-        unreadCounts: { user: participantId },
+        participants: participantObjectId,
+        admins: participantObjectId,
+        unreadCounts: { user: participantObjectId }
       },
+      $set: { lastActivity: new Date() }
     },
     { new: true, lean: true }
   );
 
+  // Notify participants and removed user
   await Promise.all([
-    ...updatedGroupChat.participants.map((pId) =>
-      emitSocketEvent(req, pId.toString(), ChatEventEnum.UPDATE_GROUP_EVENT, updatedGroupChat)
+    ...updatedGroupChat.participants.map(pId =>
+      emitSocketEvent(
+        req,
+        pId.toString(),
+        ChatEventEnum.UPDATE_GROUP_EVENT,
+        updatedGroupChat
+      )
     ),
-    emitSocketEvent(req, participantId, ChatEventEnum.REMOVED_FROM_GROUP_EVENT, {
-      chatId,
-      removedBy: req.user._id,
-    }),
+    emitSocketEvent(
+      req,
+      participantId,
+      ChatEventEnum.REMOVED_FROM_GROUP_EVENT,
+      {
+        chatId,
+        removedBy: req.user._id,
+      }
+    )
   ]);
 
   return res
@@ -554,21 +760,26 @@ const removeParticipantFromGroup = asyncHandler(async (req, res) => {
 const leaveGroupChat = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
-  const groupChat = await Chat.findOne({ _id: chatId, isGroupChat: true, participants: req.user._id })
-    .select("participants admins")
-    .lean();
+  // Get group chat and validate participation
+  const groupChat = await Chat.findOne({
+    _id: chatId,
+    isGroupChat: true,
+    participants: req.user._id
+  }).lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found or you're not a participant");
   }
 
-  const isLastAdmin = groupChat.admins.length === 1 && groupChat.admins[0].equals(req.user._id);
-  const otherParticipants = groupChat.participants.filter((p) => !p.equals(req.user._id));
+  const otherParticipants = groupChat.participants.filter(
+    p => !p.equals(req.user._id)
+  );
 
-  if (!otherParticipants.length) {
+  // Handle last participant leaving
+  if (otherParticipants.length === 0) {
     await Promise.all([
       Chat.findByIdAndDelete(chatId),
-      deleteCascadeChatMessages(chatId),
+      deleteCascadeChatMessages(chatId)
     ]);
 
     return res
@@ -576,22 +787,47 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, {}, "Group deleted as last participant left"));
   }
 
+  // Check if leaving user is the last admin
+  const isLastAdmin = groupChat.admins.length === 1 && 
+                     groupChat.admins[0].equals(req.user._id);
+
+  // Prepare update operations
   const update = {
     $pull: {
       participants: req.user._id,
       admins: req.user._id,
-      unreadCounts: { user: req.user._id },
+      unreadCounts: { user: req.user._id }
     },
-    ...(isLastAdmin && { $addToSet: { admins: otherParticipants[0] } }),
+    $set: { lastActivity: new Date() }
   };
 
-  const updatedGroupChat = await Chat.findByIdAndUpdate(chatId, update, { new: true, lean: true });
+  // If last admin, promote another participant
+  if (isLastAdmin && otherParticipants.length > 0) {
+    update.$addToSet = { admins: otherParticipants[0] };
+  }
 
+  const updatedGroupChat = await Chat.findByIdAndUpdate(
+    chatId,
+    update,
+    { new: true, lean: true }
+  );
+
+  // Notify participants and leaving user
   await Promise.all([
-    ...updatedGroupChat.participants.map((pId) =>
-      emitSocketEvent(req, pId.toString(), ChatEventEnum.UPDATE_GROUP_EVENT, updatedGroupChat)
+    ...updatedGroupChat.participants.map(pId =>
+      emitSocketEvent(
+        req,
+        pId.toString(),
+        ChatEventEnum.UPDATE_GROUP_EVENT,
+        updatedGroupChat
+      )
     ),
-    emitSocketEvent(req, req.user._id.toString(), ChatEventEnum.LEFT_GROUP_EVENT, { chatId }),
+    emitSocketEvent(
+      req,
+      req.user._id.toString(),
+      ChatEventEnum.LEFT_GROUP_EVENT,
+      { chatId }
+    )
   ]);
 
   return res
@@ -606,52 +842,68 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
 const deleteGroupChat = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
-  const groupChat = await Chat.findOne({ _id: chatId, isGroupChat: true, admins: req.user._id })
-    .select("participants")
-    .lean();
+  // Verify admin status and get participants
+  const groupChat = await Chat.findOneAndDelete({
+    _id: chatId,
+    isGroupChat: true,
+    admins: req.user._id
+  }).lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found or you're not an admin");
   }
 
-  await Promise.all([
-    Chat.findByIdAndDelete(chatId),
-    deleteCascadeChatMessages(chatId),
-  ]);
+  // Delete all messages and attachments
+  await deleteCascadeChatMessages(chatId);
 
-  await Promise.all(
-    groupChat.participants.map((pId) =>
-      emitSocketEvent(req, pId.toString(), ChatEventEnum.GROUP_DELETED_EVENT, {
+  // Notify all participants
+  const notificationEvents = groupChat.participants.map(pId =>
+    emitSocketEvent(
+      req,
+      pId.toString(),
+      ChatEventEnum.GROUP_DELETED_EVENT,
+      {
         chatId,
         deletedBy: req.user._id,
-      })
+      }
     )
   );
+
+  await Promise.all(notificationEvents);
 
   return res
     .status(200)
     .json(new ApiResponse(200, {}, "Group chat deleted successfully"));
 });
 
+/**
+ * @route POST /api/v1/chats/group/:chatId/join
+ * @description Request to join a group
+ */
 const requestToJoinGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
-  const groupChat = await Chat.findOne({ _id: chatId, isGroupChat: true })
-    .select("participants pendingJoinRequests admins")
-    .lean();
+  // Get group chat and validate
+  const groupChat = await Chat.findOne({ 
+    _id: chatId, 
+    isGroupChat: true 
+  }).select("participants pendingJoinRequests admins").lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found");
   }
 
-  if (groupChat.participants.some((p) => p.equals(req.user._id))) {
+  // Check if already a member
+  if (groupChat.participants.some(p => p.equals(req.user._id))) {
     throw new ApiError(400, "You are already a member of this group");
   }
 
-  if (groupChat.pendingJoinRequests.some((req) => req.user.equals(req.user._id))) {
+  // Check if already requested
+  if (groupChat.pendingJoinRequests.some(req => req.user.equals(req.user._id))) {
     throw new ApiError(400, "You have already requested to join this group");
   }
 
+  // Add join request
   const updatedChat = await Chat.findByIdAndUpdate(
     chatId,
     {
@@ -661,58 +913,73 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
           requestedAt: new Date(),
         },
       },
+      $set: { lastActivity: new Date() }
     },
     { new: true, lean: true }
   );
 
+  // Get user info for notification
+  const user = await User.findById(req.user._id)
+    .select("username")
+    .lean();
+
   // Notify group admins
-  await Promise.all(
-    groupChat.admins.map((adminId) =>
-      emitSocketEvent(req, adminId.toString(), ChatEventEnum.JOIN_REQUEST_EVENT, {
+  const adminNotifications = groupChat.admins.map(adminId =>
+    emitSocketEvent(
+      req,
+      adminId.toString(),
+      ChatEventEnum.JOIN_REQUEST_EVENT,
+      {
         chatId,
         userId: req.user._id,
-        username: req.user.username,
-      })
+        username: user.username,
+      }
     )
   );
+
+  await Promise.all(adminNotifications);
 
   return res
     .status(200)
     .json(new ApiResponse(200, updatedChat, "Join request submitted successfully"));
 });
 
-// New function: Approve or reject a join request
+/**
+ * @route PUT /api/v1/chats/group/:chatId/approve/:userId
+ * @description Approve or reject a join request
+ */
 const approveJoinRequest = asyncHandler(async (req, res) => {
   const { chatId, userId } = req.params;
-  const { approve } = req.body; // approve: true (approve) or false (reject)
+  const { approve } = req.body;
 
   if (typeof approve !== "boolean") {
     throw new ApiError(400, "Approve must be a boolean value");
   }
 
+  // Get group chat and validate admin status
   const groupChat = await Chat.findOne({
     _id: chatId,
     isGroupChat: true,
     admins: req.user._id,
-  })
-    .select("participants pendingJoinRequests admins")
-    .lean();
+  }).select("participants pendingJoinRequests admins").lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found or you're not an admin");
   }
 
-  const joinRequest = groupChat.pendingJoinRequests.find((req) =>
+  // Find the join request
+  const joinRequest = groupChat.pendingJoinRequests.find(req =>
     req.user.equals(userId)
   );
+  
   if (!joinRequest) {
     throw new ApiError(404, "Join request not found");
   }
 
   if (approve) {
     // Validate user exists
-    const user = await User.findById(userId).select("_id").lean();
-    if (!user) {
+    const userExists = await User.exists({ _id: userId });
+    if (!userExists) {
       throw new ApiError(404, "User not found");
     }
 
@@ -722,29 +989,45 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       sender: { $ne: userId },
     });
 
-    // Add user to participants and update unread counts
+    // Add user to participants
     const updatedChat = await Chat.findByIdAndUpdate(
       chatId,
       {
         $addToSet: { participants: userId },
         $pull: { pendingJoinRequests: { user: userId } },
-        $set: { [`unreadCounts.${userId}`]: unreadCount },
+        $push: { unreadCounts: { user: userId, count: unreadCount } },
+        $set: { lastActivity: new Date() }
       },
       { new: true, lean: true }
     );
 
-    // Notify existing participants and the new participant
+    // Notify all parties
     await Promise.all([
-      ...groupChat.participants.map((pId) =>
-        emitSocketEvent(req, pId.toString(), ChatEventEnum.UPDATE_GROUP_EVENT, updatedChat)
+      ...groupChat.participants.map(pId =>
+        emitSocketEvent(
+          req,
+          pId.toString(),
+          ChatEventEnum.UPDATE_GROUP_EVENT,
+          updatedChat
+        )
       ),
-      emitSocketEvent(req, userId.toString(), ChatEventEnum.NEW_GROUP_CHAT_EVENT, updatedChat),
-      ...groupChat.admins.map((adminId) =>
-        emitSocketEvent(req, adminId.toString(), ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT, {
-          chatId,
-          userId,
-          approvedBy: req.user._id,
-        })
+      emitSocketEvent(
+        req,
+        userId.toString(),
+        ChatEventEnum.NEW_GROUP_CHAT_EVENT,
+        updatedChat
+      ),
+      ...groupChat.admins.map(adminId =>
+        emitSocketEvent(
+          req,
+          adminId.toString(),
+          ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
+          {
+            chatId,
+            userId,
+            approvedBy: req.user._id,
+          }
+        )
       ),
     ]);
 
@@ -757,15 +1040,21 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       chatId,
       {
         $pull: { pendingJoinRequests: { user: userId } },
+        $set: { lastActivity: new Date() }
       },
       { new: true, lean: true }
     );
 
-    // Notify the user who was rejected
-    await emitSocketEvent(req, userId.toString(), ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT, {
-      chatId,
-      rejectedBy: req.user._id,
-    });
+    // Notify the rejected user
+    await emitSocketEvent(
+      req,
+      userId.toString(),
+      ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
+      {
+        chatId,
+        rejectedBy: req.user._id,
+      }
+    );
 
     return res
       .status(200)
@@ -773,9 +1062,14 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * @route GET /api/v1/chats/group/:chatId/requests
+ * @description Get pending join requests
+ */
 const getPendingJoinRequests = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
+  // Get group chat and validate admin status
   const groupChat = await Chat.findOne({
     _id: chatId,
     isGroupChat: true,
@@ -784,7 +1078,7 @@ const getPendingJoinRequests = asyncHandler(async (req, res) => {
     .select("pendingJoinRequests")
     .populate({
       path: "pendingJoinRequests.user",
-      select: "username email avatarUrl",
+      select: "username email avatar",
     })
     .lean();
 
@@ -792,11 +1086,12 @@ const getPendingJoinRequests = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Group chat not found or you're not an admin");
   }
 
+  // Format response
   const pendingRequests = groupChat.pendingJoinRequests.map((request) => ({
     userId: request.user._id,
     username: request.user.username,
     email: request.user.email,
-    avatarUrl: request.user.avatarUrl,
+    avatar: request.user.avatar,
     requestedAt: request.requestedAt,
   }));
 
@@ -807,8 +1102,6 @@ const getPendingJoinRequests = asyncHandler(async (req, res) => {
 
 export {
   getAllGroupChats,
-  getGroupChatsForUser,
-  markMessageAsRead,
   createGroupChat,
   getGroupChatDetails,
   updateGroupChatDetails,
@@ -818,6 +1111,7 @@ export {
   deleteGroupChat,
   approveJoinRequest,
   requestToJoinGroup,
-  getPendingJoinRequests
+  getPendingJoinRequests,
+  getAllGroupMessages,
+  sendGroupMessage
 };
-

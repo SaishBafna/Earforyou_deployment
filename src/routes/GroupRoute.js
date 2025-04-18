@@ -1,8 +1,8 @@
 import express from "express";
 import {
     getAllGroupChats,
-    getGroupChatsForUser,
-    markMessageAsRead,
+    // getGroupChatsForUser,
+    // markMessageAsRead,
     createGroupChat,
     getGroupChatDetails,
     updateGroupChatDetails,
@@ -13,48 +13,69 @@ import {
     requestToJoinGroup,
     approveJoinRequest,
     getPendingJoinRequests,
-
-} from "../controllers/chat-app/groupchat/Groupcontrollers";
-import { protect } from "../middlewares/auth/authMiddleware.js"; // Adjust path to your auth middleware file
+    getAllGroupMessages,
+    sendGroupMessage
+} from "../controllers/chat-app/groupchat/Groupcontrollers.js";
+import { protect } from "../middlewares/auth/authMiddleware.js";
+import { upload } from "../middlewares/multer.middlewares.js";
+import { sendMessageValidator } from "../validators/chat-app/message.validators.js";
+import { mongoIdPathVariableValidator } from "../validators/common/mongodb.validators.js";
+import { validate } from "../validators/validate.js";
 
 const router = express.Router();
 
+// Apply protect middleware to all routes
+router.use(protect);
 
-// Routes
+// Group Chat Routes
+router.route("/group")
+    .get(getAllGroupChats)                // Get all group chats for current user
+    .post(createGroupChat);               // Create new group chat
 
-// Get all group chats for the current user
-router.get("/group", protect, getAllGroupChats);
+// router.route("/group/user/:userId")
+//     .get(getGroupChatsForUser);          // Get all group chats for specific user (admin only)
 
-// Get all group chats for a specific user (admin only)
-router.get("/group/:userId", protect, getGroupChatsForUser);
+router.route("/group/:chatId")
+    .get(mongoIdPathVariableValidator("chatId"), validate, getGroupChatDetails)     // Get group details
+    .put(mongoIdPathVariableValidator("chatId"), validate, updateGroupChatDetails)  // Update group details
+    .delete(mongoIdPathVariableValidator("chatId"), validate, deleteGroupChat);     // Delete group chat
 
-// Mark a message as read
-router.post("/messages/:messageId/read", protect, markMessageAsRead);
+router.route("/group/:chatId/participants")
+    .put(mongoIdPathVariableValidator("chatId"), validate, addParticipantsToGroup); // Add participants
 
-// Create a new group chat
-router.post("/group", protect, createGroupChat);
+router.route("/group/:chatId/participants/remove")
+    .put(mongoIdPathVariableValidator("chatId"), validate, removeParticipantFromGroup); // Remove participant
 
-// Get group chat details with paginated messages
-router.get("/group/:chatId", protect, getGroupChatDetails);
+router.route("/group/:chatId/leave")
+    .put(mongoIdPathVariableValidator("chatId"), validate, leaveGroupChat); // Leave group
 
-// Update group chat details (name, avatar)
-router.put("/group/:chatId", protect, updateGroupChatDetails);
+// Group Join Requests
+router.route("/group/:chatId/join")
+    .post(mongoIdPathVariableValidator("chatId"), validate, requestToJoinGroup); // Request to join
 
-// Add participants to a group chat
-router.put("/group/:chatId/add", protect, addParticipantsToGroup);
+router.route("/group/:chatId/join/:userId")
+    .put(
+        mongoIdPathVariableValidator("chatId"),
+        mongoIdPathVariableValidator("userId"),
+        validate,
+        approveJoinRequest
+    ); // Approve join request
 
-// Remove a participant from a group chat
-router.put("/group/:chatId/remove", protect, removeParticipantFromGroup);
+router.route("/group/:chatId/requests")
+    .get(mongoIdPathVariableValidator("chatId"), validate, getPendingJoinRequests); // Get pending requests
 
-// Leave a group chat
-router.put("/group/:chatId/leave", protect, leaveGroupChat);
+// // Message Routes
+// router.route("/messages/:messageId/read")
+//     .post(markMessageAsRead); // Mark message as read
 
-// Delete a group chat (admin only)
-router.delete("/group/:chatId", protect, deleteGroupChat);
-
-router.post("/group/:chatId/join", protect, requestToJoinGroup);
-router.put("/group/:chatId/join/:userId", protect, approveJoinRequest);
-
-router.get("/getPendingJoinRequests/:chatId", protect, getPendingJoinRequests);
+router.route("/:chatId/messages")
+    .get(mongoIdPathVariableValidator("chatId"), validate, getAllGroupMessages) // Get all messages
+    .post(
+        upload.fields([{ name: "attachments", maxCount: 5 }]),
+        mongoIdPathVariableValidator("chatId"),
+        sendMessageValidator(),
+        validate,
+        sendGroupMessage
+    ); // Send new message
 
 export default router;

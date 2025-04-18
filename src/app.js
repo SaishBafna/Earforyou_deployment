@@ -12,6 +12,7 @@ import dotenv from "dotenv";
 import logger from "./logger/winston.logger.js";
 import { setupWebRTC } from "./Webrtc/setupwebrtc.js";
 import { initializeSocketIO } from "./socket/index.js";
+import { initSocket } from "./utils/PostSocket.js";
 const app = express();
 
 dotenv.config({
@@ -33,6 +34,9 @@ app.set("io", io);
 // app.set("trust proxy", 1);
 initializeSocketIO(io);
 setupWebRTC(io);
+// Initialize socket.io with the server instance
+initSocket(httpServer);
+
 
 
 // global middlewares
@@ -111,6 +115,9 @@ import { protect } from "./middlewares/auth/authMiddleware.js";
 import ZohoRoute from './routes/ZohoRoute/ZohoRoute.js'
 import PlatformRoute from './routes/PlatfromCharges/PlatfromRoute.js'
 import { scheduleNextRun } from "./controllers/CronJob/Expiry.js";
+import  Mood from "./routes/MoodRoute.js";
+import ThreadRoute from "./routes/ThreadRoute/ThreadRoute.js";
+import GroupRoute from "./routes/GroupRoute.js";
 
 app.get("/", (req, res) => {
   try {
@@ -135,10 +142,16 @@ scheduleNextRun();
 app.use('/api/v1/msg91', msg91Routes);
 
 app.use('/api/v1', CallRoute);
+
+app.use('/api/v1', GroupRoute);
 // Added middleware
 
 
 app.use("/api/v1", authRoutes);
+
+app.use("/api/v1/thread", ThreadRoute);
+
+app.use("/api/v1", Mood);
 
 
 app.use("/api/v1", PlatformRoute);

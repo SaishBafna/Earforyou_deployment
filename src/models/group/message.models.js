@@ -83,4 +83,4 @@ chatMessageSchema.index({ chat: 1, deletedFor: 1 });
 chatMessageSchema.index({ chat: 1, replyTo: 1 });
 chatMessageSchema.index({ chat: 1, reactions: 1 });
 
-export const ChatMessage = mongoose.model("ChatMessage", chatMessageSchema);
+export const ChatMessage = mongoose.model("GroupChatMessage", chatMessageSchema);

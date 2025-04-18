@@ -5,7 +5,7 @@ import User from '../models/Users.js';
 import Wallet from '../models/Wallet/Wallet.js'
 import admin from 'firebase-admin';
 import PlatformCharges from '../models/Wallet/PlatfromCharges/Platfrom.js';
-import Streak from '../models/Streak.js';
+import { createStreak } from '../controllers/Streak.js';
 // import { ChatMessage } from '../models/message.models.js';
 
 export const setupWebRTC = (io) => {
@@ -46,6 +46,9 @@ export const setupWebRTC = (io) => {
 
         // Log socket connection
         logger.info(`User ${userId} joined with socket ID ${socket.id}`);
+
+        // Add user to the online users map
+          createStreak(userId);
 
         // Update user's status in the database
         const updatedUser = await User.findByIdAndUpdate(
