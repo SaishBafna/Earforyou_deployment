@@ -1,8 +1,11 @@
 import express from "express";
+import { protect } from "../middlewares/auth/authMiddleware.js";
+import { upload } from "../middlewares/multer.middlewares.js";
+import { sendMessageValidator } from "../validators/chat-app/message.validators.js";
+import { mongoIdPathVariableValidator } from "../validators/common/mongodb.validators.js";
+import { validate } from "../validators/validate.js";
 import {
     getAllGroupChats,
-    // getGroupChatsForUser,
-    // markMessageAsRead,
     createGroupChat,
     getGroupChatDetails,
     updateGroupChatDetails,
@@ -16,11 +19,8 @@ import {
     getAllGroupMessages,
     sendGroupMessage
 } from "../controllers/chat-app/groupchat/Groupcontrollers.js";
-import { protect } from "../middlewares/auth/authMiddleware.js";
-import { upload } from "../middlewares/multer.middlewares.js";
-import { sendMessageValidator } from "../validators/chat-app/message.validators.js";
-import { mongoIdPathVariableValidator } from "../validators/common/mongodb.validators.js";
-import { validate } from "../validators/validate.js";
+
+
 
 const router = express.Router();
 
