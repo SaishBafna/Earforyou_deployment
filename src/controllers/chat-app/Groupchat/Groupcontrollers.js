@@ -1,8 +1,8 @@
 import mongoose from "mongoose";
 import { ChatEventEnum } from "../../../constants.js";
 import User from "../../../models/Users.js";
-import { Chat } from "../../../models/group/chat.models.js";
-import { ChatMessage } from "../../../models/group/message.models.js";
+import { GroupChat } from "../../../models/group/chat.models.js";
+import { GroupChatMessage } from "../../../models/group/message.models.js";
 import { emitSocketEvent } from "../../../socket/index.js";
 import { ApiError } from "../../../utils/ApiError.js";
 import { ApiResponse } from "../../../utils/ApiResponse.js";
@@ -22,7 +22,7 @@ const chatCommonAggregation = (userId) => [
   },
   {
     $lookup: {
-      from: "chatmessages",
+      from: "groupchatmessages",
       localField: "lastMessage",
       foreignField: "_id",
       as: "lastMessage",
@@ -93,7 +93,7 @@ const chatCommonAggregation = (userId) => [
 
 // Helper function to delete all messages and attachments for a chat
 const deleteCascadeChatMessages = async (chatId) => {
-  const messages = await ChatMessage.find({ chat: chatId })
+  const messages = await GroupChatMessage.find({ chat: chatId })
     .select("attachments")
     .lean();
 
@@ -105,7 +105,7 @@ const deleteCascadeChatMessages = async (chatId) => {
 
   await Promise.all([
     ...fileDeletions,
-    ChatMessage.deleteMany({ chat: chatId }),
+    GroupChatMessage.deleteMany({ chat: chatId }),
   ]);
 };
 
@@ -114,7 +114,7 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
   const skip = (page - 1) * limit;
   
   const [messages, totalCount] = await Promise.all([
-    ChatMessage.aggregate([
+    GroupChatMessage.aggregate([
       {
         $match: {
           chat: new mongoose.Types.ObjectId(chatId),
@@ -149,7 +149,7 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
         }
       }
     ]),
-    ChatMessage.countDocuments({
+    GroupChatMessage.countDocuments({
       chat: chatId,
       deletedFor: { $ne: userId }
     })
@@ -180,7 +180,7 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
   }
 
   // Verify user is a participant
-  const isParticipant = await Chat.exists({
+  const isParticipant = await GroupChat.exists({
     _id: chatId,
     isGroupChat: true,
     participants: req.user._id
@@ -200,7 +200,7 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
 
   // Mark messages as read in bulk
   await Promise.all([
-    ChatMessage.updateMany(
+    GroupChatMessage.updateMany(
       {
         chat: chatId,
         seenBy: { $ne: req.user._id },
@@ -208,7 +208,7 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
       },
       { $addToSet: { seenBy: req.user._id }, $set: { isRead: true } }
     ),
-    Chat.updateOne(
+    GroupChat.updateOne(
       { _id: chatId, "unreadCounts.user": req.user._id },
       { $set: { "unreadCounts.$.count": 0 } }
     )
@@ -236,7 +236,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   }
 
   // Get group chat in single query
-  const groupChat = await Chat.findOneAndUpdate(
+  const groupChat = await GroupChat.findOneAndUpdate(
     {
       _id: chatId,
       isGroupChat: true,
@@ -253,7 +253,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   // Validate replyTo message if provided
   let replyToMessage = null;
   if (replyTo) {
-    replyToMessage = await ChatMessage.findOne({
+    replyToMessage = await GroupChatMessage.findOne({
       _id: replyTo,
       chat: chatId
     }).lean();
@@ -272,7 +272,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   }));
 
   // Create the message
-  const message = await ChatMessage.create({
+  const message = await GroupChatMessage.create({
     sender: req.user._id,
     content: content || "",
     chat: chatId,
@@ -293,10 +293,10 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     }, {})}
   };
 
-  await Chat.findByIdAndUpdate(chatId, updateOps);
+  await GroupChat.findByIdAndUpdate(chatId, updateOps);
 
   // Get populated message in single aggregation
-  const [populatedMessage] = await ChatMessage.aggregate([
+  const [populatedMessage] = await GroupChatMessage.aggregate([
     { $match: { _id: message._id } },
     {
       $lookup: {
@@ -310,7 +310,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     { $unwind: "$sender" },
     {
       $lookup: {
-        from: "chatmessages",
+        from: "groupchatmessages",
         localField: "replyTo",
         foreignField: "_id",
         as: "replyTo",
@@ -378,7 +378,7 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
     ...(search && { name: { $regex: search.trim(), $options: "i" } }),
   };
 
-  const groupChats = await Chat.aggregate([
+  const groupChats = await GroupChat.aggregate([
     { $match: matchStage },
     ...chatCommonAggregation(req.user._id),
     {
@@ -417,7 +417,7 @@ const getGroupChatDetails = asyncHandler(async (req, res) => {
   }
 
   // Get group chat with common aggregation
-  const [groupChat] = await Chat.aggregate([
+  const [groupChat] = await GroupChat.aggregate([
     { 
       $match: { 
         _id: new mongoose.Types.ObjectId(chatId),
@@ -442,7 +442,7 @@ const getGroupChatDetails = asyncHandler(async (req, res) => {
 
   // Mark messages as read in bulk
   await Promise.all([
-    ChatMessage.updateMany(
+    GroupChatMessage.updateMany(
       {
         chat: chatId,
         seenBy: { $ne: req.user._id },
@@ -450,7 +450,7 @@ const getGroupChatDetails = asyncHandler(async (req, res) => {
       },
       { $addToSet: { seenBy: req.user._id }, $set: { isRead: true } }
     ),
-    Chat.updateOne(
+    GroupChat.updateOne(
       { _id: chatId, "unreadCounts.user": req.user._id },
       { $set: { "unreadCounts.$.count": 0 } }
     )
@@ -488,7 +488,7 @@ const createGroupChat = asyncHandler(async (req, res) => {
   }
 
   // Create group chat with initial unread counts
-  const groupChat = await Chat.create({
+  const groupChat = await GroupChat.create({
     name: name.trim(),
     isGroupChat: true,
     participants: participantIds,
@@ -501,7 +501,7 @@ const createGroupChat = asyncHandler(async (req, res) => {
   });
 
   // Get populated group chat
-  const [createdGroupChat] = await Chat.aggregate([
+  const [createdGroupChat] = await GroupChat.aggregate([
     { $match: { _id: groupChat._id } },
     ...chatCommonAggregation(req.user._id),
   ]);
@@ -535,18 +535,18 @@ const createGroupChat = asyncHandler(async (req, res) => {
  */
 const updateGroupChatDetails = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
-  const { name, avatar } = req.body;
+  const { name, description } = req.body;
 
-  if (!name?.trim() && !avatar) {
+  if (!name?.trim() && !description?.trim()) {
     throw new ApiError(400, "At least one field to update is required");
   }
 
   const updateFields = {};
   if (name?.trim()) updateFields.name = name.trim();
-  if (avatar) updateFields.avatar = avatar;
+  if (description?.trim()) updateFields.description = description.trim();
   updateFields.lastActivity = new Date();
 
-  const updatedGroupChat = await Chat.findOneAndUpdate(
+  const updatedGroupChat = await GroupChat.findOneAndUpdate(
     { _id: chatId, isGroupChat: true, admins: req.user._id },
     { $set: updateFields },
     { new: true, lean: true }
@@ -586,7 +586,7 @@ const addParticipantsToGroup = asyncHandler(async (req, res) => {
   }
 
   // Get group chat and validate admin status
-  const groupChat = await Chat.findOne({
+  const groupChat = await GroupChat.findOne({
     _id: chatId,
     isGroupChat: true,
     admins: req.user._id
@@ -612,7 +612,7 @@ const addParticipantsToGroup = asyncHandler(async (req, res) => {
   }
 
   // Calculate unread counts for new participants
-  const unreadCounts = await ChatMessage.aggregate([
+  const unreadCounts = await GroupChatMessage.aggregate([
     {
       $match: {
         chat: new mongoose.Types.ObjectId(chatId),
@@ -640,7 +640,7 @@ const addParticipantsToGroup = asyncHandler(async (req, res) => {
     $set: { lastActivity: new Date() }
   };
 
-  const updatedGroupChat = await Chat.findByIdAndUpdate(
+  const updatedGroupChat = await GroupChat.findByIdAndUpdate(
     chatId,
     updates,
     { new: true, lean: true }
@@ -694,7 +694,7 @@ const removeParticipantFromGroup = asyncHandler(async (req, res) => {
   }
 
   // Get group chat and validate admin status
-  const groupChat = await Chat.findOne({
+  const groupChat = await GroupChat.findOne({
     _id: chatId,
     isGroupChat: true,
     admins: req.user._id
@@ -714,7 +714,7 @@ const removeParticipantFromGroup = asyncHandler(async (req, res) => {
   }
 
   // Remove participant
-  const updatedGroupChat = await Chat.findByIdAndUpdate(
+  const updatedGroupChat = await GroupChat.findByIdAndUpdate(
     chatId,
     {
       $pull: {
@@ -761,7 +761,7 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
   // Get group chat and validate participation
-  const groupChat = await Chat.findOne({
+  const groupChat = await GroupChat.findOne({
     _id: chatId,
     isGroupChat: true,
     participants: req.user._id
@@ -778,7 +778,7 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
   // Handle last participant leaving
   if (otherParticipants.length === 0) {
     await Promise.all([
-      Chat.findByIdAndDelete(chatId),
+      GroupChat.findByIdAndDelete(chatId),
       deleteCascadeChatMessages(chatId)
     ]);
 
@@ -806,7 +806,7 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
     update.$addToSet = { admins: otherParticipants[0] };
   }
 
-  const updatedGroupChat = await Chat.findByIdAndUpdate(
+  const updatedGroupChat = await GroupChat.findByIdAndUpdate(
     chatId,
     update,
     { new: true, lean: true }
@@ -843,7 +843,7 @@ const deleteGroupChat = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
   // Verify admin status and get participants
-  const groupChat = await Chat.findOneAndDelete({
+  const groupChat = await GroupChat.findOneAndDelete({
     _id: chatId,
     isGroupChat: true,
     admins: req.user._id
@@ -882,15 +882,21 @@ const deleteGroupChat = asyncHandler(async (req, res) => {
  */
 const requestToJoinGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
+  const { message } = req.body;
 
   // Get group chat and validate
-  const groupChat = await Chat.findOne({ 
+  const groupChat = await GroupChat.findOne({ 
     _id: chatId, 
     isGroupChat: true 
-  }).select("participants pendingJoinRequests admins").lean();
+  }).select("participants pendingJoinRequests admins settings").lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found");
+  }
+
+  // Check if group allows joining by request
+  if (groupChat.settings.joinByLink) {
+    throw new ApiError(400, "This group allows joining by link only");
   }
 
   // Check if already a member
@@ -904,13 +910,14 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   }
 
   // Add join request
-  const updatedChat = await Chat.findByIdAndUpdate(
+  const updatedChat = await GroupChat.findByIdAndUpdate(
     chatId,
     {
       $push: {
         pendingJoinRequests: {
           user: req.user._id,
           requestedAt: new Date(),
+          message: message?.trim() || ""
         },
       },
       $set: { lastActivity: new Date() }
@@ -933,6 +940,7 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
         chatId,
         userId: req.user._id,
         username: user.username,
+        message: message?.trim() || ""
       }
     )
   );
@@ -957,7 +965,7 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
   }
 
   // Get group chat and validate admin status
-  const groupChat = await Chat.findOne({
+  const groupChat = await GroupChat.findOne({
     _id: chatId,
     isGroupChat: true,
     admins: req.user._id,
@@ -984,13 +992,13 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
     }
 
     // Calculate unread count for the new participant
-    const unreadCount = await ChatMessage.countDocuments({
+    const unreadCount = await GroupChatMessage.countDocuments({
       chat: chatId,
       sender: { $ne: userId },
     });
 
     // Add user to participants
-    const updatedChat = await Chat.findByIdAndUpdate(
+    const updatedChat = await GroupChat.findByIdAndUpdate(
       chatId,
       {
         $addToSet: { participants: userId },
@@ -1036,7 +1044,7 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, updatedChat, "Join request approved successfully"));
   } else {
     // Reject the join request
-    const updatedChat = await Chat.findByIdAndUpdate(
+    const updatedChat = await GroupChat.findByIdAndUpdate(
       chatId,
       {
         $pull: { pendingJoinRequests: { user: userId } },
@@ -1070,7 +1078,7 @@ const getPendingJoinRequests = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
   // Get group chat and validate admin status
-  const groupChat = await Chat.findOne({
+  const groupChat = await GroupChat.findOne({
     _id: chatId,
     isGroupChat: true,
     admins: req.user._id,
@@ -1093,12 +1101,16 @@ const getPendingJoinRequests = asyncHandler(async (req, res) => {
     email: request.user.email,
     avatar: request.user.avatar,
     requestedAt: request.requestedAt,
+    message: request.message || ""
   }));
 
   return res
     .status(200)
     .json(new ApiResponse(200, pendingRequests, "Pending join requests fetched successfully"));
 });
+
+
+
 
 export {
   getAllGroupChats,
@@ -1113,5 +1125,6 @@ export {
   requestToJoinGroup,
   getPendingJoinRequests,
   getAllGroupMessages,
-  sendGroupMessage
+  sendGroupMessage,
+  
 };

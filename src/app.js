@@ -117,7 +117,7 @@ import PlatformRoute from './routes/PlatfromCharges/PlatfromRoute.js'
 import { scheduleNextRun } from "./controllers/CronJob/Expiry.js";
 import  Mood from "./routes/MoodRoute.js";
 import ThreadRoute from "./routes/ThreadRoute/ThreadRoute.js";
-import GroupRoute from "./routes/GroupRoute.js";
+import GroupRoute from "./routes/GroupRoute.js"
 
 app.get("/", (req, res) => {
   try {

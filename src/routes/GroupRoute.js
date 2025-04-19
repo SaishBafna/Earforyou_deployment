@@ -18,64 +18,57 @@ import {
     getPendingJoinRequests,
     getAllGroupMessages,
     sendGroupMessage
-} from "../controllers/chat-app/groupchat/Groupcontrollers.js";
-
-
+} from "../controllers/chat-app/GroupChat/GroupControllers.js";
 
 const router = express.Router();
 
 // Apply protect middleware to all routes
-router.use(protect);
 
 // Group Chat Routes
 router.route("/group")
-    .get(getAllGroupChats)                // Get all group chats for current user
-    .post(createGroupChat);               // Create new group chat
-
-// router.route("/group/user/:userId")
-//     .get(getGroupChatsForUser);          // Get all group chats for specific user (admin only)
+    .get(protect,getAllGroupChats)                // Get all group chats for current user
+    .post(protect,createGroupChat);               // Create new group chat
 
 router.route("/group/:chatId")
-    .get(mongoIdPathVariableValidator("chatId"), validate, getGroupChatDetails)     // Get group details
-    .put(mongoIdPathVariableValidator("chatId"), validate, updateGroupChatDetails)  // Update group details
-    .delete(mongoIdPathVariableValidator("chatId"), validate, deleteGroupChat);     // Delete group chat
+    .get(mongoIdPathVariableValidator("chatId"), validate, protect,getGroupChatDetails)     // Get group details
+    .put(mongoIdPathVariableValidator("chatId"), validate, protect,updateGroupChatDetails)  // Update group details
+    .delete(mongoIdPathVariableValidator("chatId"), validate, protect,deleteGroupChat);     // Delete group chat
 
 router.route("/group/:chatId/participants")
-    .put(mongoIdPathVariableValidator("chatId"), validate, addParticipantsToGroup); // Add participants
+    .put(mongoIdPathVariableValidator("chatId"), validate, protect,addParticipantsToGroup); // Add participants
 
 router.route("/group/:chatId/participants/remove")
-    .put(mongoIdPathVariableValidator("chatId"), validate, removeParticipantFromGroup); // Remove participant
+    .put(mongoIdPathVariableValidator("chatId"), validate, protect,removeParticipantFromGroup); // Remove participant
 
 router.route("/group/:chatId/leave")
-    .put(mongoIdPathVariableValidator("chatId"), validate, leaveGroupChat); // Leave group
+    .put(mongoIdPathVariableValidator("chatId"), validate, protect,leaveGroupChat); // Leave group
+
+// Group Messages
+router.route("/group/:chatId/messages")
+    .get(mongoIdPathVariableValidator("chatId"), validate, protect,getAllGroupMessages) // Get all messages
+    .post(
+        upload.fields([{ name: "attachments", maxCount: 10 }]), // Updated to allow 10 attachments
+        mongoIdPathVariableValidator("chatId"),
+        sendMessageValidator(),
+        validate,
+        protect,
+        sendGroupMessage
+    ); // Send new message
 
 // Group Join Requests
 router.route("/group/:chatId/join")
-    .post(mongoIdPathVariableValidator("chatId"), validate, requestToJoinGroup); // Request to join
+    .post(mongoIdPathVariableValidator("chatId"), validate,protect,requestToJoinGroup); // Request to join
 
 router.route("/group/:chatId/join/:userId")
     .put(
         mongoIdPathVariableValidator("chatId"),
         mongoIdPathVariableValidator("userId"),
         validate,
+        protect,
         approveJoinRequest
     ); // Approve join request
 
 router.route("/group/:chatId/requests")
-    .get(mongoIdPathVariableValidator("chatId"), validate, getPendingJoinRequests); // Get pending requests
-
-// // Message Routes
-// router.route("/messages/:messageId/read")
-//     .post(markMessageAsRead); // Mark message as read
-
-router.route("/:chatId/messages")
-    .get(mongoIdPathVariableValidator("chatId"), validate, getAllGroupMessages) // Get all messages
-    .post(
-        upload.fields([{ name: "attachments", maxCount: 5 }]),
-        mongoIdPathVariableValidator("chatId"),
-        sendMessageValidator(),
-        validate,
-        sendGroupMessage
-    ); // Send new message
+    .get(mongoIdPathVariableValidator("chatId"), validate, protect,getPendingJoinRequests); // Get pending requests
 
 export default router;
