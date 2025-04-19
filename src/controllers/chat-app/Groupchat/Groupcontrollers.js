@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import crypto from "crypto";
 import { ChatEventEnum } from "../../../constants.js";
 import User from "../../../models/Users.js";
 import { GroupChat } from "../../../models/group/chat.models.js";
@@ -112,7 +113,7 @@ const deleteCascadeChatMessages = async (chatId) => {
 // Helper function to get paginated messages
 const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
   const skip = (page - 1) * limit;
-  
+
   const [messages, totalCount] = await Promise.all([
     GroupChatMessage.aggregate([
       {
@@ -171,7 +172,7 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
 const getAllGroupMessages = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   let { page = 1, limit = 20 } = req.query;
-  
+
   page = parseInt(page);
   limit = parseInt(limit);
 
@@ -287,10 +288,12 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 
   const updateOps = {
     $set: { lastMessage: message._id },
-    $inc: { ...participantsToUpdate.reduce((acc, p) => {
-      acc[`unreadCounts.${p}.count`] = 1;
-      return acc;
-    }, {})}
+    $inc: {
+      ...participantsToUpdate.reduce((acc, p) => {
+        acc[`unreadCounts.${p}.count`] = 1;
+        return acc;
+      }, {})
+    }
   };
 
   await GroupChat.findByIdAndUpdate(chatId, updateOps);
@@ -342,14 +345,14 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     .lean();
 
   const senderName = sender.name || sender.username;
-  const notificationMessage = content 
+  const notificationMessage = content
     ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
     : `${senderName} sent an attachment`;
 
   // Emit socket events to participants
   const socketEvents = groupChat.participants
     .filter(p => !p.equals(req.user._id))
-    .map(participantId => 
+    .map(participantId =>
       emitSocketEvent(
         req,
         participantId.toString(),
@@ -408,7 +411,7 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
 const getGroupChatDetails = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   let { page = 1, limit = 20 } = req.query;
-  
+
   page = parseInt(page);
   limit = parseInt(limit);
 
@@ -418,12 +421,12 @@ const getGroupChatDetails = asyncHandler(async (req, res) => {
 
   // Get group chat with common aggregation
   const [groupChat] = await GroupChat.aggregate([
-    { 
-      $match: { 
+    {
+      $match: {
         _id: new mongoose.Types.ObjectId(chatId),
         isGroupChat: true,
         participants: req.user._id
-      } 
+      }
     },
     ...chatCommonAggregation(req.user._id),
   ]);
@@ -478,7 +481,7 @@ const createGroupChat = asyncHandler(async (req, res) => {
 
   // Validate participants
   const participantIds = [...new Set([
-    req.user._id, 
+    req.user._id,
     ...participants.map(id => new mongoose.Types.ObjectId(id))
   ])];
 
@@ -788,8 +791,8 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
   }
 
   // Check if leaving user is the last admin
-  const isLastAdmin = groupChat.admins.length === 1 && 
-                     groupChat.admins[0].equals(req.user._id);
+  const isLastAdmin = groupChat.admins.length === 1 &&
+    groupChat.admins[0].equals(req.user._id);
 
   // Prepare update operations
   const update = {
@@ -885,9 +888,9 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   const { message } = req.body;
 
   // Get group chat and validate
-  const groupChat = await GroupChat.findOne({ 
-    _id: chatId, 
-    isGroupChat: true 
+  const groupChat = await GroupChat.findOne({
+    _id: chatId,
+    isGroupChat: true
   }).select("participants pendingJoinRequests admins settings").lean();
 
   if (!groupChat) {
@@ -979,7 +982,7 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
   const joinRequest = groupChat.pendingJoinRequests.find(req =>
     req.user.equals(userId)
   );
-  
+
   if (!joinRequest) {
     throw new ApiError(404, "Join request not found");
   }
@@ -1110,7 +1113,177 @@ const getPendingJoinRequests = asyncHandler(async (req, res) => {
 });
 
 
+/**
+ * @route POST /api/v1/chats/group/:chatId/generate-link
+ * @description Generate or regenerate an invite link for a group
+ */
+const generateGroupInviteLink = asyncHandler(async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { expiresIn } = req.body;
 
+    // Debug: Check if user is authenticated
+    console.log("User:", req.user);
+    if (!req.user?._id) {
+      throw new ApiError(401, "Unauthorized: User not logged in");
+    }
+
+    // Validate expiresIn
+    if (expiresIn && isNaN(expiresIn)) {
+      throw new ApiError(400, "expiresIn must be a number (hours)");
+    }
+
+    // Get group chat and validate admin status
+    const groupChat = await GroupChat.findOne({
+      _id: chatId,
+      isGroupChat: true,
+      admins: req.user._id, // Ensure 'admins' is the correct field name
+    });
+
+    if (!groupChat) {
+      throw new ApiError(404, "Group chat not found or you're not an admin");
+    }
+
+    // Initialize settings if not present
+    if (!groupChat.settings) {
+      groupChat.settings = {};
+    }
+
+    // Generate token
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = expiresIn
+      ? new Date(Date.now() + expiresIn * 60 * 60 * 1000)
+      : null;
+
+    // Update group settings
+    groupChat.settings.joinByLink = true;
+    groupChat.settings.inviteLinkToken = token;
+    if (expiresAt) groupChat.settings.inviteLinkExpiresAt = expiresAt;
+
+    await groupChat.save();
+
+    // Construct join link
+    const joinLink = `${req.protocol}://${req.get("host")}/api/v1/join/${token}`;
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        { joinLink, expiresAt },
+        "Group invite link generated successfully"
+      )
+    );
+  } catch (error) {
+    console.error("Error in generateGroupInviteLink:", error); // Log full error
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(500, error.message || "Failed to generate invite link");
+  }
+});
+/**
+ * @route POST /api/v1/chats/group/join/:token
+ * @description Join a group using an invite link
+ */
+const joinGroupViaLink = asyncHandler(async (req, res) => {
+  const { token } = req.params;
+
+  // Find group by token
+  const groupChat = await GroupChat.findOne({
+    'settings.inviteLinkToken': token,
+    isGroupChat: true
+  });
+
+  if (!groupChat) {
+    throw new ApiError(404, "Invalid or expired invite link");
+  }
+
+  // Check if link has expired
+  if (groupChat.settings.inviteLinkExpiresAt &&
+    new Date() > groupChat.settings.inviteLinkExpiresAt) {
+    throw new ApiError(400, "This invite link has expired");
+  }
+
+  // Check if user is already a participant
+  if (groupChat.participants.some(p => p.equals(req.user._id))) {
+    throw new ApiError(400, "You are already a member of this group");
+  }
+
+  // Calculate unread count for the new participant
+  const unreadCount = await GroupChatMessage.countDocuments({
+    chat: groupChat._id,
+    sender: { $ne: req.user._id }
+  });
+
+  // Add user to participants
+  groupChat.participants.push(req.user._id);
+  groupChat.unreadCounts.push({ user: req.user._id, count: unreadCount });
+  await groupChat.save();
+
+  // Get populated group chat for response
+  const [updatedGroupChat] = await GroupChat.aggregate([
+    { $match: { _id: groupChat._id } },
+    ...chatCommonAggregation(req.user._id),
+  ]);
+
+  // Notify group participants
+  const notificationEvents = updatedGroupChat.participants
+    .filter(p => !p._id.equals(req.user._id))
+    .map(participant =>
+      emitSocketEvent(
+        req,
+        participant._id.toString(),
+        ChatEventEnum.UPDATE_GROUP_EVENT,
+        updatedGroupChat
+      )
+    );
+
+  await Promise.all(notificationEvents);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      updatedGroupChat,
+      "Successfully joined the group"
+    )
+  );
+});
+
+/**
+ * @route DELETE /api/v1/chats/group/:chatId/revoke-link
+ * @description Revoke the current invite link
+ */
+const revokeGroupInviteLink = asyncHandler(async (req, res) => {
+  const { chatId } = req.params;
+
+  // Get group chat and validate admin status
+  const groupChat = await GroupChat.findOneAndUpdate(
+    {
+      _id: chatId,
+      isGroupChat: true,
+      admins: req.user._id
+    },
+    {
+      $set: {
+        'settings.joinByLink': false,
+        'settings.inviteLinkToken': null,
+        'settings.inviteLinkExpiresAt': null
+      }
+    },
+    { new: true }
+  );
+
+  if (!groupChat) {
+    throw new ApiError(404, "Group chat not found or you're not an admin");
+  }
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {},
+      "Group invite link revoked successfully"
+    )
+  );
+});
 
 export {
   getAllGroupChats,
@@ -1126,5 +1299,8 @@ export {
   getPendingJoinRequests,
   getAllGroupMessages,
   sendGroupMessage,
-  
+  generateGroupInviteLink,
+  joinGroupViaLink,
+  revokeGroupInviteLink,
+
 };
