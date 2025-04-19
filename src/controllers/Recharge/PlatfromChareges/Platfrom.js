@@ -332,7 +332,7 @@ export const validatePayment = async (req, res) => {
             status: error.response?.status,
             headers: error.response?.headers
         });
-        const title = `Payment Failed ❌`;
+        const title = `Payment Failed `;
         const message = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
 
         await sendNotification(userId, title, message);
