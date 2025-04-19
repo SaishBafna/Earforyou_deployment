@@ -21,7 +21,9 @@ import {
     generateGroupInviteLink,
     joinGroupViaLink,
     revokeGroupInviteLink,
-} from "../controllers/chat-app/GroupChat/GroupControllers.js";
+} from "../controllers/chat-app/GroupChat/GroupChat.js";
+
+
 
 const router = express.Router();
 
