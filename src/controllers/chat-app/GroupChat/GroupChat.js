@@ -278,7 +278,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     content: content || "",
     chat: chatId,
     attachments: messageFiles,
-    replyTo: replyToMessage?._id
+    replyTo: replyToMessage
   });
 
   // Prepare update operations for unread counts
@@ -584,6 +584,7 @@ const getGroupChatDetails = asyncHandler(async (req, res) => {
  * @description Create a new group chat
  */
 const createGroupChat = asyncHandler(async (req, res) => {
+  
   const { name, participants,avatar } = req.body;
 
 
