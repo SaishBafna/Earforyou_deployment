@@ -9,6 +9,7 @@ import { ApiError } from "../../../utils/ApiError.js";
 import { ApiResponse } from "../../../utils/ApiResponse.js";
 import { asyncHandler } from "../../../utils/asyncHandler.js";
 import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
+import admin from 'firebase-admin';
 
 // Common aggregation pipeline for chat queries
 const chatCommonAggregation = (userId) => [
@@ -92,6 +93,48 @@ const chatCommonAggregation = (userId) => [
   { $sort: { sortField: -1 } },
 ];
 
+
+const sendFirebaseNotification = async (tokens, notificationData) => {
+  if (!tokens || tokens.length === 0) return;
+  
+  const message = {
+    notification: {
+      title: notificationData.title,
+      body: notificationData.body
+    },
+    data: notificationData.data,
+    tokens: tokens.filter(t => t), // Remove any empty tokens
+    android: {
+      priority: 'high'
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1
+        }
+      }
+    }
+  };
+
+  try {
+    const response = await admin.messaging().sendMulticast(message);
+    // Handle failures (remove invalid tokens, etc.)
+    if (response.failureCount > 0) {
+      const failedTokens = [];
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          failedTokens.push(tokens[idx]);
+        }
+      });
+      console.log('Failed to send to tokens:', failedTokens);
+    }
+    return response;
+  } catch (error) {
+    console.error('Error sending Firebase notification:', error);
+    throw error;
+  }
+};
 // Helper function to delete all messages and attachments for a chat
 const deleteCascadeChatMessages = async (chatId) => {
   const messages = await GroupChatMessage.find({ chat: chatId })
@@ -228,6 +271,7 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
  * @route POST /api/v1/chats/group/:chatId/messages
  * @description Send a message to a group chat
  */
+
 const sendGroupMessage = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { content, replyTo } = req.body;
@@ -245,7 +289,11 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     },
     { $set: { lastActivity: new Date() } },
     { new: true, lean: true }
-  );
+  ).populate({
+    path: 'participants',
+    select: '_id username name email deviceToken',
+    match: { _id: { $ne: req.user._id } } // Exclude the sender
+  });
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found or you're not a participant");
@@ -349,6 +397,37 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
     : `${senderName} sent an attachment`;
 
+  // Prepare notification data
+  const notificationData = {
+    title: groupChat.name || `Group Chat`,
+    body: notificationMessage,
+    data: {
+      chatId: chatId.toString(),
+      messageId: message._id.toString(),
+      type: 'group_message',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK'
+    },
+    icon: sender.avatar || null
+  };
+
+  // Send notifications to all participants except sender
+  const notificationPromises = groupChat.participants
+    .filter(participant =>
+      !participant._id.equals(req.user._id) &&
+      participant.deviceToken?.length > 0
+    )
+    .map(async (participant) => {
+      try {
+        await sendFirebaseNotification(
+          participant.deviceToken,
+          notificationData
+        );
+      } catch (error) {
+        console.error(`Failed to send notification to user ${participant._id}:`, error);
+        // Optionally remove invalid tokens here
+      }
+    });
+
   // Emit socket events to participants
   const socketEvents = groupChat.participants
     .filter(p => !p.equals(req.user._id))
@@ -361,7 +440,8 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       )
     );
 
-  await Promise.all(socketEvents);
+  // Run notifications and socket events in parallel
+  await Promise.all([...notificationPromises, ...socketEvents]);
 
   return res
     .status(201)
@@ -584,8 +664,8 @@ const getGroupChatDetails = asyncHandler(async (req, res) => {
  * @description Create a new group chat
  */
 const createGroupChat = asyncHandler(async (req, res) => {
-  
-  const { name, participants,avatar } = req.body;
+
+  const { name, participants, avatar } = req.body;
 
 
   if (!name?.trim() || !Array.isArray(participants) || participants.length < 2) {
