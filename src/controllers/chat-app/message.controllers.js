@@ -92,6 +92,9 @@ const getAllMessages = asyncHandler(async (req, res) => {
 
 
 
+
+
+
 const sendMessage = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { content } = req.body;
@@ -158,13 +161,13 @@ const sendMessage = asyncHandler(async (req, res) => {
   const sender = await User.findById(req.user._id).select('username name avatarUrl');
   const senderName = sender.name || sender.username;
   const avatarUrl = sender.avatarUrl; // Access the avatar URL
-  
+
 
   // logic to emit socket event about the new message created to the other participants
 
 
   const notificationPromises = chat.participants.map(async (participant) => {
-    
+
     // Skip sender
     if (participant._id.toString() === req.user._id.toString()) return;
 
@@ -177,7 +180,7 @@ const sendMessage = asyncHandler(async (req, res) => {
       receivedMessage
     );
     const notificationTitle = ` ${senderName}`;
-    const notificationMessage =`${content}`;
+    const notificationMessage = `${content}`;
     await sendNotification(participant, notificationTitle, notificationMessage, chatId, message._id, sender._id, senderName, avatarUrl);
 
 
@@ -266,7 +269,165 @@ const deleteMessage = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, message, "Message deleted successfully"));
 });
 
-export { getAllMessages, sendMessage, deleteMessage };
+
+
+
+const getLatestChats = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    // Optimized aggregation pipeline
+    const chats = await Chat.aggregate([
+      {
+        $match: {
+          participants: new mongoose.Types.ObjectId(userId),
+        },
+      },
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: { lastMsgId: "$lastMessage" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$_id", "$$lastMsgId"] }
+              }
+            },
+            {
+              $lookup: {
+                from: "users",
+                localField: "sender",
+                foreignField: "_id",
+                as: "senderDetails"
+              }
+            },
+            { $unwind: "$senderDetails" },
+            {
+              $project: {
+                content: 1,
+                createdAt: 1,
+                sender: {
+                  _id: "$senderDetails._id",
+                  username: "$senderDetails.username",
+                  avatarUrl: "$senderDetails.avatarUrl",
+                  email: "$senderDetails.email",
+                  gender: "$senderDetails.gender",
+                  Language: "$senderDetails.Language",
+                  userCategory: "$senderDetails.userCategory",
+                  userType: "$senderDetails.userType",
+                  Bio: "$senderDetails.Bio",
+                  shortDecs: "$senderDetails.shortDecs",
+                  status: "$senderDetails.status",
+                  lastSeen: "$senderDetails.lastSeen",
+
+                }
+              }
+            }
+          ],
+          as: "lastMessageDetails",
+        },
+      },
+      {
+        $unwind: {
+          path: "$lastMessageDetails",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          let: { participantIds: "$participants" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $in: ["$_id", "$$participantIds"] }
+              }
+            },
+            {
+              $project: {
+                username: 1,
+                email: 1,
+                avatarUrl: 1,
+                gender: 1,
+                Language: 1,
+                userCategory: 1,
+                userType: 1,
+                Bio: 1,
+                shortDecs: 1,
+                status: 1,
+                lastSeen: 1,
+
+              }
+            }
+          ],
+          as: "participantDetails",
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          let: { adminId: "$admin" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$_id", "$$adminId"] }
+              }
+            },
+            {
+              $project: {
+                username: 1,
+                email: 1,
+                avatarUrl: 1,
+                // Include other necessary admin fields
+              }
+            }
+          ],
+          as: "adminDetails",
+        },
+      },
+      {
+        $unwind: {
+          path: "$adminDetails",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          name: 1,
+          lastMessage: "$lastMessageDetails",
+          participants: "$participantDetails",
+          admin: "$adminDetails",
+          unreadMessages: {
+            $ifNull: [`$unreadMessages.${userId}`, 0],
+          },
+          updatedAt: 1,
+        },
+      },
+      {
+        $sort: {
+          "lastMessage.createdAt": -1,
+          updatedAt: -1,
+        },
+      },
+    ]);
+
+    // Emit the chat list to the user's socket room
+    emitSocketEvent(req, userId.toString(), ChatEventEnum.NEW_CHAT_EVENT, chats);
+
+    return res.status(200).json({
+      success: true,
+      data: chats,
+    });
+  } catch (error) {
+    console.error("Error fetching latest chats:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching chats",
+    });
+  }
+};
+
+export { getAllMessages, sendMessage, deleteMessage, getLatestChats };
 
 
 
@@ -283,13 +444,13 @@ async function sendNotification(userId, title, message, chatId, messageId, sende
   const payload = {
     android: {
       priority: 'high',
-    
-    notification: {
-      title: title,
-      body: message,
 
+      notification: {
+        title: title,
+        body: message,
+
+      },
     },
-  },
     data: {
       screen: 'Chat', // The screen name you want to navigate to
       params: JSON.stringify({
@@ -299,9 +460,9 @@ async function sendNotification(userId, title, message, chatId, messageId, sende
         AgentID: senderId,
         friendName: sendername,
         imageurl: senderavatar || '', // Add sender's avatar if available
-      // Include any other parameters your Chat screen needs
-    })
-     
+        // Include any other parameters your Chat screen needs
+      })
+
     },
     token: deviceToken,
   };
