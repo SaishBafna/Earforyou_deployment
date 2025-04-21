@@ -288,7 +288,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       participants: req.user._id
     },
     { $set: { lastActivity: new Date() } },
-    { new: true, lean: true }
+    { new: true }
   ).populate({
     path: 'participants',
     select: '_id username name email deviceToken',
@@ -299,52 +299,65 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Group chat not found or you're not a participant");
   }
 
-  // Validate replyTo message if provided
-  let replyToData = null;
-  if (replyTo) {
-    const replyToMessage = await GroupChatMessage.findOne({
-      _id: replyTo,
-      chat: chatId
-    }).lean();
-
-    if (!replyToMessage) {
-      throw new ApiError(400, "Replied message not found in this chat");
-    }
-
-    replyToData = {
-      messageId: replyToMessage._id,
-      sender: replyToMessage.sender,
-      content: replyToMessage.isDeleted
-        ? replyToMessage.deletedContentPlaceholder
-        : replyToMessage.content,
-      attachments: replyToMessage.attachments,
-      isDeleted: replyToMessage.isDeleted || false,
-      originalCreatedAt: replyToMessage.createdAt
-    };
-  }
-
   // Process attachments
   const messageFiles = (req.files?.attachments || []).map((attachment) => ({
     url: getStaticFilePath(req, attachment.filename),
     localPath: getLocalPath(attachment.filename),
     fileType: attachment.mimetype.split("/")[0] || "other",
     fileName: attachment.originalname,
-    size: attachment.size
+    size: attachment.size,
+    ...(attachment.mimetype.startsWith('image/') || attachment.mimetype.startsWith('video/')) && {
+      dimensions: {
+        width: 0, // You'll need to extract these from the file
+        height: 0
+      }
+    },
+    ...(attachment.mimetype.startsWith('audio/') || attachment.mimetype.startsWith('video/')) && {
+      duration: 0 // You'll need to extract this from the file
+    }
   }));
 
-  // Create the message
-  const message = await GroupChatMessage.create({
+  // Prepare message data
+  const messageData = {
     sender: req.user._id,
     content: content || "",
     chat: chatId,
-    attachments: messageFiles,
-    replyTo: replyToData
-  });
+    attachments: messageFiles
+  };
+
+  // Handle replyTo if provided
+  if (replyTo) {
+    const repliedMessage = await GroupChatMessage.findOne({
+      _id: replyTo,
+      chat: chatId
+    })
+      .select('sender content attachments createdAt')
+      .lean();
+
+    if (!repliedMessage) {
+      throw new ApiError(400, "Replied message not found in this chat");
+    }
+
+    messageData.replyTo = {
+      messageId: repliedMessage._id,
+      sender: repliedMessage.sender,
+      content: repliedMessage.content,
+      attachments: repliedMessage.attachments.map(att => ({
+        url: att.url,
+        fileType: att.fileType,
+        thumbnailUrl: att.thumbnailUrl
+      })),
+      originalCreatedAt: repliedMessage.createdAt
+    };
+  }
+
+  // Create the message
+  const message = await GroupChatMessage.create(messageData);
 
   // Prepare update operations for unread counts
   const participantsToUpdate = groupChat.participants
-    .filter(p => !p.equals(req.user._id))
-    .map(p => p.toString());
+    .filter(p => p._id.toString() !== req.user._id.toString())
+    .map(p => p._id.toString());
 
   const updateOps = {
     $set: { lastMessage: message._id },
@@ -381,38 +394,37 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
           {
             $lookup: {
               from: "users",
-              localField: "replyTo.sender",
+              localField: "sender",
               foreignField: "_id",
               as: "sender",
               pipeline: [{ $project: { username: 1, avatar: 1 } }]
             }
           },
-          { $unwind: { path: "$sender", preserveNullAndEmptyArrays: true } },
-          {
-            $project: {
-              content: {
-                $cond: [
-                  "$replyTo.isDeleted",
-                  "$replyTo.deletedContentPlaceholder",
-                  "$replyTo.content"
-                ]
-              },
-              sender: 1,
-              attachments: "$replyTo.attachments",
-              isDeleted: "$replyTo.isDeleted",
-              originalCreatedAt: "$replyTo.originalCreatedAt"
-            }
-          }
+          { $unwind: "$sender" },
+          { $project: { content: 1, sender: 1, attachments: 1, createdAt: 1 } }
         ]
       }
     },
     { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
     {
       $addFields: {
-        replyTo: "$replyToMessage"
+        replyTo: {
+          $cond: {
+            if: { $ifNull: ["$replyTo", false] },
+            then: {
+              messageId: "$replyTo.messageId",
+              sender: "$replyTo.sender",
+              content: "$replyTo.content",
+              attachments: "$replyTo.attachments",
+              originalCreatedAt: "$replyTo.originalCreatedAt",
+              repliedMessage: "$replyToMessage"
+            },
+            else: null
+          }
+        }
       }
     },
-    { $unset: "replyToMessage" }
+    { $project: { replyToMessage: 0 } }
   ]);
 
   if (!populatedMessage) {
@@ -445,8 +457,8 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   // Send notifications to all participants except sender
   const notificationPromises = groupChat.participants
     .filter(participant =>
-      !participant._id.equals(req.user._id) &&
-      participant.deviceToken?.length > 0
+      participant._id.toString() !== req.user._id.toString() &&
+      participant.deviceToken
     )
     .map(async (participant) => {
       try {
@@ -462,11 +474,11 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 
   // Emit socket events to participants
   const socketEvents = groupChat.participants
-    .filter(p => !p.equals(req.user._id))
-    .map(participantId =>
+    .filter(p => p._id.toString() !== req.user._id.toString())
+    .map(participant =>
       emitSocketEvent(
         req,
-        participantId.toString(),
+        participant._id.toString(),
         ChatEventEnum.MESSAGE_RECEIVED_EVENT,
         populatedMessage
       )
