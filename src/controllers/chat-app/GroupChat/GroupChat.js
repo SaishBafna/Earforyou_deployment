@@ -584,7 +584,8 @@ const getGroupChatDetails = asyncHandler(async (req, res) => {
  * @description Create a new group chat
  */
 const createGroupChat = asyncHandler(async (req, res) => {
-  const { name, participants } = req.body;
+  const { name, participants,avatar } = req.body;
+
 
   if (!name?.trim() || !Array.isArray(participants) || participants.length < 2) {
     throw new ApiError(400, "Name and at least two participants are required");
@@ -605,6 +606,7 @@ const createGroupChat = asyncHandler(async (req, res) => {
   const groupChat = await GroupChat.create({
     name: name.trim(),
     isGroupChat: true,
+    avatar: avatar || null,
     participants: participantIds,
     admins: [req.user._id],
     createdBy: req.user._id,
