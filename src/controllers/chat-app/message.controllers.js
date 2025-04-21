@@ -274,32 +274,43 @@ const deleteMessage = asyncHandler(async (req, res) => {
 
 const getLatestChats = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user?._id;
 
-    // Optimized aggregation pipeline
+    // Validate user ID
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or missing user ID",
+      });
+    }
+
+    const objectUserId = new mongoose.Types.ObjectId(userId);
+
+    // Validate pagination
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+
+    // Count total chats
+    const totalChats = await Chat.countDocuments({ participants: objectUserId });
+
+    // Aggregation pipeline
     const chats = await Chat.aggregate([
-      {
-        $match: {
-          participants: new mongoose.Types.ObjectId(userId),
-        },
-      },
+      { $match: { participants: objectUserId } },
+
+      // Lookup last message
       {
         $lookup: {
           from: "chatmessages",
           let: { lastMsgId: "$lastMessage" },
           pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$_id", "$$lastMsgId"] }
-              }
-            },
+            { $match: { $expr: { $eq: ["$_id", "$$lastMsgId"] } } },
             {
               $lookup: {
                 from: "users",
                 localField: "sender",
                 foreignField: "_id",
-                as: "senderDetails"
-              }
+                as: "senderDetails",
+              },
             },
             { $unwind: "$senderDetails" },
             {
@@ -310,19 +321,11 @@ const getLatestChats = async (req, res) => {
                   _id: "$senderDetails._id",
                   username: "$senderDetails.username",
                   avatarUrl: "$senderDetails.avatarUrl",
-                  email: "$senderDetails.email",
-                  gender: "$senderDetails.gender",
-                  Language: "$senderDetails.Language",
-                  userCategory: "$senderDetails.userCategory",
-                  userType: "$senderDetails.userType",
-                  Bio: "$senderDetails.Bio",
-                  shortDecs: "$senderDetails.shortDecs",
                   status: "$senderDetails.status",
                   lastSeen: "$senderDetails.lastSeen",
-
-                }
-              }
-            }
+                },
+              },
+            },
           ],
           as: "lastMessageDetails",
         },
@@ -333,54 +336,36 @@ const getLatestChats = async (req, res) => {
           preserveNullAndEmptyArrays: true,
         },
       },
+
+      // Lookup participants
       {
         $lookup: {
           from: "users",
           let: { participantIds: "$participants" },
           pipeline: [
-            {
-              $match: {
-                $expr: { $in: ["$_id", "$$participantIds"] }
-              }
-            },
+            { $match: { $expr: { $in: ["$_id", "$$participantIds"] } } },
             {
               $project: {
+                _id: 1,
                 username: 1,
-                email: 1,
                 avatarUrl: 1,
-                gender: 1,
-                Language: 1,
-                userCategory: 1,
-                userType: 1,
-                Bio: 1,
-                shortDecs: 1,
                 status: 1,
                 lastSeen: 1,
-
-              }
-            }
+              },
+            },
           ],
           as: "participantDetails",
         },
       },
+
+      // Lookup admin (if group chat)
       {
         $lookup: {
           from: "users",
           let: { adminId: "$admin" },
           pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$_id", "$$adminId"] }
-              }
-            },
-            {
-              $project: {
-                username: 1,
-                email: 1,
-                avatarUrl: 1,
-                // Include other necessary admin fields
-              }
-            }
+            { $match: { $expr: { $eq: ["$_id", "$$adminId"] } } },
+            { $project: { _id: 1, username: 1, avatarUrl: 1 } },
           ],
           as: "adminDetails",
         },
@@ -391,38 +376,61 @@ const getLatestChats = async (req, res) => {
           preserveNullAndEmptyArrays: true,
         },
       },
+
+      // Final projection
       {
         $project: {
           name: 1,
+          updatedAt: 1,
           lastMessage: "$lastMessageDetails",
           participants: "$participantDetails",
           admin: "$adminDetails",
           unreadMessages: {
             $ifNull: [`$unreadMessages.${userId}`, 0],
           },
-          updatedAt: 1,
         },
       },
-      {
-        $sort: {
-          "lastMessage.createdAt": -1,
-          updatedAt: -1,
-        },
-      },
+
+      // Sorting & Pagination
+      { $sort: { "lastMessage.createdAt": -1, updatedAt: -1, _id: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
     ]);
 
-    // Emit the chat list to the user's socket room
+    // Emit socket event
     emitSocketEvent(req, userId.toString(), ChatEventEnum.NEW_CHAT_EVENT, chats);
+
+    // If no results found for a page beyond available pages
+    const totalPages = Math.ceil(totalChats / limit);
+    if (chats.length === 0 && page > totalPages) {
+      return res.status(404).json({
+        success: false,
+        message: "No chats found for the requested page",
+      });
+    }
 
     return res.status(200).json({
       success: true,
       data: chats,
+      pagination: {
+        page,
+        limit,
+        total: totalChats,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
     });
   } catch (error) {
     console.error("Error fetching latest chats:", error);
-    return res.status(500).json({
+    return res.status(
+      error.name === "CastError" ? 400 : 500
+    ).json({
       success: false,
-      message: "Server error while fetching chats",
+      message:
+        error.name === "CastError"
+          ? "Invalid data format"
+          : "Server error while fetching chats",
     });
   }
 };
