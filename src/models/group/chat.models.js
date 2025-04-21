@@ -45,10 +45,7 @@ const chatSchema = new Schema(
       },
     },
     avatar: {
-      type: {
-        url: String,
-        localPath: String,
-      },
+      type: String,
       default: null,
     },
     unreadCounts: [
