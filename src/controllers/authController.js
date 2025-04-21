@@ -23,6 +23,8 @@ import { Chat } from "../models/chat.modal.js";
 import Zhohocampain from "../models/ZohoCampainFrom.js";
 import PlatformCharges from "../models/Wallet/PlatfromCharges/Platfrom.js";
 import MyPlan from "../models/Wallet/PlatfromCharges/myPlanSchema.js";
+import { emitSocketEvent } from "../socket/index.js";
+import { ChatEventEnum } from "../constants.js";
 
 export const generateTransactionId = async () => {
   const timestamp = Date.now().toString(36); // Convert timestamp to base36
@@ -2584,6 +2586,8 @@ export const getChatsWithLatestMessages = async (req, res) => {
       updatedAt: chat.updatedAt,
       unreadCount: chat.unreadCount
     }));
+
+    emitSocketEvent(req, userId.toString(), ChatEventEnum.NEW_CHAT_EVENT, formattedChats);
 
     res.json({
       chats: formattedChats,

@@ -368,40 +368,151 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, populatedMessage, "Message sent successfully"));
 });
 
+
 /**
  * @route GET /api/v1/chats/group
- * @description Get all group chats for the current user with unread counts
+ * @description Get all group chats (joined and not joined) with unread counts and pagination
  */
-const getAllGroupChats = asyncHandler(async (req, res) => {
-  const { search } = req.query;
+const getAllGroups = asyncHandler(async (req, res) => {
+  const { search, page = 1, limit = 20 } = req.query;
 
+  // Parse and validate pagination parameters
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+  if (isNaN(pageNum) || isNaN(limitNum) || pageNum < 1 || limitNum < 1) {
+    throw new ApiError(400, "Invalid page or limit parameters");
+  }
+
+  const skip = (pageNum - 1) * limitNum;
+
+  // Build match stage for aggregation
+  const matchStage = {
+    isGroupChat: true,
+    ...(search && { name: { $regex: search.trim(), $options: "i" } }),
+  };
+
+  // Run aggregation and count in parallel
+  const [groupChats, totalCount] = await Promise.all([
+    GroupChat.aggregate([
+      { $match: matchStage },
+      {
+        $addFields: {
+          isJoined: { $in: [req.user._id, "$participants"] },
+          // Preserve unreadCount for joined groups, set to 0 for non-joined
+          unreadCount: {
+            $cond: {
+              if: { $in: [req.user._id, "$participants"] },
+              then: "$unreadCount",
+              else: 0,
+            },
+          },
+        },
+      },
+      ...chatCommonAggregation(req.user._id),
+      { $sort: { sortField: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+      {
+        $project: {
+          name: 1,
+          avatar: 1,
+          participants: 1,
+          admins: 1,
+          createdBy: 1,
+          lastMessage: 1,
+          unreadCount: 1,
+          createdAt: 1,
+          lastActivity: 1,
+          isJoined: 1,
+        },
+      },
+    ]),
+    GroupChat.countDocuments(matchStage),
+  ]);
+
+  // Calculate total pages
+  const totalPages = Math.ceil(totalCount / limitNum);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        groupChats,
+        page: pageNum,
+        limit: limitNum,
+        totalCount,
+        totalPages,
+      },
+      "Group chats fetched successfully"
+    )
+  );
+});
+
+/**
+ * @route GET /api/v1/chats/group
+ * @description Get all group chats for the current user with unread counts and pagination
+ */
+
+const getAllGroupChats = asyncHandler(async (req, res) => {
+  const { search, page = 1, limit = 20 } = req.query;
+
+  // Parse and validate pagination parameters
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+  if (isNaN(pageNum) || isNaN(limitNum) || pageNum < 1 || limitNum < 1) {
+    throw new ApiError(400, "Invalid page or limit parameters");
+  }
+
+  const skip = (pageNum - 1) * limitNum;
+
+  // Build match stage for aggregation
   const matchStage = {
     isGroupChat: true,
     participants: req.user._id,
     ...(search && { name: { $regex: search.trim(), $options: "i" } }),
   };
 
-  const groupChats = await GroupChat.aggregate([
-    { $match: matchStage },
-    ...chatCommonAggregation(req.user._id),
-    {
-      $project: {
-        name: 1,
-        avatar: 1,
-        participants: 1,
-        admins: 1,
-        createdBy: 1,
-        lastMessage: 1,
-        unreadCount: 1,
-        createdAt: 1,
-        lastActivity: 1
+  // Run aggregation and count in parallel
+  const [groupChats, totalCount] = await Promise.all([
+    GroupChat.aggregate([
+      { $match: matchStage },
+      ...chatCommonAggregation(req.user._id),
+      { $sort: { sortField: -1 } }, // Ensure sorting is applied
+      { $skip: skip },
+      { $limit: limitNum },
+      {
+        $project: {
+          name: 1,
+          avatar: 1,
+          participants: 1,
+          admins: 1,
+          createdBy: 1,
+          lastMessage: 1,
+          unreadCount: 1,
+          createdAt: 1,
+          lastActivity: 1,
+        },
       },
-    },
+    ]),
+    GroupChat.countDocuments(matchStage), // Get total count of matching documents
   ]);
 
-  return res
-    .status(200)
-    .json(new ApiResponse(200, groupChats, "Group chats fetched successfully"));
+  // Calculate total pages
+  const totalPages = Math.ceil(totalCount / limitNum);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        groupChats,
+        page: pageNum,
+        limit: limitNum,
+        totalCount,
+        totalPages,
+      },
+      "Group chats fetched successfully"
+    )
+  );
 });
 
 /**
@@ -1302,5 +1413,6 @@ export {
   generateGroupInviteLink,
   joinGroupViaLink,
   revokeGroupInviteLink,
+  getAllGroups
 
 };

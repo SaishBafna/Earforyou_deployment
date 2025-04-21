@@ -21,6 +21,7 @@ import {
     generateGroupInviteLink,
     joinGroupViaLink,
     revokeGroupInviteLink,
+    getAllGroups,
 } from "../controllers/chat-app/GroupChat/GroupChat.js";
 
 
@@ -32,7 +33,10 @@ const router = express.Router();
 // Group Chat Routes
 router.route("/group")
     .get(protect, getAllGroupChats)                // Get all group chats for current user
-    .post(protect, createGroupChat);               // Create new group chat
+    .post(protect, createGroupChat);
+// Create new group chat
+router.route("/getAllGroups")
+    .get(protect, getAllGroups)                // Get all group chats for current user
 
 router.route("/group/:chatId")
     .get(mongoIdPathVariableValidator("chatId"), validate, protect, getGroupChatDetails)     // Get group details

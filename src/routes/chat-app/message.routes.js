@@ -3,7 +3,6 @@ import {
   deleteMessage,
   getAllMessages,
   sendMessage,
-  getLatestChats,
 } from "../../controllers/chat-app/message.controllers.js";
 import { protect } from "../../middlewares/auth/authMiddleware.js";
 import { upload } from "../../middlewares/multer.middlewares.js";
@@ -37,8 +36,7 @@ router
     deleteMessage
   );
 
-  router.route("/latest-chats").get(getLatestChats);
 
-  
+
 
 export default router;
