@@ -96,7 +96,7 @@ const chatCommonAggregation = (userId) => [
 
 const sendFirebaseNotification = async (tokens, notificationData) => {
   if (!tokens || tokens.length === 0) return;
-  
+
   const message = {
     notification: {
       title: notificationData.title,
@@ -300,15 +300,27 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   }
 
   // Validate replyTo message if provided
-  let replyToMessage = null;
+  let replyToData = null;
   if (replyTo) {
-    replyToMessage = await GroupChatMessage.findOne({
+    const replyToMessage = await GroupChatMessage.findOne({
       _id: replyTo,
       chat: chatId
     }).lean();
+
     if (!replyToMessage) {
       throw new ApiError(400, "Replied message not found in this chat");
     }
+
+    replyToData = {
+      messageId: replyToMessage._id,
+      sender: replyToMessage.sender,
+      content: replyToMessage.isDeleted
+        ? replyToMessage.deletedContentPlaceholder
+        : replyToMessage.content,
+      attachments: replyToMessage.attachments,
+      isDeleted: replyToMessage.isDeleted || false,
+      originalCreatedAt: replyToMessage.createdAt
+    };
   }
 
   // Process attachments
@@ -326,7 +338,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     content: content || "",
     chat: chatId,
     attachments: messageFiles,
-    replyTo: replyToMessage
+    replyTo: replyToData
   });
 
   // Prepare update operations for unread counts
@@ -362,25 +374,45 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     {
       $lookup: {
         from: "groupchatmessages",
-        localField: "replyTo",
+        localField: "replyTo.messageId",
         foreignField: "_id",
-        as: "replyTo",
+        as: "replyToMessage",
         pipeline: [
           {
             $lookup: {
               from: "users",
-              localField: "sender",
+              localField: "replyTo.sender",
               foreignField: "_id",
               as: "sender",
               pipeline: [{ $project: { username: 1, avatar: 1 } }]
             }
           },
-          { $unwind: "$sender" },
-          { $project: { content: 1, sender: 1, attachments: 1 } }
+          { $unwind: { path: "$sender", preserveNullAndEmptyArrays: true } },
+          {
+            $project: {
+              content: {
+                $cond: [
+                  "$replyTo.isDeleted",
+                  "$replyTo.deletedContentPlaceholder",
+                  "$replyTo.content"
+                ]
+              },
+              sender: 1,
+              attachments: "$replyTo.attachments",
+              isDeleted: "$replyTo.isDeleted",
+              originalCreatedAt: "$replyTo.originalCreatedAt"
+            }
+          }
         ]
       }
     },
-    { $unwind: { path: "$replyTo", preserveNullAndEmptyArrays: true } }
+    { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        replyTo: "$replyToMessage"
+      }
+    },
+    { $unset: "replyToMessage" }
   ]);
 
   if (!populatedMessage) {

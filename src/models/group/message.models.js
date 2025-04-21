@@ -73,8 +73,45 @@ const chatMessageSchema = new Schema(
       default: false,
     },
     replyTo: {
-      type: Schema.Types.ObjectId,
-      ref: "ChatMessage",
+      type: new Schema({
+        messageId: {
+          type: Schema.Types.ObjectId,
+          ref: "GroupChatMessage",
+          required: true
+        },
+        sender: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          required: true
+        },
+        content: {
+          type: String,
+          trim: true
+        },
+        attachments: {
+          type: [
+            {
+              url: String,
+              fileType: String,
+              thumbnailUrl: String
+            }
+          ],
+          default: []
+        },
+        isDeleted: {
+          type: Boolean,
+          default: false
+        },
+        deletedContentPlaceholder: {
+          type: String,
+          default: "This message was deleted"
+        },
+        originalCreatedAt: {
+          type: Date,
+          required: true
+        }
+      }, { _id: false }),
+      default: null
     },
     reactions: [
       {
