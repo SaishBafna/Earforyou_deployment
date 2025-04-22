@@ -171,7 +171,8 @@ const sendMessage = asyncHandler(async (req, res) => {
     // Skip sender
     if (participant._id.toString() === req.user._id.toString()) return;
 
-
+    console.log("Participant ID:", participant._id.toString());
+    console.log("Sender ID:", req.user._id.toString());
     // Emit socket event
     emitSocketEvent(
       req,
