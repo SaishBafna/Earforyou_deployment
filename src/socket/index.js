@@ -21,7 +21,6 @@ const mountJoinChatEvent = (socket) => {
   });
 };
 
-
 /**
  * @description This function is responsible for handling group message received events
  * @param {Socket} socket
@@ -33,8 +32,6 @@ const mountGroupMessageReceivedEvent = (socket) => {
     socket.to(chatId).emit(ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT, message);
   });
 };
-
-
 
 /**
  * @description This function is responsible to emit the typing event to the other participants of the chat
@@ -141,15 +138,13 @@ const socketAuthMiddleware = async (socket, next) => {
 };
 
 /**
- * @description Initialize socket.io with namespaces for one-to-one and group chats
+ * @description Initialize socket.io without separate namespaces
  * @param {Server} io 
  */
 const initializeSocketIO = (io) => {
-  // One-to-One Chat Namespace
-  const oneOnOneNamespace = io.of("/one-on-one");
-  oneOnOneNamespace.use(socketAuthMiddleware);
+  io.use(socketAuthMiddleware);
 
-  oneOnOneNamespace.on("connection", async (socket) => {
+  io.on("connection", async (socket) => {
     try {
       // Join user-specific room
       socket.join(socket.user._id.toString());
@@ -159,10 +154,11 @@ const initializeSocketIO = (io) => {
       // Update user status to online
       await updateUserStatus(socket.user._id, true);
 
-      // Mount common events
+      // Mount all events
       mountJoinChatEvent(socket);
       mountParticipantTypingEvent(socket);
       mountParticipantStoppedTypingEvent(socket);
+      mountGroupMessageReceivedEvent(socket);
 
       // Handle disconnection
       socket.on(ChatEventEnum.DISCONNECT_EVENT, async () => {
@@ -194,56 +190,7 @@ const initializeSocketIO = (io) => {
     }
   });
 
-  // Group Chat Namespace
-  const groupChatNamespace = io.of("/group-chats");
-  groupChatNamespace.use(socketAuthMiddleware);
-
-  groupChatNamespace.on("connection", async (socket) => {
-    try {
-      // Join user-specific room
-      socket.join(socket.user._id.toString());
-      socket.emit(ChatEventEnum.CONNECTED_EVENT);
-      console.log("User connected 🗼. userId: ", socket.user._id.toString());
-
-      // Update user status to online
-      await updateUserStatus(socket.user._id, true);
-
-      // Mount common events
-      mountJoinChatEvent(socket);
-      mountParticipantTypingEvent(socket);
-      mountParticipantStoppedTypingEvent(socket);
-      mountGroupMessageReceivedEvent(socket); // Add the new event handler
-      // Handle disconnection
-      socket.on(ChatEventEnum.DISCONNECT_EVENT, async () => {
-        console.log("User disconnected 🚫. userId: ", socket.user?._id);
-        if (socket.user?._id) {
-          socket.leave(socket.user._id);
-          await updateUserStatus(socket.user._id, false);
-          socket.broadcast
-            .to(socket.user._id.toString())
-            .emit(ChatEventEnum.LAST_SEEN_EVENT, {
-              userId: socket.user._id,
-              lastSeen: new Date()
-            });
-        }
-      });
-
-      // Handle socket timeout
-      socket.on("timeout", () => {
-        socket.emit(ChatEventEnum.SOCKET_ERROR_EVENT, "Connection timed out. Please reconnect.");
-        socket.disconnect(true);
-      });
-
-    } catch (error) {
-      socket.emit(
-        ChatEventEnum.SOCKET_ERROR_EVENT,
-        error?.message || "Something went wrong while connecting to the socket."
-      );
-      socket.disconnect(true);
-    }
-  });
-
-  return { oneOnOneNamespace, groupChatNamespace };
+  return io;
 };
 
 /**
@@ -255,29 +202,13 @@ const initializeSocketIO = (io) => {
  */
 const emitSocketEvent = (req, roomId, event, payload) => {
   try {
-    let namespace;
-
-    // Determine which namespace to use based on event type
-    if ([
-      ChatEventEnum.NEW_GROUP_CHAT_EVENT,
-      ChatEventEnum.UPDATE_GROUP_EVENT,
-      ChatEventEnum.REMOVED_FROM_GROUP_EVENT,
-      ChatEventEnum.LEFT_GROUP_EVENT,
-      ChatEventEnum.GROUP_DELETED_EVENT,
-      ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
-      ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
-      ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT // Add the group message event
-    ].includes(event)) {
-      namespace = req.app.get("io").of("/group-chats");
-    } else {
-      namespace = req.app.get("io").of("/one-on-one");
+    const io = req.app.get("io");
+    
+    if (!io) {
+      throw new Error("Socket.IO not initialized");
     }
 
-    if (!namespace) {
-      throw new Error("Socket namespace not initialized");
-    }
-
-    namespace.in(roomId).emit(event, payload);
+    io.in(roomId).emit(event, payload);
     console.log(`Emitted event ${event} to room ${roomId}`);
   } catch (error) {
     console.error(`Failed to emit event ${event} to room ${roomId}:`, error);
