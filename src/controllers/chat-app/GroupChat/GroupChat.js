@@ -456,21 +456,8 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 
   // Send notifications to all participants except sender
   const notificationPromises = groupChat.participants
-    .filter(participant =>
-      participant._id.toString() !== req.user._id.toString() &&
-      participant.deviceToken
-    )
-    .map(async (participant) => {
-      try {
-        await sendFirebaseNotification(
-          participant.deviceToken,
-          notificationData
-        );
-      } catch (error) {
-        console.error(`Failed to send notification to user ${participant._id}:`, error);
-        // Optionally remove invalid tokens here
-      }
-    });
+    
+    
 
   // Emit socket events to participants
   const socketEvents = groupChat.participants
