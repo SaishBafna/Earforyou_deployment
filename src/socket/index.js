@@ -21,6 +21,21 @@ const mountJoinChatEvent = (socket) => {
   });
 };
 
+
+/**
+ * @description This function is responsible for handling group message received events
+ * @param {Socket} socket
+ */
+const mountGroupMessageReceivedEvent = (socket) => {
+  socket.on(ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT, ({ chatId, message }) => {
+    console.log(`Group message received 📩. chatId: ${chatId}, messageId: ${message._id}`);
+    // Emit the message to all participants in the chat room
+    socket.to(chatId).emit(ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT, message);
+  });
+};
+
+
+
 /**
  * @description This function is responsible to emit the typing event to the other participants of the chat
  * @param {Socket} socket
@@ -48,9 +63,9 @@ const mountParticipantStoppedTypingEvent = (socket) => {
  */
 const updateUserStatus = async (userId, isOnline) => {
   try {
-    await User.findByIdAndUpdate(userId, { 
-      isOnline, 
-      lastSeen: isOnline ? null : new Date() 
+    await User.findByIdAndUpdate(userId, {
+      isOnline,
+      lastSeen: isOnline ? null : new Date()
     });
   } catch (error) {
     console.error(`Failed to update user status for ${userId}:`, error);
@@ -157,9 +172,9 @@ const initializeSocketIO = (io) => {
           await updateUserStatus(socket.user._id, false);
           socket.broadcast
             .to(socket.user._id.toString())
-            .emit(ChatEventEnum.LAST_SEEN_EVENT, { 
-              userId: socket.user._id, 
-              lastSeen: new Date() 
+            .emit(ChatEventEnum.LAST_SEEN_EVENT, {
+              userId: socket.user._id,
+              lastSeen: new Date()
             });
         }
       });
@@ -197,7 +212,7 @@ const initializeSocketIO = (io) => {
       mountJoinChatEvent(socket);
       mountParticipantTypingEvent(socket);
       mountParticipantStoppedTypingEvent(socket);
-
+      mountGroupMessageReceivedEvent(socket); // Add the new event handler
       // Handle disconnection
       socket.on(ChatEventEnum.DISCONNECT_EVENT, async () => {
         console.log("User disconnected 🚫. userId: ", socket.user?._id);
@@ -206,9 +221,9 @@ const initializeSocketIO = (io) => {
           await updateUserStatus(socket.user._id, false);
           socket.broadcast
             .to(socket.user._id.toString())
-            .emit(ChatEventEnum.LAST_SEEN_EVENT, { 
-              userId: socket.user._id, 
-              lastSeen: new Date() 
+            .emit(ChatEventEnum.LAST_SEEN_EVENT, {
+              userId: socket.user._id,
+              lastSeen: new Date()
             });
         }
       });
@@ -241,7 +256,7 @@ const initializeSocketIO = (io) => {
 const emitSocketEvent = (req, roomId, event, payload) => {
   try {
     let namespace;
-    
+
     // Determine which namespace to use based on event type
     if ([
       ChatEventEnum.NEW_GROUP_CHAT_EVENT,
@@ -250,7 +265,8 @@ const emitSocketEvent = (req, roomId, event, payload) => {
       ChatEventEnum.LEFT_GROUP_EVENT,
       ChatEventEnum.GROUP_DELETED_EVENT,
       ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
-      ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT
+      ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
+      ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT // Add the group message event
     ].includes(event)) {
       namespace = req.app.get("io").of("/group-chats");
     } else {

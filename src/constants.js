@@ -3,7 +3,7 @@
  */
 export const ChatEventEnum = Object.freeze({
   // ? once user is ready to go
-  CONNECTED_EVENT: "connected",
+  CONNECTED_EVENT: "connect",
   // ? when user gets disconnected
   DISCONNECT_EVENT: "disconnect",
   // ? when user joins a socket room
@@ -13,6 +13,9 @@ export const ChatEventEnum = Object.freeze({
   // ? when new message is received
   MESSAGE_RECEIVED_EVENT: "messageReceived",
   // ? when there is new one on one chat, new group chat or user gets added in the group
+
+  GROUP_MESSAGE_RECEIVED_EVENT: "groupMessageReceived",
+  
   NEW_CHAT_EVENT: "newChat",
   // ? when there is an error in socket
   SOCKET_ERROR_EVENT: "socketError",

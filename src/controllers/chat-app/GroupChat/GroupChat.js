@@ -456,21 +456,19 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 
   // Send notifications to all participants except sender
   const notificationPromises = groupChat.participants
-    
-    
 
-  // Emit socket events to participants
+
+
   const socketEvents = groupChat.participants
-    .filter(p => p._id.toString() !== req.user._id.toString())
-    .map(participant =>
+    .filter((p) => p._id.toString() !== req.user._id.toString())
+    .map((participant) =>
       emitSocketEvent(
         req,
-        participant._id.toString(),
-        ChatEventEnum.MESSAGE_RECEIVED_EVENT,
+        chatId.toString(),
+        ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT,
         populatedMessage
       )
     );
-
   // Run notifications and socket events in parallel
   await Promise.all([...notificationPromises, ...socketEvents]);
 
