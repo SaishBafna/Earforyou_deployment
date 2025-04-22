@@ -464,7 +464,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     .map((participant) =>
       emitSocketEvent(
         req,
-        chatId.toString(),
+        participant._id.toString(),
         ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT,
         populatedMessage
       )
