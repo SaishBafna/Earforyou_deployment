@@ -27,7 +27,8 @@ import {
     UserCategoryData,
     RegisterEnquiry,
     getAllUserCategory,
-    GetRegisterEnquiry
+    GetRegisterEnquiry,
+    getTopListenersByRating
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -42,6 +43,8 @@ router.post('/register', registerUser);
 router.post('/login', authUser);
 
 router.post('/logout', protect, logoutUser);
+
+router.get('/getTopListenersByRating', getTopListenersByRating);
 
 
 // Route for updating user profile

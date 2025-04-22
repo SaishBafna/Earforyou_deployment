@@ -62,6 +62,132 @@ const generateAccessAndRefreshTokens = async (userId) => {
 };
 
 
+export const getTopListenersByRating = async (req, res) => {
+  try {
+    const startTime = process.hrtime();
+
+    const topListeners = await Review.aggregate([
+      {
+        $match: {
+          rating: { $gte: 0, $lte: 5 },
+          createdAt: { $exists: true }
+        }
+      },
+      {
+        $lookup: {
+          from: "users",
+          let: { userId: "$user" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$_id", "$$userId"] },
+                userType: "RECEIVER",
+                UserStatus: "Active"
+                // Removed status and deletedAt for broader results
+              }
+            },
+            {
+              $project: {
+                username: 1,
+                userCategory: 1,
+                status: 1,
+                avatarUrl: 1,
+                shortDecs: 1,
+                Bio: 1,
+                CallStatus: 1,
+                createdAt: 1
+              }
+            }
+          ],
+          as: "userData"
+        }
+      },
+      { $match: { userData: { $ne: [] } } },
+      { $unwind: "$userData" },
+      {
+        $group: {
+          _id: "$user",
+          averageRating: { $avg: "$rating" },
+          reviewCount: { $sum: 1 },
+          username: { $first: "$userData.username" },
+          userCategory: { $first: "$userData.userCategory" },
+          status: { $first: "$userData.status" },
+          avatarUrl: { $first: "$userData.avatarUrl" },
+          shortBio: { $first: "$userData.shortDecs" },
+          bio: { $first: "$userData.Bio" },
+          callStatus: { $first: "$userData.CallStatus" },
+          createdAt: { $first: "$userData.createdAt" }
+        }
+      },
+      {
+        $match: {
+          reviewCount: { $gte: 1 }, // Lowered threshold
+          averageRating: { $gte: 1 }
+        }
+      },
+      {
+        $sort: {
+          averageRating: -1,
+          reviewCount: -1,
+          createdAt: -1
+        }
+      },
+      { $limit: 10 },
+      {
+        $project: {
+          userId: "$_id",
+          username: 1,
+          userCategory: 1,
+          status: 1,
+          callStatus: 1,
+          avatarUrl: 1,
+          shortBio: 1,
+          bio: 1,
+          reviewCount: 1,
+          averageRating: { $round: [{ $ifNull: ["$averageRating", 0] }, 2] }
+        }
+      }
+    ]).allowDiskUse(true);
+
+    const executionTime = ((process.hrtime(startTime)[0] * 1000 +
+      process.hrtime(startTime)[1] / 1e6).toFixed(2));
+
+    const rankedListeners = topListeners.map((listener, index) => {
+      if (!listener.userId || !listener.username) {
+        console.warn('Invalid listener data:', listener);
+        return null;
+      }
+      return {
+        rank: index + 1,
+        ...listener
+      };
+    }).filter(listener => listener !== null);
+
+    if (!rankedListeners.length) {
+      return res.status(200).json({
+        success: true,
+        message: 'No qualifying listeners found',
+        executionTime: `${executionTime}ms`,
+        data: []
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      executionTime: `${executionTime}ms`,
+      data: rankedListeners
+    });
+
+  } catch (error) {
+    console.error('Error fetching top listeners:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch top listeners',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
 
 export const registerUser = async (req, res) => {
   const { phone, password } = req.body; // Ensure correct field names
@@ -390,7 +516,7 @@ export const initiateRegistration = async (req, res) => {
 
       const platform = await PlatformCharges.findOne({ userId: newUser._id }).session(session);
 
-      const plan = await MyPlan.findOne().sort({ createdAt: -1 }); 
+      const plan = await MyPlan.findOne().sort({ createdAt: -1 });
 
       const token = await generateTransactionId();
 

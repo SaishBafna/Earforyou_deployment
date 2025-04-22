@@ -497,6 +497,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
  * @route GET /api/v1/chats/group
  * @description Get all group chats (joined and not joined) with unread counts and pagination
  */
+
 const getAllGroups = asyncHandler(async (req, res) => {
   const { search, page = 1, limit = 20 } = req.query;
 
