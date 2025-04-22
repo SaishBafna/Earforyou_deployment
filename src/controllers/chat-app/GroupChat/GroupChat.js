@@ -470,6 +470,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       )
     );
   // Run notifications and socket events in parallel
+  console.log("socketEvents :", socketEvents);
   await Promise.all([...notificationPromises, ...socketEvents]);
 
   return res
