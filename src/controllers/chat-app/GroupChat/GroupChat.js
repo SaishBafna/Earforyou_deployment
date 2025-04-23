@@ -449,7 +449,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   if (io) {
     console.debug(`[sendGroupMessage] Emitting GROUP_MESSAGE_RECEIVED_EVENT to room ${chatId}`);
     io.to(chatId).emit(ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT, {
-      chatId,
+      participants: groupChat.participants.map(p => p._id), // Add participant IDs
       message: populatedMessage
     });
   } else {
