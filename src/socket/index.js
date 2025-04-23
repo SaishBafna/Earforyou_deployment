@@ -83,7 +83,7 @@ const mountGroupChatEvents = (socket) => {
 const mountMessageReadEvent = (socket) => {
   socket.on(ChatEventEnum.MESSAGE_READ_EVENT, (data) => {
     const { messageId, chatId } = data;
-    
+
     // Emit to all participants in the chat room except the sender
     socket.to(chatId).emit(ChatEventEnum.MESSAGE_READ_EVENT, {
       messageId,
@@ -113,19 +113,39 @@ const mountJoinChatEvent = (socket) => {
  * @description This function is responsible to emit the typing event to the other participants of the chat
  * @param {Socket<import("socket.io/dist/typed-events").DefaultEventsMap, import("socket.io/dist/typed-events").DefaultEventsMap, import("socket.io/dist/typed-events").DefaultEventsMap, any>} socket
  */
+/**
+ * @description This function is responsible to emit the typing event to the other participants of the chat
+ * @param {Socket} socket
+ */
+
 const mountParticipantTypingEvent = (socket) => {
   socket.on(ChatEventEnum.TYPING_EVENT, (chatId) => {
-    socket.in(chatId).emit(ChatEventEnum.TYPING_EVENT, chatId);
+    // Emit to all participants in the chat room except the sender
+    socket.in(chatId).emit(ChatEventEnum.TYPING_EVENT, {
+      chatId,
+      userId: socket.user._id, // The user who is typing
+      userName: socket.user.username, // Optional: include username
+      typing: true,
+      timestamp: new Date()
+    });
   });
 };
 
 /**
  * @description This function is responsible to emit the stopped typing event to the other participants of the chat
- * @param {Socket<import("socket.io/dist/typed-events").DefaultEventsMap, import("socket.io/dist/typed-events").DefaultEventsMap, import("socket.io/dist/typed-events").DefaultEventsMap, any>} socket
+ * @param {Socket} socket
  */
+
 const mountParticipantStoppedTypingEvent = (socket) => {
-  socket.on(ChatEventEnum.STOP_TYPING_EVENT, (chatId) => {
-    socket.in(chatId).emit(ChatEventEnum.STOP_TYPING_EVENT, chatId);
+  socket.on(ChatEventEnum.STOP_TYPING_EVENT, (chatId) => { // Fixed parameter name from 'socket' to 'chatId'
+    // Emit to all participants in the chat room except the sender
+    socket.in(chatId).emit(ChatEventEnum.STOP_TYPING_EVENT, {
+      chatId,
+      userId: socket.user._id, // The user who stopped typing
+      userName: socket.user.username, // Optional: include username
+      typing: false,
+      timestamp: new Date()
+    });
   });
 };
 
