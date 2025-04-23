@@ -272,14 +272,12 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
  * @description Send a message to a group chat
  */
 
+
 const sendGroupMessage = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { content, replyTo } = req.body;
 
-  console.debug(`[sendGroupMessage] Starting to send message to group ${chatId}`);
-
   if (!content && !req.files?.attachments?.length) {
-    console.debug('[sendGroupMessage] Validation failed - no content or attachments');
     throw new ApiError(400, "Message content or attachment is required");
   }
 
@@ -294,16 +292,13 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     { new: true }
   ).populate({
     path: 'participants',
-    select: '_id username name email',
+    select: '_id username name email deviceToken',
     match: { _id: { $ne: req.user._id } } // Exclude the sender
   });
 
   if (!groupChat) {
-    console.debug(`[sendGroupMessage] Group chat not found or user not participant. Chat: ${chatId}, User: ${req.user._id}`);
     throw new ApiError(404, "Group chat not found or you're not a participant");
   }
-
-  console.debug(`[sendGroupMessage] Found group chat with ${groupChat.participants.length} participants`);
 
   // Process attachments
   const messageFiles = (req.files?.attachments || []).map((attachment) => ({
@@ -333,7 +328,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 
   // Handle replyTo if provided
   if (replyTo) {
-    console.debug(`[sendGroupMessage] Processing reply to message ${replyTo}`);
     const repliedMessage = await GroupChatMessage.findOne({
       _id: replyTo,
       chat: chatId
@@ -342,7 +336,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       .lean();
 
     if (!repliedMessage) {
-      console.debug(`[sendGroupMessage] Replied message not found. Message: ${replyTo}, Chat: ${chatId}`);
       throw new ApiError(400, "Replied message not found in this chat");
     }
 
@@ -361,7 +354,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 
   // Create the message
   const message = await GroupChatMessage.create(messageData);
-  console.debug(`[sendGroupMessage] Message created. ID: ${message._id}`);
 
   // Prepare update operations for unread counts
   const participantsToUpdate = groupChat.participants
@@ -379,7 +371,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   };
 
   await GroupChat.findByIdAndUpdate(chatId, updateOps);
-  console.debug(`[sendGroupMessage] Updated group chat last message and unread counts`);
 
   // Get populated message in single aggregation
   const [populatedMessage] = await GroupChatMessage.aggregate([
@@ -438,25 +429,64 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   ]);
 
   if (!populatedMessage) {
-    console.error(`[sendGroupMessage] Failed to populate message. Original message ID: ${message._id}`);
     throw new ApiError(500, "Failed to send message");
   }
 
-  console.debug(`[sendGroupMessage] Message populated successfully. Preparing socket events`);
+  // Get sender info for notifications
+  const sender = await User.findById(req.user._id)
+    .select("username name avatar")
+    .lean();
 
-  // Emit socket event to all participants except sender
-  const io = req.app.get('io');
-  if (io) {
-    console.debug(`[sendGroupMessage] Emitting GROUP_MESSAGE_RECEIVED_EVENT to room ${chatId}`);
-    io.to(chatId).emit(ChatEventEnum.GROUP_MESSAGE_RECEIVED_EVENT, {
-      participants: groupChat.participants.map(p => p._id), // Add participant IDs
-      message: populatedMessage
+  const senderName = sender.name || sender.username;
+  const notificationMessage = content
+    ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
+    : `${senderName} sent an attachment`;
+
+  // Prepare notification data
+  const notificationData = {
+    title: groupChat.name || `Group Chat`,
+    body: notificationMessage,
+    data: {
+      chatId: chatId.toString(),
+      messageId: message._id.toString(),
+      type: 'group_message',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK'
+    },
+    icon: sender.avatar || null
+  };
+
+  // Send notifications to all participants except sender
+  const notificationPromises = groupChat.participants
+    .filter(participant =>
+      participant._id.toString() !== req.user._id.toString() &&
+      participant.deviceToken
+    )
+    .map(async (participant) => {
+      try {
+        await sendFirebaseNotification(
+          participant.deviceToken,
+          notificationData
+        );
+      } catch (error) {
+        console.error(`Failed to send notification to user ${participant._id}:`, error);
+        // Optionally remove invalid tokens here
+      }
     });
-  } else {
-    console.warn('[sendGroupMessage] Socket.io instance not available');
-  }
 
-  console.debug(`[sendGroupMessage] Message sent successfully. Chat: ${chatId}, Message: ${populatedMessage._id}`);
+  // Emit socket events to participants
+  const socketEvents = groupChat.participants
+    .filter(p => p._id.toString() !== req.user._id.toString())
+    .map(participant =>
+      emitSocketEvent(
+        req,
+        participant._id.toString(),
+        ChatEventEnum.MESSAGE_RECEIVED_EVENT,
+        populatedMessage
+      )
+    );
+
+  // Run notifications and socket events in parallel
+  await Promise.all([...notificationPromises, ...socketEvents]);
 
   return res
     .status(201)
