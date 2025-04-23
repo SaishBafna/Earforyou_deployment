@@ -19,7 +19,7 @@ import {
     addBio,
     getChatsWithLatestMessages,
     Reporte_User,
-    addBankDetails,
+    addOrUpdateBankDetails,
     getBankDetails,
     getAllUsers1,
     getAllUsers2,
@@ -86,7 +86,7 @@ router.post('/Category', protect, UserCategoryData);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
 
-router.post('/addBankDetails', protect, addBankDetails);
+router.post('/addOrUpdateBankDetails', protect, addOrUpdateBankDetails);
 
 router.get('/getBankDetails', protect, getBankDetails);
 

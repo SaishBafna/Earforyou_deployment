@@ -2249,7 +2249,8 @@ export const Reporte_User = async (req, res) => {
 
 
 
-export const addBankDetails = async (req, res) => {
+// Add or Update Bank Details
+export const addOrUpdateBankDetails = async (req, res) => {
   const userId = req.user._id || req.user.id;
   const {
     bankName,
@@ -2257,45 +2258,176 @@ export const addBankDetails = async (req, res) => {
     ifscCode,
     accountHolderName,
   } = req.body;
-  console.log("req.body", req.body)
+  
   try {
     // Validate input
     if (!bankName || !accountNumber || !ifscCode || !accountHolderName) {
       return res.status(400).json({ message: 'All fields are required.' });
     }
 
-    // Find the user by ID
+    // Validate IFSC code format (basic check)
+    if (!/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(ifscCode)) {
+      return res.status(400).json({ message: 'Invalid IFSC code format.' });
+    }
+
+    // Validate account number (basic check)
+    if (!/^\d{9,18}$/.test(accountNumber)) {
+      return res.status(400).json({ message: 'Account number must be 9-18 digits.' });
+    }
+
     const user = await User.findById(userId);
-
-    console.log("user", user)
-
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    // Check for duplicate account numbers
-    const isDuplicateAccount = user.bankDetails.some(
-      (detail) => detail.accountNumber === accountNumber
+    // Check if account number exists
+    const existingIndex = user.bankDetails.findIndex(
+      detail => detail.accountNumber === accountNumber
     );
 
-    if (isDuplicateAccount) {
-      return res.status(400).json({ message: 'Account number already exists.' });
+    if (existingIndex !== -1) {
+      // Update existing
+      user.bankDetails[existingIndex] = {
+        bankName,
+        accountNumber,
+        ifscCode,
+        accountHolderName,
+        updatedAt: new Date()
+      };
+    } else {
+      // Add new
+      user.bankDetails.push({
+        bankName,
+        accountNumber,
+        ifscCode,
+        accountHolderName,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
     }
 
-    // Add the new bank details
-    user.bankDetails.push({
-      bankName,
-      accountNumber,
-      ifscCode,
-      accountHolderName,
-    });
-
-    // Save the updated user document
     await user.save();
 
-    res.status(201).json({
-      message: 'Bank details added successfully.',
-      bankDetails: user.bankDetails,
+    return res.status(existingIndex !== -1 ? 200 : 201).json({
+      message: existingIndex !== -1 
+        ? 'Bank details updated successfully.' 
+        : 'Bank details added successfully.',
+      bankDetails: user.bankDetails
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+// Get All Bank Details
+export const getAllBankDetails = async (req, res) => {
+  const userId = req.user._id || req.user.id;
+
+  try {
+    const user = await User.findById(userId).select('bankDetails');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    res.status(200).json({
+      bankDetails: user.bankDetails
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+// Get Single Bank Detail
+export const getBankDetail = async (req, res) => {
+  const userId = req.user._id || req.user.id;
+  const { accountNumber } = req.params;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const detail = user.bankDetails.find(
+      d => d.accountNumber === accountNumber
+    );
+
+    if (!detail) {
+      return res.status(404).json({ message: 'Bank details not found.' });
+    }
+
+    res.status(200).json(detail);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+// Delete Bank Detail
+export const deleteBankDetail = async (req, res) => {
+  const userId = req.user._id || req.user.id;
+  const { accountNumber } = req.params;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const initialLength = user.bankDetails.length;
+    user.bankDetails = user.bankDetails.filter(
+      d => d.accountNumber !== accountNumber
+    );
+
+    if (user.bankDetails.length === initialLength) {
+      return res.status(404).json({ message: 'Bank details not found.' });
+    }
+
+    await user.save();
+    res.status(200).json({
+      message: 'Bank details deleted successfully.',
+      bankDetails: user.bankDetails
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+// Set Default Bank Account
+export const setDefaultBankAccount = async (req, res) => {
+  const userId = req.user._id || req.user.id;
+  const { accountNumber } = req.body;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // First reset all to non-default
+    user.bankDetails.forEach(detail => {
+      detail.isDefault = false;
+    });
+
+    // Find and set the specified one as default
+    const detail = user.bankDetails.find(
+      d => d.accountNumber === accountNumber
+    );
+
+    if (!detail) {
+      return res.status(404).json({ message: 'Bank details not found.' });
+    }
+
+    detail.isDefault = true;
+    await user.save();
+
+    res.status(200).json({
+      message: 'Default bank account set successfully.',
+      bankDetails: user.bankDetails
     });
   } catch (error) {
     console.error(error);
