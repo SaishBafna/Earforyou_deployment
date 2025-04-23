@@ -222,7 +222,8 @@ export const getPostById = async (req, res) => {
     const post = await Post.findOne({
       _id: req.params.id,
       isDeleted: false
-    }).populate('author', 'username avatar');
+    }).populate('author', 'username avatarUrl')
+      .populate('comments', 'content author createdAt');
     
     if (!post) {
       return res.status(404).json({
