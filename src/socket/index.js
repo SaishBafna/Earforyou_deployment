@@ -77,6 +77,25 @@ const mountGroupChatEvents = (socket) => {
 
 
 /**
+ * @description This function is responsible to handle message read events
+ * @param {Socket} socket
+ */
+const mountMessageReadEvent = (socket) => {
+  socket.on(ChatEventEnum.MESSAGE_READ_EVENT, (data) => {
+    const { messageId, chatId } = data;
+    
+    // Emit to all participants in the chat room except the sender
+    socket.to(chatId).emit(ChatEventEnum.MESSAGE_READ_EVENT, {
+      messageId,
+      chatId,
+      readBy: socket.user._id, // The user who read the message
+      readAt: new Date()
+    });
+  });
+};
+
+
+/**
  * @description This function is responsible to allow user to join the chat represented by chatId (chatId). event happens when user switches between the chats
  * @param {Socket<import("socket.io/dist/typed-events").DefaultEventsMap, import("socket.io/dist/typed-events").DefaultEventsMap, import("socket.io/dist/typed-events").DefaultEventsMap, any>} socket
  */
@@ -156,7 +175,7 @@ const initializeSocketIO = (io) => {
       mountParticipantTypingEvent(socket);
       mountParticipantStoppedTypingEvent(socket);
       mountGroupChatEvents(socket); // Add this line
-
+      mountMessageReadEvent(socket); // Add this line
 
       socket.on(ChatEventEnum.DISCONNECT_EVENT, () => {
         console.log("user has disconnected 🚫. userId: " + socket.user?._id);
