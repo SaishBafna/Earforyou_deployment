@@ -5,7 +5,7 @@ import moment from "moment";
 export const createStreak = async (userId) => {
     try {
         if (!userId) {
-            return res.status(400).json({ message: "userId is  required." });
+            return console.error("userId is required.");
         }
 
         let streak = await Streak.findOne({ userId });
@@ -23,7 +23,8 @@ export const createStreak = async (userId) => {
             const lastUpdated = moment(streak.lastUpdated).startOf('day');
 
             if (today.isSame(lastUpdated)) {
-                return res.status(400).json({ message: "Streak already updated for today." });
+                // Already logged today, no action needed
+                return console.log("Streak already logged for today.");
             }
 
             // Continue existing streak
@@ -33,10 +34,9 @@ export const createStreak = async (userId) => {
         }
 
         await streak.save();
-        res.status(201).json({ message: "Streak updated successfully!", streak });
+        console.log("Streak created/updated successfully:", streak);
     } catch (error) {
         console.error("createStreak error:", error);
-        res.status(500).json({ message: "An error occurred while creating/updating the streak." });
     }
 };
 
