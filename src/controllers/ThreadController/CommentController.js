@@ -50,6 +50,7 @@ export const createComment = async (req, res) => {
       .populate('author', 'username avatarUrl');
     
     emitSocketEvent(`post:${postId}`, 'comment:created', populatedComment);
+    
     if (parentCommentId) {
       emitSocketEvent(`comment:${parentCommentId}`, 'reply:created', populatedComment);
     }
