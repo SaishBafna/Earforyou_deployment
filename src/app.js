@@ -34,8 +34,9 @@ app.set("io", io);
 // app.set("trust proxy", 1);
 initializeSocketIO(io);
 setupWebRTC(io);
+
 // Initialize socket.io with the server instance
-initSocket(httpServer);
+// initSocket(httpServer);
 
 
 
