@@ -10,7 +10,7 @@ export const initSocket = (server) => {
         }
     });
 
-    io.on('connection', (socket) => {
+    io.on('thread', (socket) => {
         console.log('New client connected');
 
         socket.on('joinUserRoom', (userId) => {
@@ -25,7 +25,7 @@ export const initSocket = (server) => {
             socket.join(`comment:${commentId}`);
         });
 
-        socket.on('disconnect', () => {
+        socket.on('threadDisconnect', () => {
             console.log('Client disconnected');
         });
     });
