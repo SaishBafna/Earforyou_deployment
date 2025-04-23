@@ -13,17 +13,6 @@ export const initSocket = (server) => {
     io.on('thread', (socket) => {
         console.log('New client connected');
 
-        socket.on('joinUserRoom', (userId) => {
-            socket.join(`user:${userId}`);
-        });
-
-        socket.on('joinPostRoom', (postId) => {
-            socket.join(`post:${postId}`);
-        });
-
-        socket.on('joinCommentRoom', (commentId) => {
-            socket.join(`comment:${commentId}`);
-        });
 
         socket.on('threadDisconnect', () => {
             console.log('Client disconnected');

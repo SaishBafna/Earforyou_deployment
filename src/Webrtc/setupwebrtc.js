@@ -48,7 +48,7 @@ export const setupWebRTC = (io) => {
         logger.info(`User ${userId} joined with socket ID ${socket.id}`);
 
         // Add user to the online users map
-          createStreak(userId);
+        createStreak(userId);
 
         // Update user's status in the database
         const updatedUser = await User.findByIdAndUpdate(
@@ -1279,6 +1279,23 @@ export const setupWebRTC = (io) => {
         });
       }
     });
+
+
+
+    // Threaded disconnect handler
+    // Handle user joining rooms
+    socket.on('joinUserRoom', (userId) => {
+      socket.join(`user:${userId}`);
+    });
+
+    socket.on('joinPostRoom', (postId) => {
+      socket.join(`post:${postId}`);
+    });
+
+    socket.on('joinCommentRoom', (commentId) => {
+      socket.join(`comment:${commentId}`);
+    });
+
 
     socket.on('disconnect', async () => {
       try {
