@@ -3,6 +3,7 @@ import Comment from '../../models/ThreadPost/CommentSchema.js';
 import Post from '../../models/ThreadPost/PostSchema.js';
 import UserEngagement from '../../models/ThreadPost/UserEngagement.js';
 import { emitSocketEvent } from '../../utils/PostSocket.js';
+import User from '../../models/Users.js';
 // Create a comment
 export const createComment = async (req, res) => {
   try {
@@ -46,7 +47,7 @@ export const createComment = async (req, res) => {
     await post.save();
     
     const populatedComment = await Comment.findById(comment._id)
-      .populate('author', 'username avatar');
+      .populate('author', 'username avatarUrl');
     
     emitSocketEvent(`post:${postId}`, 'comment:created', populatedComment);
     if (parentCommentId) {
