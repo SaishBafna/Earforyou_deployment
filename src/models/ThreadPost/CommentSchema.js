@@ -15,6 +15,7 @@ const commentSchema = new Schema({
     required: true,
     index: true
   },
+  
   post: {
     type: Schema.Types.ObjectId,
     ref: 'Post',
@@ -80,7 +81,7 @@ commentSchema.pre('save', async function(next) {
 commentSchema.statics.getCommentTree = async function(postId, depth = 3) {
   const comments = await this.find({ post: postId, depth: { $lte: depth } })
     .sort({ createdAt: -1 })
-    .populate('author', 'username avatar')
+    .populate('author', 'username avatarUrl')
     .lean();
   
   const map = {};
