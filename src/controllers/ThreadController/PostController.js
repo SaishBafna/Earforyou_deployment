@@ -1,6 +1,7 @@
 // controllers/postController.js
 import Post from '../../models/ThreadPost/PostSchema.js';
 import Comment from '../../models/ThreadPost/CommentSchema.js';
+import User from '../../models/Users.js';
 import UserEngagement from '../../models/ThreadPost/UserEngagement.js';
 import { emitSocketEvent } from '../../utils/PostSocket.js';
 const POSTS_PER_PAGE = 10;
@@ -114,7 +115,7 @@ export const getPosts = async (req, res) => {
       .sort(sort)
       .skip(skip)
       .limit(limit)
-      .populate('author', 'username avatar')
+      .populate('author', 'username avatarUrl')
       .lean();
     
     if (req.user) {
