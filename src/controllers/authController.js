@@ -2251,7 +2251,7 @@ export const Reporte_User = async (req, res) => {
 
 // Add or Update Bank Details
 export const addOrUpdateBankDetails = async (req, res) => {
-  const userId = req.user._id || req.user.id;
+  const userId = req.user._id || req.user.id;  
   const {
     bankName,
     accountNumber,
