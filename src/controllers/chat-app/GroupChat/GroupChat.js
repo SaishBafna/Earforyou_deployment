@@ -1539,7 +1539,7 @@ const getPendingJoinRequests = asyncHandler(async (req, res) => {
     .select("pendingJoinRequests")
     .populate({
       path: "pendingJoinRequests.user",
-      select: "username email avatar",
+      select: "username email avatarUrl",
     })
     .lean();
 
