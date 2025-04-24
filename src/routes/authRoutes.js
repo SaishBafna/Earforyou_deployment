@@ -47,7 +47,7 @@ router.post('/logout', protect, logoutUser);
 
 router.get('/getTopListenersByRating', getTopListenersByRating);
 
-router.get('/getAllForCallUser', getAllForCallUser);
+router.get('/getAllForCallUser',protect,getAllForCallUser);
 
 
 // Route for updating user profile
