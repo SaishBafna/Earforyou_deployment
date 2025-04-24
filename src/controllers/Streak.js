@@ -30,7 +30,7 @@ export const createStreak = async (userId) => {
             // Continue existing streak
             streak.streakCount += 1;
             streak.lastUpdated = new Date();
-            streak.dailyLogs.push({ date: new Date(), activity });
+            streak.dailyLogs.push({ date: new Date() });
         }
 
         await streak.save();
