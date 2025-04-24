@@ -45,7 +45,7 @@ router.post('/login', authUser);
 
 router.post('/logout', protect, logoutUser);
 
-router.get('/getTopListenersByRating', getTopListenersByRating);\
+router.get('/getTopListenersByRating', getTopListenersByRating);
 
 router.get('/getAllForCallUser', getAllForCallUser);
 
