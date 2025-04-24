@@ -1210,15 +1210,19 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
   const isLastAdmin = groupChat.admins.length === 1 &&
     groupChat.admins[0].equals(req.user._id);
 
-  // Prepare update operations
+  // Prepare update operations (safely handle missing/unexpected fields)
   const update = {
     $pull: {
       participants: req.user._id,
       admins: req.user._id,
-      unreadCounts: { user: req.user._id }
     },
     $set: { lastActivity: new Date() }
   };
+
+  // Only try to pull from unreadCounts if it exists and is an array
+  if (groupChat.unreadCounts && Array.isArray(groupChat.unreadCounts)) {
+    update.$pull.unreadCounts = { user: req.user._id };
+  }
 
   // If last admin, promote another participant
   if (isLastAdmin && otherParticipants.length > 0) {
@@ -1249,23 +1253,6 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
     )
   ]);
 
-
-  // Notify remaining participants
-  await sendGroupNotifications(req, {
-    chatId,
-    participants: otherParticipants,
-    eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
-    data: updatedGroupChat
-  });
-
-  // Notify leaving user
-  await sendGroupNotifications(req, {
-    chatId,
-    participants: [req.user._id],
-    eventType: ChatEventEnum.LEFT_GROUP_EVENT,
-    data: { chatId, groupName: groupChat.name }
-  });
-
   return res
     .status(200)
     .json(new ApiResponse(200, {}, "Left group successfully"));
@@ -1275,6 +1262,7 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
  * @route DELETE /api/v1/chats/group/:chatId
  * @description Delete a group chat (admin only)
  */
+
 const deleteGroupChat = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
