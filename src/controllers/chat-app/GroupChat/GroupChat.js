@@ -139,14 +139,13 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
 };
 
 // Helper function to delete all messages and attachments for a chat
-// Function to delete messages and attachments
 const deleteCascadeChatMessages = async (chatId) => {
   const messages = await GroupChatMessage.find({ chat: chatId })
     .select("attachments")
     .lean();
 
   const fileDeletions = messages.flatMap((message) =>
-    (message.attachments || [])
+    message.attachments
       .filter((attachment) => attachment.localPath)
       .map((attachment) => removeLocalFile(attachment.localPath))
   );
@@ -1177,16 +1176,10 @@ const removeParticipantFromGroup = asyncHandler(async (req, res) => {
  * @route PUT /api/v1/chats/group/:chatId/leave
  * @description Leave a group chat
  */
-
-export const leaveGroupChat = asyncHandler(async (req, res) => {
+const leaveGroupChat = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
-  // Validate chatId
-  if (!mongoose.Types.ObjectId.isValid(chatId)) {
-    throw new ApiError(400, "Invalid chat ID");
-  }
-
-  // Find group chat and ensure user is a participant
+  // Get group chat and validate participation
   const groupChat = await GroupChat.findOne({
     _id: chatId,
     isGroupChat: true,
@@ -1197,16 +1190,11 @@ export const leaveGroupChat = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Group chat not found or you're not a participant");
   }
 
-  // Ensure fields are arrays to avoid $pull on non-array error
-  groupChat.participants = Array.isArray(groupChat.participants) ? groupChat.participants : [];
-  groupChat.admins = Array.isArray(groupChat.admins) ? groupChat.admins : [];
-  groupChat.unreadCounts = Array.isArray(groupChat.unreadCounts) ? groupChat.unreadCounts : [];
-
   const otherParticipants = groupChat.participants.filter(
-    p => p.toString() !== req.user._id.toString()
+    p => !p.equals(req.user._id)
   );
 
-  // Handle case where last participant is leaving
+  // Handle last participant leaving
   if (otherParticipants.length === 0) {
     await Promise.all([
       GroupChat.findByIdAndDelete(chatId),
@@ -1218,34 +1206,32 @@ export const leaveGroupChat = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, {}, "Group deleted as last participant left"));
   }
 
+  // Check if leaving user is the last admin
   const isLastAdmin = groupChat.admins.length === 1 &&
-    groupChat.admins[0].toString() === req.user._id.toString();
+    groupChat.admins[0].equals(req.user._id);
 
+  // Prepare update operations
   const update = {
     $pull: {
       participants: req.user._id,
       admins: req.user._id,
       unreadCounts: { user: req.user._id }
     },
-    $set: {
-      lastActivity: new Date()
-    }
+    $set: { lastActivity: new Date() }
   };
 
-  // Promote new admin if last one is leaving
-  if (isLastAdmin) {
-    update.$addToSet = {
-      admins: otherParticipants[0]
-    };
+  // If last admin, promote another participant
+  if (isLastAdmin && otherParticipants.length > 0) {
+    update.$addToSet = { admins: otherParticipants[0] };
   }
 
   const updatedGroupChat = await GroupChat.findByIdAndUpdate(
     chatId,
     update,
-    { new: true }
-  ).lean();
+    { new: true, lean: true }
+  );
 
-  // Emit socket events
+  // Notify participants and leaving user
   await Promise.all([
     ...updatedGroupChat.participants.map(pId =>
       emitSocketEvent(
@@ -1263,7 +1249,8 @@ export const leaveGroupChat = asyncHandler(async (req, res) => {
     )
   ]);
 
-  // Notifications
+
+  // Notify remaining participants
   await sendGroupNotifications(req, {
     chatId,
     participants: otherParticipants,
@@ -1271,6 +1258,7 @@ export const leaveGroupChat = asyncHandler(async (req, res) => {
     data: updatedGroupChat
   });
 
+  // Notify leaving user
   await sendGroupNotifications(req, {
     chatId,
     participants: [req.user._id],
@@ -1282,10 +1270,6 @@ export const leaveGroupChat = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, {}, "Left group successfully"));
 });
-
-
-
-
 
 /**
  * @route DELETE /api/v1/chats/group/:chatId
@@ -1333,7 +1317,6 @@ const deleteGroupChat = asyncHandler(async (req, res) => {
       groupName: groupChat.name
     }
   })
-
   return res
     .status(200)
     .json
