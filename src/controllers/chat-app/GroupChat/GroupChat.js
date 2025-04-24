@@ -1322,7 +1322,7 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   const groupChat = await GroupChat.findOne({
     _id: chatId,
     isGroupChat: true
-  }).select("participants pendingJoinRequests admins settings").lean();
+  }).select("participants pendingJoinRequests admins settings name").lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found");
@@ -1339,7 +1339,8 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   }
 
   // Check if already requested
-  if (groupChat.pendingJoinRequests.some(req => req.user.equals(req.user._id))) {
+  // Fixed variable naming conflict (renamed parameter to avoid confusion)
+  if (groupChat.pendingJoinRequests.some(pendingReq => pendingReq.user.equals(req.user._id))) {
     throw new ApiError(400, "You have already requested to join this group");
   }
 
@@ -1364,8 +1365,12 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     .select("username")
     .lean();
 
-  // Notify group admins
-  const adminNotifications = groupChat.admins.map(adminId =>
+  // Ensure admins is an array and use it correctly
+  // Convert to array of admin IDs if not already
+  const adminIds = Array.isArray(groupChat.admins) ? groupChat.admins : [];
+
+  // Notify group admins individually
+  const adminNotifications = adminIds.map(adminId =>
     emitSocketEvent(
       req,
       adminId.toString(),
@@ -1381,11 +1386,10 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
 
   await Promise.all(adminNotifications);
 
-
-
+  // Send group notifications to admins
   await sendGroupNotifications(req, {
     chatId,
-    participants: groupChat.admins,
+    participants: adminIds, // Use the adminIds array
     eventType: ChatEventEnum.JOIN_REQUEST_EVENT,
     data: {
       chatId,
@@ -1395,6 +1399,7 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
       groupName: groupChat.name
     }
   });
+
   return res
     .status(200)
     .json(new ApiResponse(200, updatedChat, "Join request submitted successfully"));
