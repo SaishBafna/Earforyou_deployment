@@ -21,7 +21,7 @@ const chatSchema = new Schema(
     },
     lastMessage: {
       type: Schema.Types.ObjectId,
-      ref: "ChatMessage",
+      ref: "GroupChatMessage",
     },
     participants: [
       {
