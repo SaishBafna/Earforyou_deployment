@@ -1694,6 +1694,195 @@ export const getAllUsers1 = async (req, res) => {
   }
 };
 
+export const getAllForCallUser = async (req, res) => {
+  try {
+    const genderFilter = req.query.gender?.toLowerCase();
+    const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+    const searchQuery = req.query.search?.trim() || "";
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = 21;
+    const skip = (page - 1) * limit;
+
+    // Validate gender parameter
+    if (genderFilter && !["male", "female"].includes(genderFilter)) {
+      return res.status(400).json({
+        message: "Invalid gender parameter. Must be 'male' or 'female'",
+      });
+    }
+
+    // Build match conditions with CallStatus filter
+    const matchConditions = {
+      _id: { $ne: loggedInUserId },
+      CallStatus: "Active", // Only users with Active CallStatus
+      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+    };
+
+    if (genderFilter) {
+      matchConditions.gender = genderFilter;
+    }
+
+    if (searchQuery) {
+      matchConditions.username = { $regex: searchQuery, $options: "i" };
+    }
+
+    // Get total count
+    const totalUsers = await User.countDocuments(matchConditions);
+
+    if (totalUsers === 0) {
+      let message = "No active call users found";
+      if (genderFilter) message = `No active call ${genderFilter} users found`;
+      return res.status(404).json({ message });
+    }
+
+    const currentTime = new Date();
+    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+
+    // Optimized aggregation pipeline
+    const users = await User.aggregate([
+      { $match: matchConditions },
+      {
+        $addFields: {
+          sortOrder: {
+            $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
+          },
+        },
+      },
+      { $sort: { sortOrder: -1, lastSeen: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$user", "$$userId"] } } },
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 },
+              },
+            },
+          ],
+          as: "reviewStats",
+        },
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$user", "$$userId"] } } },
+            { $project: { rating: 1, comments: 1, createdAt: 1, reviewer: 1 } },
+          ],
+          as: "reviews",
+        },
+      },
+      {
+        $lookup: {
+          from: "chats",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: [{ $size: "$participants" }, 2] },
+                    { $setIsSubset: [[loggedInUserId, "$$userId"], "$participants"] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+            { $limit: 1 },
+          ],
+          as: "chat",
+        },
+      },
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: {
+            chatId: { $arrayElemAt: ["$chat._id", 0] },
+            userId: "$_id",
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $eq: ["$sender", "$$userId"] },
+                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } },
+                  ],
+                },
+              },
+            },
+            { $count: "unreadCount" },
+          ],
+          as: "unreadMessages",
+        },
+      },
+      {
+        $project: {
+          username: 1,
+          name: 1,
+          gender: 1,
+          status: 1,
+          lastSeen: 1,
+          profilePhoto: 1,
+          shortDecs: 1,
+          CallStatus: 1,
+          Language: 1,
+          Bio: 1,
+          userCategory: 1,
+          userType: 1,
+          avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
+          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          reviews: 1,
+          isOnline: { $eq: ["$status", "Online"] },
+          lastSeenStatus: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "Online"] }, then: "Online" },
+                { case: { $gte: ["$lastSeen", twentyFourHoursAgo] }, then: "recently" },
+              ],
+              default: "away",
+            },
+          },
+          unreadMessageCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0],
+          },
+          chatId: { $ifNull: [{ $arrayElemAt: ["$chat._id", 0] }, null] },
+        },
+      },
+    ]).exec();
+
+    // Send response
+    let message = "Active call users fetched successfully";
+    if (genderFilter) {
+      message = `Active call ${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`;
+    }
+
+    res.status(200).json({
+      message,
+      users,
+      pagination: {
+        totalUsers,
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit),
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching active call users:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
 export const getAllUserCategory = async (req, res) => {
   try {
     const genderFilter = req.query.gender?.toLowerCase();
