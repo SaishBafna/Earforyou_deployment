@@ -11,6 +11,8 @@ import { asyncHandler } from "../../../utils/asyncHandler.js";
 import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
 import admin from 'firebase-admin';
 
+
+
 // Common aggregation pipeline for chat queries
 const chatCommonAggregation = (userId) => [
   {
@@ -135,6 +137,7 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
     throw error;
   }
 };
+
 // Helper function to delete all messages and attachments for a chat
 const deleteCascadeChatMessages = async (chatId) => {
   const messages = await GroupChatMessage.find({ chat: chatId })
@@ -824,10 +827,9 @@ const getGroupChatDetails = asyncHandler(async (req, res) => {
  * @route POST /api/v1/chats/group
  * @description Create a new group chat
  */
+
 const createGroupChat = asyncHandler(async (req, res) => {
-
   const { name, participants, avatar } = req.body;
-
 
   if (!name?.trim() || !Array.isArray(participants) || participants.length < 2) {
     throw new ApiError(400, "Name and at least two participants are required");
@@ -839,8 +841,9 @@ const createGroupChat = asyncHandler(async (req, res) => {
     ...participants.map(id => new mongoose.Types.ObjectId(id))
   ])];
 
-  const usersCount = await User.countDocuments({ _id: { $in: participantIds } });
-  if (usersCount !== participantIds.length) {
+  // Fetch all users at once for validation and notifications
+  const users = await User.find({ _id: { $in: participantIds } }).select('_id deviceToken');
+  if (users.length !== participantIds.length) {
     throw new ApiError(404, "One or more users not found");
   }
 
@@ -868,19 +871,50 @@ const createGroupChat = asyncHandler(async (req, res) => {
     throw new ApiError(500, "Failed to create group chat");
   }
 
-  // Notify participants
-  const notificationEvents = createdGroupChat.participants
+  // Notify participants via socket
+  const socketNotifications = createdGroupChat.participants
     .filter(p => !p._id.equals(req.user._id))
-    .map(participant =>
-      emitSocketEvent(
-        req,
-        participant._id.toString(),
-        ChatEventEnum.NEW_GROUP_CHAT_EVENT,
-        createdGroupChat
-      )
-    );
+    .map(participant => {
+      try {
+        return emitSocketEvent(
+          req,
+          participant._id.toString(),
+          ChatEventEnum.NEW_GROUP_CHAT_EVENT,
+          createdGroupChat
+        );
+      } catch (error) {
+        console.error('Socket notification failed:', error);
+        return null;
+      }
+    });
 
-  await Promise.all(notificationEvents);
+  // Send Firebase notifications to participants
+  const pushNotifications = users
+    .filter(user =>
+      !user._id.equals(req.user._id) &&
+      user.deviceToken
+    )
+    .map(async (user) => {
+      try {
+        const message = {
+          notification: {
+            title: 'New Group Chat',
+            body: `You've been added to the group "${name.trim()}"`,
+          },
+          token: user.deviceToken,
+          data: {
+            chatId: createdGroupChat._id.toString(),
+            type: 'group_chat_created',
+          },
+        };
+        await admin.messaging().send(message);
+      } catch (error) {
+        console.error('Failed to send FCM notification to user:', user._id, error);
+      }
+    });
+
+  // Wait for all notifications to complete (but don't fail if some fail)
+  await Promise.allSettled([...socketNotifications, ...pushNotifications]);
 
   return res
     .status(201)
@@ -925,6 +959,13 @@ const updateGroupChatDetails = asyncHandler(async (req, res) => {
   );
 
   await Promise.all(notificationEvents);
+
+  await sendGroupNotifications(req, {
+    chatId,
+    participants: updatedGroupChat.participants.map(p => p._id),
+    eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
+    data: updatedGroupChat
+  });
 
   return res
     .status(200)
@@ -1106,6 +1147,26 @@ const removeParticipantFromGroup = asyncHandler(async (req, res) => {
     )
   ]);
 
+
+  // Notify remaining participants
+  await sendGroupNotifications(req, {
+    chatId,
+    participants: updatedGroupChat.participants.map(p => p._id),
+    eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
+    data: updatedGroupChat
+  });
+
+  await sendGroupNotifications(req, {
+    chatId,
+    participants: [participantObjectId],
+    eventType: ChatEventEnum.REMOVED_FROM_GROUP_EVENT,
+    data: {
+      chatId,
+      removedBy: req.user._id,
+      groupName: groupChat.name
+    }
+  });
+
   return res
     .status(200)
     .json(new ApiResponse(200, updatedGroupChat, "Participant removed successfully"));
@@ -1188,6 +1249,23 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
     )
   ]);
 
+
+  // Notify remaining participants
+  await sendGroupNotifications(req, {
+    chatId,
+    participants: otherParticipants,
+    eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
+    data: updatedGroupChat
+  });
+
+  // Notify leaving user
+  await sendGroupNotifications(req, {
+    chatId,
+    participants: [req.user._id],
+    eventType: ChatEventEnum.LEFT_GROUP_EVENT,
+    data: { chatId, groupName: groupChat.name }
+  });
+
   return res
     .status(200)
     .json(new ApiResponse(200, {}, "Left group successfully"));
@@ -1229,9 +1307,21 @@ const deleteGroupChat = asyncHandler(async (req, res) => {
 
   await Promise.all(notificationEvents);
 
+  await sendGroupNotifications(req, {
+    chatId,
+    participants: groupChat.participants,
+    eventType: ChatEventEnum.GROUP_DELETED_EVENT,
+    data: {
+      chatId,
+      deletedBy: req.user._id,
+      groupName: groupChat.name
+    }
+  })
+
   return res
     .status(200)
-    .json(new ApiResponse(200, {}, "Group chat deleted successfully"));
+    .json
+    (new ApiResponse(200, {}, "Group chat deleted successfully"));
 });
 
 /**
@@ -1305,6 +1395,20 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
 
   await Promise.all(adminNotifications);
 
+
+
+  await sendGroupNotifications(req, {
+    chatId,
+    participants: groupChat.admins,
+    eventType: ChatEventEnum.JOIN_REQUEST_EVENT,
+    data: {
+      chatId,
+      userId: req.user._id,
+      username: user.username,
+      message: message?.trim() || "",
+      groupName: groupChat.name
+    }
+  });
   return res
     .status(200)
     .json(new ApiResponse(200, updatedChat, "Join request submitted successfully"));
@@ -1639,6 +1743,97 @@ const revokeGroupInviteLink = asyncHandler(async (req, res) => {
     )
   );
 });
+
+
+
+
+
+
+
+
+// Utility function for sending notifications
+
+const sendGroupNotifications = async (req, {
+  chatId,
+  participants,
+  excludedUsers = [],
+  eventType,
+  data,
+  includePushNotifications = true
+}) => {
+  try {
+    // Get necessary user data
+    const usersToNotify = await User.find({
+      _id: { $in: participants },
+      _id: { $nin: excludedUsers }
+    }).select('_id deviceToken');
+
+    // Socket notifications
+    const socketNotifications = usersToNotify.map(user => {
+      try {
+        return emitSocketEvent(
+          req,
+          user._id.toString(),
+          eventType,
+          data
+        );
+      } catch (error) {
+        console.error(`Socket notification failed for user ${user._id}`, error);
+        return null;
+      }
+    });
+
+    // Push notifications
+    let pushNotifications = [];
+    if (includePushNotifications && admin?.messaging) {
+      pushNotifications = usersToNotify
+        .filter(user => user.deviceToken)
+        .map(async user => {
+          try {
+            const message = {
+              notification: {
+                title: 'Group Update',
+                body: getNotificationBody(eventType, data),
+              },
+              token: user.deviceToken,
+              data: {
+                chatId: chatId.toString(),
+                type: eventType,
+                ...data
+              },
+            };
+            await admin.messaging().send(message);
+          } catch (error) {
+            console.error(`FCM failed for user ${user._id}`, error);
+          }
+        });
+    }
+
+    await Promise.allSettled([...socketNotifications, ...pushNotifications]);
+  } catch (error) {
+    console.error('Error in sendGroupNotifications:', error);
+  }
+};
+
+// Helper function for notification content
+const getNotificationBody = (eventType, data) => {
+  switch (eventType) {
+    case ChatEventEnum.UPDATE_GROUP_EVENT:
+      return 'Group details were updated';
+    case ChatEventEnum.NEW_GROUP_CHAT_EVENT:
+      return `You were added to group "${data.name}"`;
+    case ChatEventEnum.REMOVED_FROM_GROUP_EVENT:
+      return 'You were removed from a group';
+    case ChatEventEnum.LEFT_GROUP_EVENT:
+      return 'You left the group';
+    case ChatEventEnum.GROUP_DELETED_EVENT:
+      return 'A group was deleted';
+    case ChatEventEnum.JOIN_REQUEST_EVENT:
+      return `New join request from ${data.username}`;
+    default:
+      return 'Group notification';
+  }
+};
 
 export {
   getAllGroupChats,
