@@ -1214,7 +1214,6 @@ const leaveGroupChat = asyncHandler(async (req, res) => {
   const update = {
     $pull: {
       participants: req.user._id,
-      admins: req.user._id,
     },
     $set: { lastActivity: new Date() }
   };
