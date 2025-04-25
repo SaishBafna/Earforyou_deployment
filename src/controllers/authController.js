@@ -1713,7 +1713,7 @@ export const getAllForCallUser = async (req, res) => {
     // Build match conditions with CallStatus filter
     const matchConditions = {
       _id: { $ne: loggedInUserId },
-      CallStatus: "Active", // Only users with Active CallStatus
+      CallStatus: "Active", // Only include users with active call status
       UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
     };
 
