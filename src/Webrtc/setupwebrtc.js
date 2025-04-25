@@ -1142,6 +1142,7 @@ export const setupWebRTC = (io) => {
             receiverSockets.forEach((socketId) => {
               socket.to(socketId).emit('callEnded', {
                 callerId,
+                receiverId,
                 timestamp: Date.now()
               });
 

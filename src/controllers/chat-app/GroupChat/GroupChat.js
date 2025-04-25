@@ -13,6 +13,55 @@ import admin from 'firebase-admin';
 
 
 
+
+/**
+ * Middleware to check if a user has permission to send messages in a group chat
+ */
+export const checkGroupMessagePermissions = asyncHandler(async (req, res, next) => {
+  const { chatId } = req.params;
+  const userId = req.user._id;
+  const hasAttachments = req.files?.attachments?.length > 0;
+
+  // Get the group chat with only necessary fields for permission checking
+  const groupChat = await GroupChat.findOne({
+    _id: chatId,
+    isGroupChat: true,
+    participants: userId
+  }).select('participants admins settings.sendMessagesPermission settings.sendMediaPermission');
+
+  if (!groupChat) {
+    throw new ApiError(404, "Group chat not found or you're not a participant");
+  }
+
+  // Check message sending permissions
+  const isAdmin = groupChat.admins.some(adminId => adminId.equals(userId));
+  const sendMessagesPermission = groupChat.settings?.sendMessagesPermission || "all";
+
+  if (sendMessagesPermission === "admins" && !isAdmin) {
+    throw new ApiError(403, "Only admins can send messages in this group");
+  }
+
+  if (sendMessagesPermission === "none") {
+    throw new ApiError(403, "Message sending is disabled in this group");
+  }
+
+  // Check media sending permissions if attachments are included
+  if (hasAttachments) {
+    const sendMediaPermission = groupChat.settings?.sendMediaPermission || "all";
+
+    if (sendMediaPermission === "admins" && !isAdmin) {
+      throw new ApiError(403, "Only admins can send attachments in this group");
+    }
+
+    if (sendMediaPermission === "none") {
+      throw new ApiError(403, "Attachment sending is disabled in this group");
+    }
+  }
+
+  // If all checks pass, proceed to the next middleware/controller
+  next();
+});
+
 // Common aggregation pipeline for chat queries
 const chatCommonAggregation = (userId) => [
   {
