@@ -1829,6 +1829,7 @@ export const getAllForCallUser = async (req, res) => {
           name: 1,
           gender: 1,
           status: 1,
+          avatarUrl: 1,
           lastSeen: 1,
           profilePhoto: 1,
           shortDecs: 1,
