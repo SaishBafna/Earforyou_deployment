@@ -4,13 +4,15 @@ import Comment from '../../models/ThreadPost/CommentSchema.js';
 import User from '../../models/Users.js';
 import UserEngagement from '../../models/ThreadPost/UserEngagement.js';
 import { emitSocketEvent } from '../../utils/PostSocket.js';
+import { notifyUser } from '../../utils/helperNotification.js';
+
 const POSTS_PER_PAGE = 10;
 
 // Helper function to update user engagement
 const updateUserEngagement = async (userId, postId, action) => {
-  const post = await Post.findById(postId).select('tags');
+  const post = await Post.findById(postId).select('tags author');
   if (!post) return;
-  
+
   const engagement = await UserEngagement.findOneAndUpdate(
     { user: userId },
     {
@@ -24,26 +26,26 @@ const updateUserEngagement = async (userId, postId, action) => {
     },
     { upsert: true, new: true }
   );
-  
+
   if (post.tags.length > 0) {
     const tagUpdates = post.tags.map(tag => ({
       updateOne: {
         filter: { user: userId, 'followedTags.tag': tag },
-        update: { 
+        update: {
           $inc: { 'followedTags.$.weight': 0.5 },
           $set: { 'followedTags.$.lastEngaged': new Date() }
         }
       }
     }));
-    
-    const newTags = post.tags.filter(tag => 
+
+    const newTags = post.tags.filter(tag =>
       !engagement.followedTags.some(t => t.tag === tag)
     ).map(tag => ({
       tag,
       weight: 1,
       lastEngaged: new Date()
     }));
-    
+
     if (newTags.length > 0) {
       tagUpdates.push({
         updateOne: {
@@ -52,12 +54,44 @@ const updateUserEngagement = async (userId, postId, action) => {
         }
       });
     }
-    
+
     await UserEngagement.bulkWrite(tagUpdates);
   }
-  
+
   engagement.updateEngagementScore();
   await engagement.save();
+};
+
+// Helper function to extract mentions from content
+const extractMentions = (content) => {
+  const mentionRegex = /@([a-zA-Z0-9_]+)/g;
+  const mentions = [];
+  let match;
+  while ((match = mentionRegex.exec(content)) !== null) {
+    mentions.push(match[1]);
+  }
+  return mentions;
+};
+
+// Helper function to process mentions in content
+const processMentions = async (content, postId, senderId) => {
+  const mentions = extractMentions(content);
+  if (mentions.length === 0) return;
+
+  const users = await User.find({ username: { $in: mentions } }).select('_id');
+
+  for (const user of users) {
+    if (user._id.toString() !== senderId.toString()) {
+      await notifyUser({
+        recipientId: user._id,
+        senderId,
+        type: 'mention',
+        title: 'You were mentioned in a post',
+        message: `You were mentioned in a post`,
+        postId
+      });
+    }
+  }
 };
 
 // Create a new post
@@ -65,17 +99,20 @@ export const createPost = async (req, res) => {
   try {
     const { content, tags } = req.body;
     const author = req.user._id;
-    
+
     const post = new Post({
       content,
       tags: tags || [],
       author
     });
-    
+
     await post.save();
-    
+
+    // Process mentions in post content
+    await processMentions(content, post._id, author);
+
     emitSocketEvent(`user:${author}`, 'post:created', post);
-    
+
     res.status(201).json({
       success: true,
       data: post
@@ -94,39 +131,39 @@ export const getPosts = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || POSTS_PER_PAGE;
     const skip = (page - 1) * limit;
-    
+
     const filter = { isDeleted: false };
     const sort = { createdAt: -1 };
-    
+
     if (req.query.tags) {
       filter.tags = { $in: Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags] };
     }
-    
+
     if (req.query.author) {
       filter.author = req.query.author;
     }
-    
+
     if (req.query.popular) {
       sort.popularityScore = -1;
       sort.createdAt = -1;
     }
-    
+
     const posts = await Post.find(filter)
       .sort(sort)
       .skip(skip)
       .limit(limit)
       .populate('author', 'username avatarUrl')
       .lean();
-    
+
     if (req.user) {
       const userEngagement = await UserEngagement.findOne({ user: req.user._id });
       const likedPostIds = userEngagement?.likedPosts.map(lp => lp.post.toString()) || [];
-      
+
       posts.forEach(post => {
         post.isLiked = likedPostIds.includes(post._id.toString());
       });
     }
-    
+
     res.json({
       success: true,
       data: posts,
@@ -151,13 +188,14 @@ export const getPersonalizedFeed = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || POSTS_PER_PAGE;
     const skip = (page - 1) * limit;
-    
+
     const engagement = await UserEngagement.findOne({ user: userId });
     const followedTags = engagement?.followedTags.map(t => t.tag) || [];
-    
+
     const pipeline = [
       { $match: { isDeleted: false } },
-      { $addFields: {
+      {
+        $addFields: {
           tagMatchScore: {
             $size: {
               $setIntersection: ["$tags", followedTags]
@@ -168,7 +206,8 @@ export const getPersonalizedFeed = async (req, res) => {
           }
         }
       },
-      { $sort: {
+      {
+        $sort: {
           isFollowingAuthor: -1,
           tagMatchScore: -1,
           popularityScore: -1,
@@ -177,7 +216,8 @@ export const getPersonalizedFeed = async (req, res) => {
       },
       { $skip: skip },
       { $limit: limit },
-      { $lookup: {
+      {
+        $lookup: {
           from: 'users',
           localField: 'author',
           foreignField: '_id',
@@ -185,20 +225,21 @@ export const getPersonalizedFeed = async (req, res) => {
         }
       },
       { $unwind: '$author' },
-      { $project: {
+      {
+        $project: {
           'author.password': 0,
           'author.email': 0
         }
       }
     ];
-    
+
     const posts = await Post.aggregate(pipeline);
-    
+
     const likedPostIds = engagement?.likedPosts.map(lp => lp.post.toString()) || [];
     posts.forEach(post => {
       post.isLiked = likedPostIds.includes(post._id.toString());
     });
-    
+
     res.json({
       success: true,
       data: posts,
@@ -223,20 +264,27 @@ export const getPostById = async (req, res) => {
       _id: req.params.id,
       isDeleted: false
     }).populate('author', 'username avatarUrl')
-      .populate('comments', 'content author createdAt');
-    
+      .populate({
+        path: 'comments',
+        select: 'content author createdAt',
+        populate: {
+          path: 'author',
+          select: 'username avatarUrl'
+        }
+      });
+
     if (!post) {
       return res.status(404).json({
         success: false,
         error: 'Post not found'
       });
     }
-    
+
     if (req.user) {
       const engagement = await UserEngagement.findOne({ user: req.user._id });
       post.isLiked = engagement?.likedPosts.some(lp => lp.post.equals(post._id)) || false;
     }
-    
+
     res.json({
       success: true,
       data: post
@@ -253,7 +301,7 @@ export const getPostById = async (req, res) => {
 export const updatePost = async (req, res) => {
   try {
     const { content, tags } = req.body;
-    
+
     const post = await Post.findOneAndUpdate(
       {
         _id: req.params.id,
@@ -266,16 +314,19 @@ export const updatePost = async (req, res) => {
       },
       { new: true, runValidators: true }
     );
-    
+
     if (!post) {
       return res.status(404).json({
         success: false,
         error: 'Post not found or not authorized'
       });
     }
-    
+
+    // Process mentions in updated content
+    await processMentions(content, post._id, req.user._id);
+
     emitSocketEvent(`post:${post._id}`, 'post:updated', post);
-    
+
     res.json({
       success: true,
       data: post
@@ -303,16 +354,16 @@ export const deletePost = async (req, res) => {
       },
       { new: true }
     );
-    
+
     if (!post) {
       return res.status(404).json({
         success: false,
         error: 'Post not found or not authorized'
       });
     }
-    
+
     emitSocketEvent(`post:${post._id}`, 'post:deleted', { id: post._id });
-    
+
     res.json({
       success: true,
       data: { id: post._id }
@@ -330,17 +381,17 @@ export const toggleLikePost = async (req, res) => {
   try {
     const postId = req.params.id;
     const userId = req.user._id;
-    
-    const post = await Post.findById(postId);
+
+    const post = await Post.findById(postId).populate('author', '_id');
     if (!post || post.isDeleted) {
       return res.status(404).json({
         success: false,
         error: 'Post not found'
       });
     }
-    
+
     const isLiked = post.likes.users.some(user => user.equals(userId));
-    
+
     let updatedPost;
     if (isLiked) {
       updatedPost = await Post.findByIdAndUpdate(
@@ -351,7 +402,7 @@ export const toggleLikePost = async (req, res) => {
         },
         { new: true }
       );
-      
+
       await UserEngagement.updateOne(
         { user: userId },
         { $pull: { likedPosts: { post: postId } } }
@@ -366,19 +417,31 @@ export const toggleLikePost = async (req, res) => {
         },
         { new: true }
       );
-      
+
       await updateUserEngagement(userId, postId, 'like');
+
+      // Send notification to post author if it's not the user themselves
+      if (post.author._id.toString() !== userId.toString()) {
+        await notifyUser({
+          recipientId: post.author._id,
+          senderId: userId,
+          type: 'like',
+          title: 'Someone liked your post',
+          message: `${req.user.username} liked your post`,
+          postId
+        });
+      }
     }
-    
+
     updatedPost.popularityScore = updatedPost.calculatePopularity();
     await updatedPost.save();
-    
+
     emitSocketEvent(`post:${postId}`, 'post:likeUpdated', {
       postId,
       likesCount: updatedPost.likes.count,
       isLiked: !isLiked
     });
-    
+
     res.json({
       success: true,
       data: {
@@ -394,11 +457,88 @@ export const toggleLikePost = async (req, res) => {
   }
 };
 
+// Add comment to post
+export const addComment = async (req, res) => {
+  try {
+    const { content } = req.body;
+    const postId = req.params.id;
+    const userId = req.user._id;
+
+    const post = await Post.findById(postId);
+    if (!post || post.isDeleted) {
+      return res.status(404).json({
+        success: false,
+        error: 'Post not found'
+      });
+    }
+
+    const comment = new Comment({
+      content,
+      author: userId,
+      post: postId
+    });
+
+    await comment.save();
+
+    // Update post comments count
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      {
+        $push: { comments: comment._id },
+        $inc: { commentsCount: 1 },
+        $set: { lastActivityAt: new Date() }
+      },
+      { new: true }
+    );
+
+    updatedPost.popularityScore = updatedPost.calculatePopularity();
+    await updatedPost.save();
+
+    // Update user engagement
+    await updateUserEngagement(userId, postId, 'comment');
+
+    // Process mentions in comment
+    await processMentions(content, postId, userId);
+
+    // Send notification to post author if it's not the user themselves
+    if (post.author.toString() !== userId.toString()) {
+      await notifyUser({
+        recipientId: post.author,
+        senderId: userId,
+        type: 'comment',
+        title: 'New comment on your post',
+        message: `${req.user.username} commented on your post`,
+        postId,
+        commentId: comment._id
+      });
+    }
+
+    emitSocketEvent(`post:${postId}`, 'post:commentAdded', {
+      postId,
+      commentsCount: updatedPost.commentsCount,
+      comment: await Comment.populate(comment, {
+        path: 'author',
+        select: 'username avatarUrl'
+      })
+    });
+
+    res.status(201).json({
+      success: true,
+      data: comment
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 // Get post analytics
 export const getPostAnalytics = async (req, res) => {
   try {
     const postId = req.params.id;
-    
+
     const post = await Post.findOne({
       _id: postId,
       $or: [
@@ -406,18 +546,19 @@ export const getPostAnalytics = async (req, res) => {
         { /* admin condition if needed */ }
       ]
     });
-    
+
     if (!post) {
       return res.status(404).json({
         success: false,
         error: 'Post not found or not authorized'
       });
     }
-    
+
     const likesOverTime = await Post.aggregate([
       { $match: { _id: post._id } },
       { $unwind: '$likes.users' },
-      { $group: {
+      {
+        $group: {
           _id: {
             $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
           },
@@ -426,10 +567,11 @@ export const getPostAnalytics = async (req, res) => {
       },
       { $sort: { _id: 1 } }
     ]);
-    
+
     const commentsOverTime = await Comment.aggregate([
       { $match: { post: post._id } },
-      { $group: {
+      {
+        $group: {
           _id: {
             $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
           },
@@ -438,17 +580,19 @@ export const getPostAnalytics = async (req, res) => {
       },
       { $sort: { _id: 1 } }
     ]);
-    
+
     const topEngagers = await Comment.aggregate([
       { $match: { post: post._id } },
-      { $group: {
+      {
+        $group: {
           _id: '$author',
           commentCount: { $sum: 1 }
         }
       },
       { $sort: { commentCount: -1 } },
       { $limit: 5 },
-      { $lookup: {
+      {
+        $lookup: {
           from: 'users',
           localField: '_id',
           foreignField: '_id',
@@ -456,14 +600,15 @@ export const getPostAnalytics = async (req, res) => {
         }
       },
       { $unwind: '$user' },
-      { $project: {
+      {
+        $project: {
           'user.password': 0,
           'user.email': 0,
           commentCount: 1
         }
       }
     ]);
-    
+
     res.json({
       success: true,
       data: {
