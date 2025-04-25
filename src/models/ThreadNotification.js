@@ -28,7 +28,9 @@ const ThreadNotificationSchema = new mongoose.Schema({
             'post_mention',
             'comment_mention',
             'new_follower',
-            'post_created'
+            'post_created',
+            'like',
+            'comment'
         ]
     },
     message: {

@@ -1,16 +1,6 @@
 import express from 'express';
 // import { verifyPayment } from '../../controllers/Recharge/RechargeWallet.js'
-import {
-    initiatePayment,
-    validatePayment,
-    phonepeWebhook,
-    checkPaymentStatus,
-    paymentCallback,
-    getRechargeHistory,
-    getAllPlans,
-    transferEarningsToWallet,
-    getEarningHistory
-} from '../../controllers/Recharge/RechargeWallet.js'
+import { initiatePayment, validatePayment, getRechargeHistory, getAllPlans, transferEarningsToWallet, getEarningHistory } from '../../controllers/Recharge/RechargeWallet.js'
 import { deductPerMinute } from '../../controllers/Recharge/Decudition.js'
 import { protect } from '../../middlewares/auth/authMiddleware.js'
 import { requestWithdrawal, getWithdrawal } from '../../controllers/Withdrawal/Withdrawal.js';
@@ -18,9 +8,6 @@ import { createCallRate, updateCallRate, getAllCallRates, getCallRateByCategory 
 const router = express.Router();
 
 router.post("/pay", initiatePayment);
-router.post("/webhook", phonepeWebhook);
-router.get("/status/:merchantTransactionId", checkPaymentStatus);
-router.get("/callback", paymentCallback);
 
 // Route to validate payment
 router.post("/validate", validatePayment);

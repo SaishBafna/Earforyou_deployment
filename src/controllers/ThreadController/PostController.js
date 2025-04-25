@@ -425,7 +425,7 @@ export const toggleLikePost = async (req, res) => {
         await notifyUser({
           recipientId: post.author._id,
           senderId: userId,
-          type: 'like',
+          type: 'post_like',
           title: 'Someone liked your post',
           message: `${req.user.username} liked your post`,
           postId
@@ -457,82 +457,7 @@ export const toggleLikePost = async (req, res) => {
   }
 };
 
-// Add comment to post
-export const addComment = async (req, res) => {
-  try {
-    const { content } = req.body;
-    const postId = req.params.id;
-    const userId = req.user._id;
 
-    const post = await Post.findById(postId);
-    if (!post || post.isDeleted) {
-      return res.status(404).json({
-        success: false,
-        error: 'Post not found'
-      });
-    }
-
-    const comment = new Comment({
-      content,
-      author: userId,
-      post: postId
-    });
-
-    await comment.save();
-
-    // Update post comments count
-    const updatedPost = await Post.findByIdAndUpdate(
-      postId,
-      {
-        $push: { comments: comment._id },
-        $inc: { commentsCount: 1 },
-        $set: { lastActivityAt: new Date() }
-      },
-      { new: true }
-    );
-
-    updatedPost.popularityScore = updatedPost.calculatePopularity();
-    await updatedPost.save();
-
-    // Update user engagement
-    await updateUserEngagement(userId, postId, 'comment');
-
-    // Process mentions in comment
-    await processMentions(content, postId, userId);
-
-    // Send notification to post author if it's not the user themselves
-    if (post.author.toString() !== userId.toString()) {
-      await notifyUser({
-        recipientId: post.author,
-        senderId: userId,
-        type: 'comment',
-        title: 'New comment on your post',
-        message: `${req.user.username} commented on your post`,
-        postId,
-        commentId: comment._id
-      });
-    }
-
-    emitSocketEvent(`post:${postId}`, 'post:commentAdded', {
-      postId,
-      commentsCount: updatedPost.commentsCount,
-      comment: await Comment.populate(comment, {
-        path: 'author',
-        select: 'username avatarUrl'
-      })
-    });
-
-    res.status(201).json({
-      success: true,
-      data: comment
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-};
 
 // Get post analytics
 export const getPostAnalytics = async (req, res) => {
