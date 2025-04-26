@@ -460,3 +460,26 @@ export const deductPerMinute = async (req, res) => {
 };
 
 
+export const getCallRate = async (req, res) => {
+  try {
+
+    // Fetch the user's call rate
+    const user = await CallRatePerMin.find();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Call rate not found',
+      });
+    }
+    res.status(200).json({
+      success: true,
+      message: 'Call rate fetched successfully',
+      data: user,
+    });
+  }
+  catch (error) {
+    console.error('Error fetching call rate:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
