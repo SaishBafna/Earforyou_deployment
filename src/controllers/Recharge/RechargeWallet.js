@@ -36,8 +36,7 @@ export const initiatePayment = async (req, res) => {
 
     const { price, talkTime } = plan;
 
-    if (price < 100) {
-      await logTransaction(transactionId, 'VALIDATION_FAILED', new Error('Amount below minimum'));
+    if (price < 1) {
       return res.status(400).json({
         success: false,
         message: 'Minimum recharge amount is 100'
