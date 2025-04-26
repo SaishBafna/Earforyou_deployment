@@ -36,19 +36,15 @@ export const initiatePayment = async (req, res) => {
 
     const { price, talkTime } = plan;
 
-    if (price < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'Minimum recharge amount is 100'
-      });
-    }
+   console.log("price", price)
+    // Check if the user has a wallet
 
     // Generate a unique merchant transaction ID
     const merchantTransactionId = uniqid();
 
     // Fetch user to get the mobile number (optional)
     const user = await User.findById(userId);
-    if (!user || !user.mobileNumber) {
+    if (!user ) {
       return res.status(400).json({
         success: false,
         message: 'User not found or mobile number is missing'
@@ -63,6 +59,7 @@ export const initiatePayment = async (req, res) => {
       redirectUrl: `${process.env.APP_BE_URL}/api/v1/validate/${merchantTransactionId}/${userId}`,
       redirectUrl: 'com.earforall://payment',
       redirectMode: 'POST',
+      
       paymentInstrument: { type: "PAY_PAGE" },
     };
 
