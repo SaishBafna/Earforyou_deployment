@@ -40,16 +40,22 @@ export const sendPushNotification = async (userId, title, message, type, metadat
             return;
         }
 
+        // Convert all metadata values to strings
+        const stringifiedMetadata = {};
+        Object.keys(metadata).forEach(key => {
+            stringifiedMetadata[key] = metadata[key] != null ? String(metadata[key]) : '';
+        });
+
         const payload = {
             notification: {
                 title,
                 body: message,
             },
             data: {
-                type,
-                ...metadata,
+                type: String(type),
+                ...stringifiedMetadata,
                 screen: 'Notification',
-                imageUrl: metadata.senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png'
+                imageUrl: stringifiedMetadata.senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png'
             },
             token: user.deviceToken,
         };
