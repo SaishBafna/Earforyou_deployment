@@ -20,7 +20,7 @@ router.put('/updateMood', updateMood)
 
 router.post('/createStreak',protect, createStreak)
 
-router.post('/getStreak', getStreak)
+router.get('/getStreak/:userId', getStreak)
 
 
 

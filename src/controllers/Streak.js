@@ -17,7 +17,7 @@ export const createStreak = async (userId) => {
                 userId,
                 streakCount: 1,
                 lastUpdated: new Date(),
-                dailyLogs: [{ date: new Date(),  }],
+                dailyLogs: [{ date: new Date(), }],
             });
         } else {
             const lastUpdated = moment(streak.lastUpdated).startOf('day');
@@ -40,7 +40,7 @@ export const createStreak = async (userId) => {
     }
 };
 
-// Get user's streak and weekly stats
+
 export const getStreak = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -49,7 +49,7 @@ export const getStreak = async (req, res) => {
             return res.status(400).json({ message: "userId is required." });
         }
 
-        const streak = await Streak.findOne({ userId });
+        let streak = await Streak.findOne({ userId });
 
         if (!streak) {
             return res.status(404).json({ message: "Streak not found." });
@@ -57,42 +57,66 @@ export const getStreak = async (req, res) => {
 
         const today = moment().startOf('day');
         const lastUpdated = moment(streak.lastUpdated).startOf('day');
-        const startOfWeek = moment().startOf('isoWeek');
-        const endOfWeek = moment().endOf('isoWeek');
+        const daysSinceLastUpdate = today.diff(lastUpdated, 'days');
 
-        // Track missed days in current week (excluding today)
-        const missedDays = [];
-        for (let day = moment(startOfWeek); day.isSameOrBefore(endOfWeek); day.add(1, 'days')) {
-            const hasActivity = streak.dailyLogs.some(log =>
-                moment(log.date).startOf('day').isSame(day)
-            );
-            if (!hasActivity && day.isBefore(today)) {
-                missedDays.push(day.format('YYYY-MM-DD'));
+        // Calculate current streak by checking consecutive days from today backwards
+        let currentStreak = 0;
+        let checkingDay = today.clone();
+
+        // Sort logs by date in descending order for easier processing
+        const sortedLogs = [...streak.dailyLogs].sort((a, b) =>
+            moment(b.date).valueOf() - moment(a.date).valueOf()
+        );
+
+        // Check if today was logged
+        const todayLogged = sortedLogs.some(log =>
+            moment(log.date).isSame(today, 'day')
+        );
+
+        if (todayLogged) {
+            currentStreak = 1;
+            checkingDay.subtract(1, 'day');
+
+            // Count consecutive previous days
+            for (const log of sortedLogs) {
+                const logDate = moment(log.date).startOf('day');
+                if (logDate.isSame(checkingDay, 'day')) {
+                    currentStreak++;
+                    checkingDay.subtract(1, 'day');
+                } else if (logDate.isBefore(checkingDay, 'day')) {
+                    // If we find a log before our checking day, break the streak
+                    break;
+                }
+            }
+        } else {
+            // If today wasn't logged, check yesterday's streak
+            checkingDay.subtract(1, 'day');
+
+            for (const log of sortedLogs) {
+                const logDate = moment(log.date).startOf('day');
+                if (logDate.isSame(checkingDay, 'day')) {
+                    currentStreak++;
+                    checkingDay.subtract(1, 'day');
+                } else if (logDate.isBefore(checkingDay, 'day')) {
+                    break;
+                }
             }
         }
 
-        if (missedDays.length > 0) {
-            streak.streakCount = 0;
+        // Update streak count in database if different
+        if (streak.streakCount !== currentStreak) {
+            streak.streakCount = currentStreak;
+            streak.lastUpdated = today.toDate();
             await streak.save();
-            return res.status(200).json({
-                message: "Streak reset due to missed days.",
-                missedDays,
-                streak,
-            });
         }
 
-        // Weekly streak percentage
-        const totalDaysInWeek = 7;
-        const activeDays = streak.dailyLogs.filter(log =>
-            moment(log.date).isBetween(startOfWeek, endOfWeek, 'day', '[]')
-        ).length;
-        const weeklyPercentage = (activeDays / totalDaysInWeek) * 100;
-
         res.status(200).json({
-            message: "Streak retrieved successfully!",
-            streak,
-            weeklyPercentage: `${weeklyPercentage.toFixed(2)}%`,
+            message: "Streak data retrieved successfully!",
+            currentStreak,
+            dailyLogs: streak.dailyLogs,
+            lastUpdated: streak.lastUpdated
         });
+
     } catch (error) {
         console.error("getStreak error:", error);
         res.status(500).json({ message: "An error occurred while retrieving the streak." });
