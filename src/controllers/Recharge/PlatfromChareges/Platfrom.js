@@ -260,7 +260,7 @@ export const validatePayment = async (req, res) => {
                     let now = new Date();
                     let startDate = now;
                     let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
-
+                    console.log("Step 5 - Start and End Dates:", { startDate, endDate });
                     if (lastPlan) {
                         console.log("Step 5 - Last plan found:", {
                             id: lastPlan.id,
