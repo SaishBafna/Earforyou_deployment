@@ -23,7 +23,7 @@ const PlatformChargesSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'active', 'expired', 'queued', 'queued_confirmed'],
+        enum: ['pending','processing', 'active', 'expired', 'queued', 'queued_confirmed'],
         default: 'pending'
     },
     transactionId: {
