@@ -199,7 +199,7 @@ export const initiatePayment = async (req, res) => {
 // };
 
 export const validatePayment = async (req, res) => {
-  const { merchantTransactionId, userId, planId } = req.body;
+  const { merchantTransactionId, userId, planId } = req.query;
 
   if (!merchantTransactionId || !userId || !planId) {
     return res.status(400).send("Invalid transaction ID, user ID, or plan ID");
