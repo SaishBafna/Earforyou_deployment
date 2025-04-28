@@ -174,32 +174,49 @@ export const buyPlanWithPayment = async (req, res) => {
 // Adjust model imports as needed
 
 export const validatePayment = async (req, res) => {
+    let transaction;
+    const { merchantTransactionId, userId, planId } = req.params;
+
     try {
-        const { merchantTransactionId, userId, planId } = req.params;
         console.log("Step 1 - Validating payment with params:", { merchantTransactionId, userId, planId });
 
+        // Validate input parameters
         if (!merchantTransactionId || !userId || !planId) {
             console.log("Step 1 - Missing required parameters");
             return res.status(400).json({ success: false, message: 'Missing required parameters' });
         }
 
+        // Check for existing transaction
         const existingTransaction = await PlatformCharges.findOne({ where: { transactionId: merchantTransactionId } });
         if (existingTransaction) {
-            return res.status(400).json({ error: "Transaction with this ID already exists" });
+            console.log("Transaction already exists:", existingTransaction.status);
+            return res.status(400).json({
+                success: false,
+                error: "Transaction with this ID already exists",
+                currentStatus: existingTransaction.status
+            });
         }
 
         // Get plan details
         const planDetails = await MyPlan.findById(planId);
-
         if (!planDetails) {
             console.log("Step 1.5 - Plan details not found for planId:", planId);
             return res.status(404).json({ success: false, message: 'Plan details not found' });
         }
+
         const validityDays = planDetails.validityDays;
         console.log("Step 1.5 - Found plan with validity days:", validityDays);
 
-        // Create transaction entry
-        await PlatformCharges.create({ transactionId: merchantTransactionId, userId, planId, status: 'pending' });
+        // Create pending transaction entry first
+        transaction = await PlatformCharges.create({
+            transactionId: merchantTransactionId,
+            userId,
+            planId,
+            status: 'processing', // Start with processing status
+            amount: planDetails.amount,
+            planName: planDetails.planName
+        });
+        console.log("Step 2 - Created processing transaction:", transaction.id);
 
         // Construct the PhonePe status URL and checksum
         const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
@@ -208,7 +225,7 @@ export const validatePayment = async (req, res) => {
         const xVerifyChecksum = `${sha256Hash}###${process.env.SALT_INDEX}`;
 
         // Make request to PhonePe
-        console.log("Step 4 - Making status request to PhonePe");
+        console.log("Step 3 - Making status request to PhonePe");
         const response = await axios.get(statusUrl, {
             headers: {
                 "Content-Type": "application/json",
@@ -216,130 +233,243 @@ export const validatePayment = async (req, res) => {
                 "X-MERCHANT-ID": process.env.MERCHANT_ID,
                 "accept": "application/json",
             },
+            timeout: 10000 // 10 seconds timeout
         });
 
         const responseData = response.data;
         console.log("Step 4 - PhonePe Payment Status Response:", responseData);
 
-        if (responseData.code === "PAYMENT_SUCCESS" && responseData.data.state === "COMPLETED") {
-            console.log("Step 5 - Payment successful, processing plan");
+        if (!responseData.success || !responseData.data) {
+            throw new Error("Invalid response from payment gateway");
+        }
 
-            const plan = await PlatformCharges.findOne({ transactionId: merchantTransactionId, userId });
+        const paymentState = responseData.data.state;
+        const paymentCode = responseData.code;
 
-            if (!plan) {
-                console.log("Step 5 - Plan not found for transaction:", merchantTransactionId);
-                return res.status(404).json({ success: false, message: 'Plan not found' });
-            }
+        // Handle different payment states
+        switch (paymentState) {
+            case 'COMPLETED':
+                if (paymentCode === "PAYMENT_SUCCESS") {
+                    console.log("Step 5 - Payment successful, processing plan");
 
-            console.log("Step 5 - Found plan:", { id: plan.id, status: plan.status });
+                    const lastPlan = await PlatformCharges.findOne({
+                        userId,
+                        status: { $in: ['active', 'queued', 'queued_confirmed'] }
+                    }).sort({ endDate: -1 });
 
-            // Corrected query for last active or queued plan
-            const lastPlan = await PlatformCharges.findOne({
-                userId,
-                status: { $in: ['active', 'queued', 'queued_confirmed'] }
-            }).sort({ endDate: -1 });
+                    let now = new Date();
+                    let startDate = now;
+                    let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
-            let now = new Date();
-            let startDate = now;
-            let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
+                    if (lastPlan) {
+                        console.log("Step 5 - Last plan found:", {
+                            id: lastPlan.id,
+                            status: lastPlan.status,
+                            endDate: lastPlan.endDate
+                        });
 
-            if (lastPlan) {
-                console.log("Step 5 - Last plan found:", { id: lastPlan.id, status: lastPlan.status, endDate: lastPlan.endDate });
+                        if (['active', 'queued', 'queued_confirmed'].includes(lastPlan.status)) {
+                            startDate = new Date(lastPlan.endDate);
+                            endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
+                        }
+                    }
 
-                if (['active', 'queued', 'queued_confirmed'].includes(lastPlan.status)) {
-                    // If there's an active/queued plan, start new plan after the last one ends
-                    startDate = new Date(lastPlan.endDate);
-                    endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
+                    // Update transaction status based on existing plans
+                    if (lastPlan && lastPlan.status === 'active') {
+                        transaction.status = 'queued';
+                        const title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
+                        const message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days. Stay tuned! 🚀`;
+                        await sendNotification(userId, title, message);
+                    } else {
+                        transaction.status = 'active';
+                        const title = `${planDetails.validityDays} Days Plan Activated! �`;
+                        const message = `You can use the platform for ${planDetails.validityDays} days. Enjoy your experience! 🚀`;
+                        await sendNotification(userId, title, message);
+                    }
+
+                    transaction.startDate = startDate;
+                    transaction.endDate = endDate;
+                    transaction.paymentResponse = responseData;
+                    await transaction.save();
+
+                    console.log("Step 5 - Plan updated successfully:", {
+                        id: transaction.id,
+                        status: transaction.status,
+                        startDate: transaction.startDate,
+                        endDate: transaction.endDate
+                    });
+
+                    return res.status(200).json({
+                        success: true,
+                        message: `Payment successful and plan ${transaction.status === 'active' ? 'activated' : 'queued for activation'}`,
+                        data: {
+                            planId: transaction.id,
+                            planName: planDetails.planName,
+                            amount: planDetails.amount,
+                            startDate: transaction.startDate,
+                            endDate: transaction.endDate,
+                            status: transaction.status
+                        }
+                    });
                 }
-            }
+                break;
 
-            if (plan.status === 'pending') {
-                // If there's already an active or queued plan, queue this plan
-                if (lastPlan && lastPlan.status === 'active') {
-                    plan.status = 'queued';
-                    const title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
-                    const message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days. Stay tuned! 🚀`;
+            case 'PENDING':
+                console.log("Step 5 - Payment is still pending");
+                // Update transaction to pending status
+                transaction.status = 'pending';
+                transaction.paymentResponse = responseData;
+                await transaction.save();
 
-                    await sendNotification(userId, title, message);
+                const title = `Your ${planDetails.validityDays}-Day Plan is pending ⏳`;
+                const message = `Payment is still pending. Please check again later`;
+                await sendNotification(userId, title, message);
 
+                return res.status(202).json({
+                    success: false,
+                    message: 'Payment is still pending. Please check again later.',
+                    data: responseData,
+                    transactionId: transaction.id
+                });
 
-                } else {
+            default:
+                // Payment failed or other status
+                console.log("Step 5 - Payment failed:", responseData);
+                transaction.status = 'failed';
+                transaction.paymentResponse = responseData;
+                transaction.error = responseData.message || 'Payment failed';
+                await transaction.save();
 
-                    plan.status = 'active';
-                    const title = `${planDetails.validityDays} Days Plan Activated! 🎉`;
-                    const message = `You can use the platform for ${planDetails.validityDays} days. Enjoy your experience! 🚀`;
+                const failTitle = `Payment Failed ❌`;
+                const failMessage = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
+                await sendNotification(userId, failTitle, failMessage);
 
-                    await sendNotification(userId, title, message);
-
-                }
-                plan.startDate = startDate;
-                plan.endDate = endDate;
-            } else if (plan.status === 'queued') {
-                plan.status = 'queued_confirmed';
-                plan.startDate = startDate;
-                plan.endDate = endDate;
-            }
-
-            await plan.save();
-
-            console.log("Step 5 - Plan updated successfully:", {
-                id: plan.id, status: plan.status, startDate: plan.startDate, endDate: plan.endDate
-            });
-
-            return res.status(200).json({
-                success: true,
-                message: `Payment successful and plan ${plan.status === 'active' ? 'activated' : 'queued for activation'}`,
-                data: {
-                    planId: plan.id,
-                    planName: planDetails.planName,
-                    amount: planDetails.amount,
-                    startDate: plan.startDate,
-                    endDate: plan.endDate,
-                    status: plan.status
-                }
-            });
-        } else if (responseData.code === "PAYMENT_PENDING" || responseData.data.state === "PENDING") {
-            console.log("Step 5 - Payment is still pending");
-            const title = `Your ${planDetails.validityDays}-Day Plan is pending ⏳`;
-            const message = `Payment is still pending. Please check again later`;
-
-            await sendNotification(userId, title, message);
-
-            return res.status(202).json({
-                success: false,
-                message: 'Payment is still pending. Please check again later.',
-                data: responseData
-            });
-        } else {
-            console.log("Step 5 - Payment failed:", responseData);
-            const title = `Payment Failed ❌`;
-            const message = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
-
-            await sendNotification(userId, title, message);
-
-            return res.status(400).json({
-                success: false,
-                message: 'Payment validation failed',
-                data: responseData
-            });
-
+                return res.status(400).json({
+                    success: false,
+                    message: 'Payment validation failed',
+                    data: responseData,
+                    transactionId: transaction.id
+                });
         }
 
     } catch (error) {
         console.error("Step 6 - Error in validatePayment:", {
             message: error.message,
+            stack: error.stack,
             responseData: error.response?.data,
-            status: error.response?.status,
-            headers: error.response?.headers
+            status: error.response?.status
         });
-        const title = `Payment Failed `;
-        const message = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
 
+        // Update transaction with error if it was created
+        if (transaction) {
+            transaction.status = 'failed';
+            transaction.error = error.message;
+            if (error.response?.data) {
+                transaction.paymentResponse = error.response.data;
+            }
+            await transaction.save();
+        }
+
+        const title = `Payment Processing Error`;
+        const message = `We encountered an issue while processing your payment. Our team has been notified. Please check back later.`;
         await sendNotification(userId, title, message);
+
         return res.status(500).json({
             success: false,
             message: 'Payment validation failed',
-            error: error.response?.data?.message || error.message
+            error: error.response?.data?.message || error.message,
+            transactionId: transaction?.id
+        });
+    }
+};
+
+// Additional endpoint to check pending payments
+export const checkPendingPayment = async (req, res) => {
+    const { transactionId } = req.params;
+
+    try {
+        const transaction = await PlatformCharges.findOne({ transactionId });
+        if (!transaction) {
+            return res.status(404).json({ success: false, message: 'Transaction not found' });
+        }
+
+        // If transaction is already completed/queued
+        if (['active', 'queued', 'queued_confirmed'].includes(transaction.status)) {
+            return res.status(200).json({
+                success: true,
+                status: transaction.status,
+                message: 'Payment already processed'
+            });
+        }
+
+        // If transaction failed
+        if (transaction.status === 'failed') {
+            return res.status(400).json({
+                success: false,
+                status: 'failed',
+                message: transaction.error || 'Payment failed'
+            });
+        }
+
+        // For pending/processing transactions, check with payment gateway
+        const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${transactionId}`;
+        const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${transactionId}${process.env.SALT_KEY}`;
+        const sha256Hash = createHash('sha256').update(stringToHash).digest('hex');
+        const xVerifyChecksum = `${sha256Hash}###${process.env.SALT_INDEX}`;
+
+        const response = await axios.get(statusUrl, {
+            headers: {
+                "Content-Type": "application/json",
+                "X-VERIFY": xVerifyChecksum,
+                "X-MERCHANT-ID": process.env.MERCHANT_ID,
+                "accept": "application/json",
+            },
+            timeout: 10000
+        });
+
+        const responseData = response.data;
+
+        // Update transaction based on new status
+        if (responseData.code === "PAYMENT_SUCCESS" && responseData.data.state === "COMPLETED") {
+            transaction.status = 'active'; // Will be adjusted in subsequent processing
+            transaction.paymentResponse = responseData;
+            await transaction.save();
+
+            // You might want to call validatePayment again or process the completion here
+            return res.status(200).json({
+                success: true,
+                status: 'completed',
+                message: 'Payment completed successfully'
+            });
+        } else if (responseData.code === "PAYMENT_PENDING" || responseData.data.state === "PENDING") {
+            transaction.status = 'pending';
+            transaction.paymentResponse = responseData;
+            await transaction.save();
+
+            return res.status(202).json({
+                success: false,
+                status: 'pending',
+                message: 'Payment is still pending'
+            });
+        } else {
+            transaction.status = 'failed';
+            transaction.error = responseData.message || 'Payment failed';
+            transaction.paymentResponse = responseData;
+            await transaction.save();
+
+            return res.status(400).json({
+                success: false,
+                status: 'failed',
+                message: 'Payment failed at gateway'
+            });
+        }
+
+    } catch (error) {
+        console.error("Error checking pending payment:", error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error checking payment status',
+            error: error.message
         });
     }
 };
