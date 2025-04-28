@@ -13,7 +13,7 @@ router.get('/PlatfromChargesGet', getAllPlans);
 
 router.post('/buyPlanWithPayment', buyPlanWithPayment);
 
-router.get('/validatePayment/:merchantTransactionId/:userId/:planId', validatePayment);
+router.post('/validatePayment/:merchantTransactionId/:userId/:planId', validatePayment);
 
 router.get("/getUserPlatformCharge/:userId", getUserPlatformCharge);
 
