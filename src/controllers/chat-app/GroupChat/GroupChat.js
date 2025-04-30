@@ -152,7 +152,7 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
   }
 
   // Ensure tokens is an array and filter out invalid tokens
-  const validTokens = Array.isArray(tokens) 
+  const validTokens = Array.isArray(tokens)
     ? tokens.filter(t => t && typeof t === 'string' && t.trim().length > 0)
     : [];
 
@@ -210,7 +210,7 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
 
     console.log('Attempting to send notification to tokens:', validTokens);
     const response = await admin.messaging().sendMulticast(message);
-    
+
     console.log('Notification response:', {
       successCount: response.successCount,
       failureCount: response.failureCount,
@@ -226,10 +226,10 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
             error: resp.error,
           });
           console.error('Failed to send to token:', validTokens[idx], 'Error:', resp.error);
-          
+
           // Handle specific error cases
-          if (resp.error.code === 'messaging/invalid-registration-token' || 
-              resp.error.code === 'messaging/registration-token-not-registered') {
+          if (resp.error.code === 'messaging/invalid-registration-token' ||
+            resp.error.code === 'messaging/registration-token-not-registered') {
             console.log(`Token ${validTokens[idx]} is invalid and should be removed`);
           }
         }
@@ -244,13 +244,13 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
       code: error.code,
       fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
     });
-    
+
     // Check for specific Firebase initialization errors
-    if (error.message.includes('Failed to parse private key') || 
-        error.message.includes('The default Firebase app does not exist')) {
+    if (error.message.includes('Failed to parse private key') ||
+      error.message.includes('The default Firebase app does not exist')) {
       console.error('Firebase Admin SDK initialization error. Verify your service account credentials.');
     }
-    
+
     throw error;
   }
 };
