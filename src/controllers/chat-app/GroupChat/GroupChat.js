@@ -9,7 +9,7 @@ import { ApiError } from "../../../utils/ApiError.js";
 import { ApiResponse } from "../../../utils/ApiResponse.js";
 import { asyncHandler } from "../../../utils/asyncHandler.js";
 import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
-import admin from "../../../config/firebaseConfig.js"
+import  admin  from "../../../config/firebaseConfig.js"
 
 
 
@@ -156,7 +156,7 @@ async function sendGroupNotification(
 ) {
   // Get user with their notification settings
   const user = await User.findById(userId).select('deviceToken notificationSettings isOnline');
-
+  
   // Check if user should receive notification
   if (!user) {
     console.error("User not found:", userId);
@@ -232,10 +232,10 @@ async function sendGroupNotification(
     console.log("Group notification sent successfully to user:", userId, response);
   } catch (error) {
     console.error("Error sending group notification to user:", userId, error);
-
+    
     // Handle token cleanup if needed
-    if (error.code === 'messaging/invalid-registration-token' ||
-      error.code === 'messaging/registration-token-not-registered') {
+    if (error.code === 'messaging/invalid-registration-token' || 
+        error.code === 'messaging/registration-token-not-registered') {
       console.log(`Removing invalid token for user ${userId}`);
       await User.updateOne(
         { _id: userId },
@@ -322,7 +322,6 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
  * @route GET /api/v1/chats/group/:chatId/messages
  * @description Get all messages for a group chat with pagination
  */
-
 // const getAllGroupMessages = asyncHandler(async (req, res) => {
 //   const { chatId } = req.params;
 //   let { page = 1, limit = 20 } = req.query;
@@ -429,36 +428,36 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     }
 
     // 2. Process attachments in parallel
-    const messageFiles = req.files?.attachments
+    const messageFiles = req.files?.attachments 
       ? await Promise.all(
-        req.files.attachments.map(async (attachment) => {
-          try {
-            const fileData = {
-              url: getStaticFilePath(req, attachment.filename),
-              localPath: getLocalPath(attachment.filename),
-              fileType: attachment.mimetype.split("/")[0] || "other",
-              fileName: attachment.originalname,
-              size: attachment.size,
-            };
+          req.files.attachments.map(async (attachment) => {
+            try {
+              const fileData = {
+                url: getStaticFilePath(req, attachment.filename),
+                localPath: getLocalPath(attachment.filename),
+                fileType: attachment.mimetype.split("/")[0] || "other",
+                fileName: attachment.originalname,
+                size: attachment.size,
+              };
 
-            // Process media metadata based on type
-            if (attachment.mimetype.startsWith('image/')) {
-              fileData.dimensions = await getImageDimensions(attachment.path);
-            } else if (attachment.mimetype.startsWith('video/')) {
-              const metadata = await getVideoMetadata(attachment.path);
-              fileData.dimensions = { width: metadata.width, height: metadata.height };
-              fileData.duration = metadata.duration;
-            } else if (attachment.mimetype.startsWith('audio/')) {
-              fileData.duration = await getAudioDuration(attachment.path);
+              // Process media metadata based on type
+              if (attachment.mimetype.startsWith('image/')) {
+                fileData.dimensions = await getImageDimensions(attachment.path);
+              } else if (attachment.mimetype.startsWith('video/')) {
+                const metadata = await getVideoMetadata(attachment.path);
+                fileData.dimensions = { width: metadata.width, height: metadata.height };
+                fileData.duration = metadata.duration;
+              } else if (attachment.mimetype.startsWith('audio/')) {
+                fileData.duration = await getAudioDuration(attachment.path);
+              }
+
+              return fileData;
+            } catch (error) {
+              console.error('Error processing attachment:', error);
+              return null;
             }
-
-            return fileData;
-          } catch (error) {
-            console.error('Error processing attachment:', error);
-            return null;
-          }
-        })
-      ).then(files => files.filter(Boolean))
+          })
+        ).then(files => files.filter(Boolean))
       : [];
 
     // 3. Prepare message data
@@ -632,7 +631,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     // 10. Execute parallel operations
     await Promise.all([
       // Send notifications
-      ...participantsToNotify.map(participant =>
+      ...participantsToNotify.map(participant => 
         sendGroupNotification(
           participant._id,
           notificationData.title,
@@ -647,7 +646,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
           console.error(`Failed to send notification to user ${participant._id}:`, error);
         })
       ),
-
+      
       // Send socket events
       ...onlineParticipants.map(participant =>
         emitSocketEvent(
@@ -689,11 +688,11 @@ function getAttachmentNotificationText(senderName, files) {
 
 function shouldSkipNotification(participant, content) {
   if (!participant.notificationSettings) return false;
-
+  
   const setting = participant.notificationSettings.groupChats;
   if (setting === 'none') return true;
   if (setting === 'mentions_only' && !content?.includes(`@${participant.username}`)) return true;
-
+  
   return false;
 }
 
@@ -725,65 +724,17 @@ const getAllGroups = asyncHandler(async (req, res) => {
     GroupChat.aggregate([
       { $match: matchStage },
       {
-        $lookup: {
-          from: "groupchatmessages",
-          let: { chatId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$chat", "$$chatId"] },
-                    { $ne: ["$sender", req.user._id] },
-                    { $ne: ["$seenBy", req.user._id] },
-                    { $ne: ["$deletedFor", req.user._id] }
-                  ]
-                }
-              }
-            },
-            { $count: "count" }
-          ],
-          as: "actualUnreadMessages"
-        }
-      },
-      {
         $addFields: {
           isJoined: { $in: [req.user._id, "$participants"] },
-          // Use either the stored unreadCount or calculate it from messages
+          // Preserve unreadCount for joined groups, set to 0 for non-joined
           unreadCount: {
-            $ifNull: [
-              {
-                $let: {
-                  vars: {
-                    userCount: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: "$unreadCounts",
-                            as: "uc",
-                            cond: { $eq: ["$$uc.user", req.user._id] }
-                          }
-                        },
-                        0
-                      ]
-                    },
-                    actualCount: {
-                      $ifNull: [{ $arrayElemAt: ["$actualUnreadMessages.count", 0] }, 0]
-                    }
-                  },
-                  in: {
-                    $cond: {
-                      if: { $gt: ["$$actualCount", 0] },
-                      then: "$$actualCount",
-                      else: "$$userCount.count"
-                    }
-                  }
-                }
-              },
-              0 // Default to 0 if not found
-            ]
-          }
-        }
+            $cond: {
+              if: { $in: [req.user._id, "$participants"] },
+              then: "$unreadCount",
+              else: 0,
+            },
+          },
+        },
       },
       ...chatCommonAggregation(req.user._id),
       { $sort: { sortField: -1 } },
@@ -801,11 +752,10 @@ const getAllGroups = asyncHandler(async (req, res) => {
           createdAt: 1,
           lastActivity: 1,
           isJoined: 1,
-          actualUnreadMessages: 0 // Exclude this field from final output
-        }
-      }
+        },
+      },
     ]),
-    GroupChat.countDocuments(matchStage)
+    GroupChat.countDocuments(matchStage),
   ]);
 
   // Calculate total pages
