@@ -151,8 +151,8 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
     return { successCount: 0, failureCount: 0 };
   }
 
-  // Filter out invalid tokens and ensure we have an array
-  const validTokens = Array.isArray(tokens)
+  // Ensure tokens is an array and filter out invalid tokens
+  const validTokens = Array.isArray(tokens) 
     ? tokens.filter(t => t && typeof t === 'string' && t.trim().length > 0)
     : [];
 
@@ -161,56 +161,62 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
     return { successCount: 0, failureCount: 0 };
   }
 
-  const message = {
-    notification: {
-      title: notificationData.title || 'New Message',
-      body: notificationData.body || 'You have a new message',
-    },
-    data: {
-      ...notificationData.data,
-      notification_foreground: 'true', // For Flutter to handle when app is in foreground
-      notification_android_channel_id: 'high_importance_channel', // Your channel ID
-    },
-    tokens: validTokens,
-    android: {
-      priority: 'high',
-      notification: {
-        channel_id: 'high_importance_channel',
-        sound: 'default',
-        visibility: 'public',
-        notification_priority: 'PRIORITY_HIGH',
-      },
-    },
-    apns: {
-      headers: {
-        'apns-priority': '10', // High priority for iOS
-      },
-      payload: {
-        aps: {
-          sound: 'default',
-          badge: 1,
-          mutableContent: 1, // For Flutter to handle notifications
-          contentAvailable: 1, // For background handling
-        },
-      },
-    },
-    webpush: {
-      headers: {
-        Urgency: 'high',
-      },
-    },
-  };
+  // Verify Firebase Admin is initialized
+  if (!admin.apps.length) {
+    console.error('Firebase Admin not initialized');
+    throw new Error('Firebase Admin SDK not initialized');
+  }
 
   try {
-    console.log('Sending notification to tokens:', validTokens);
-    const response = await admin.messaging().sendMulticast(message);
+    const message = {
+      notification: {
+        title: notificationData.title || 'New Message',
+        body: notificationData.body || 'You have a new message',
+      },
+      data: {
+        ...notificationData.data,
+        notification_foreground: 'true',
+        notification_android_channel_id: 'high_importance_channel',
+      },
+      tokens: validTokens,
+      android: {
+        priority: 'high',
+        notification: {
+          channel_id: 'high_importance_channel',
+          sound: 'default',
+          visibility: 'public',
+          notification_priority: 'PRIORITY_HIGH',
+        },
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+        },
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+            mutableContent: 1,
+            contentAvailable: 1,
+          },
+        },
+      },
+      webpush: {
+        headers: {
+          Urgency: 'high',
+        },
+      },
+    };
 
+    console.log('Attempting to send notification to tokens:', validTokens);
+    const response = await admin.messaging().sendMulticast(message);
+    
     console.log('Notification response:', {
       successCount: response.successCount,
       failureCount: response.failureCount,
     });
 
-    // Handle failures (remove invalid tokens, etc.)
+    // Handle failures
     if (response.failureCount > 0) {
       const failedTokens = [];
       response.responses.forEach((resp, idx) => {
@@ -220,11 +226,10 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
             error: resp.error,
           });
           console.error('Failed to send to token:', validTokens[idx], 'Error:', resp.error);
-
+          
           // Handle specific error cases
-          if (resp.error.code === 'messaging/invalid-registration-token' ||
-            resp.error.code === 'messaging/registration-token-not-registered') {
-            // Token is no longer valid and should be removed from database
+          if (resp.error.code === 'messaging/invalid-registration-token' || 
+              resp.error.code === 'messaging/registration-token-not-registered') {
             console.log(`Token ${validTokens[idx]} is invalid and should be removed`);
           }
         }
@@ -237,12 +242,18 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
       error: error.message,
       stack: error.stack,
       code: error.code,
+      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
     });
+    
+    // Check for specific Firebase initialization errors
+    if (error.message.includes('Failed to parse private key') || 
+        error.message.includes('The default Firebase app does not exist')) {
+      console.error('Firebase Admin SDK initialization error. Verify your service account credentials.');
+    }
+    
     throw error;
   }
 };
-
-
 
 // Helper function to delete all messages and attachments for a chat
 const deleteCascadeChatMessages = async (chatId) => {
