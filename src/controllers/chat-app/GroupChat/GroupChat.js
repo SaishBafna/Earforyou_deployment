@@ -725,9 +725,31 @@ const getAllGroups = asyncHandler(async (req, res) => {
     GroupChat.aggregate([
       { $match: matchStage },
       {
+        $lookup: {
+          from: "groupchatmessages",
+          let: { chatId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $ne: ["$sender", req.user._id] },
+                    { $ne: ["$seenBy", req.user._id] },
+                    { $ne: ["$deletedFor", req.user._id] }
+                  ]
+                }
+              }
+            },
+            { $count: "count" }
+          ],
+          as: "actualUnreadMessages"
+        }
+      },
+      {
         $addFields: {
           isJoined: { $in: [req.user._id, "$participants"] },
-          // Get the unread count for the current user from unreadCounts array
+          // Use either the stored unreadCount or calculate it from messages
           unreadCount: {
             $ifNull: [
               {
@@ -744,15 +766,24 @@ const getAllGroups = asyncHandler(async (req, res) => {
                         },
                         0
                       ]
+                    },
+                    actualCount: {
+                      $ifNull: [{ $arrayElemAt: ["$actualUnreadMessages.count", 0] }, 0]
                     }
                   },
-                  in: "$$userCount.count"
+                  in: {
+                    $cond: {
+                      if: { $gt: ["$$actualCount", 0] },
+                      then: "$$actualCount",
+                      else: "$$userCount.count"
+                    }
+                  }
                 }
               },
               0 // Default to 0 if not found
             ]
           }
-        },
+        }
       },
       ...chatCommonAggregation(req.user._id),
       { $sort: { sortField: -1 } },
@@ -770,10 +801,11 @@ const getAllGroups = asyncHandler(async (req, res) => {
           createdAt: 1,
           lastActivity: 1,
           isJoined: 1,
-        },
-      },
+          actualUnreadMessages: 0 // Exclude this field from final output
+        }
+      }
     ]),
-    GroupChat.countDocuments(matchStage),
+    GroupChat.countDocuments(matchStage)
   ]);
 
   // Calculate total pages
