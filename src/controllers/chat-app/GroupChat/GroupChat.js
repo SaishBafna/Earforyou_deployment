@@ -144,49 +144,87 @@ const chatCommonAggregation = (userId) => [
   { $sort: { sortField: -1 } },
 ];
 
-
-const sendFirebaseNotification = async (tokens, notificationData) => {
+const sendFirebaseNotification = async (tokens, notificationData, batchSize = 500) => {
   // Convert single token to array if needed
   const tokensArray = Array.isArray(tokens) ? tokens : [tokens];
 
   // Filter out any empty tokens
   const validTokens = tokensArray.filter(t => t && typeof t === 'string' && t.trim() !== '');
 
-  if (validTokens.length === 0) return;
+  if (validTokens.length === 0) {
+    console.log('No valid tokens provided');
+    return { successCount: 0, failureCount: 0, responses: [] };
+  }
 
-  const message = {
-    notification: {
-      title: notificationData.title,
-      body: notificationData.body
-    },
-    data: notificationData.data,
-    tokens: validTokens,
-    android: {
-      priority: 'high'
-    },
-    apns: {
-      payload: {
-        aps: {
-          sound: 'default',
-          badge: 1
-        }
-      }
-    }
-  };
+  // Split tokens into batches
+  const tokenBatches = [];
+  for (let i = 0; i < validTokens.length; i += batchSize) {
+    tokenBatches.push(validTokens.slice(i, i + batchSize));
+  }
+
+  const allResponses = [];
+  let totalSuccessCount = 0;
+  let totalFailureCount = 0;
+  const allFailedTokens = [];
 
   try {
-    const response = await admin.messaging().sendMulticast(message);
-    // Handle failures (remove invalid tokens, etc.)
-    if (response.failureCount > 0) {
-      const failedTokens = [];
-      response.responses.forEach((resp, idx) => {
-        if (!resp.success) {
-          failedTokens.push(validTokens[idx]);
+    // Process each batch sequentially
+    for (const [index, batchTokens] of tokenBatches.entries()) {
+      console.log(`Processing batch ${index + 1}/${tokenBatches.length} with ${batchTokens.length} tokens`);
+      
+      const message = {
+        notification: {
+          title: notificationData.title,
+          body: notificationData.body
+        },
+        data: notificationData.data,
+        tokens: batchTokens,
+        android: {
+          priority: 'high'
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1
+            }
+          }
         }
-      });
-      console.log('Failed to send to tokens:', failedTokens);
+      };
+
+      const response = await admin.messaging().sendMulticast(message);
+      allResponses.push(response);
+
+      // Update totals
+      totalSuccessCount += response.successCount;
+      totalFailureCount += response.failureCount;
+
+      // Collect failed tokens
+      if (response.failureCount > 0) {
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            allFailedTokens.push(batchTokens[idx]);
+          }
+        });
+      }
+
+      // Small delay between batches to avoid rate limiting
+      if (index < tokenBatches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
-    return response;
+
+    if (allFailedTokens.length > 0) {
+      console.log(`Failed to send to ${allFailedTokens.length} tokens:`, allFailedTokens);
+    }
+
+    return {
+      successCount: totalSuccessCount,
+      failureCount: totalFailureCount,
+      responses: allResponses,
+      failedTokens: allFailedTokens
+    };
+
   } catch (error) {
     console.error('Error sending Firebase notification:', error);
     throw error;
