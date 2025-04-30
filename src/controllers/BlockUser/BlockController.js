@@ -1,5 +1,6 @@
 import Block from "../../models/Block";
 import User from "../../models/Users";
+
 // Block a user
 export const blockUser = async (req, res) => {
   try {

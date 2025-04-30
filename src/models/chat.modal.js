@@ -26,6 +26,27 @@ const chatSchema = new Schema(
       of: Number, // Count of unread messages per user
       default: {},
     },
+
+    // isPaidChat: {
+    //   type: Boolean,
+    //   default: false
+    // },
+    // chatType: {
+    //   type: String,
+    //   enum: ['private', 'group'],
+    //   required: true,
+    //   default: 'private'
+    // },
+    // initiatedBy: {
+    //   type: Schema.Types.ObjectId,
+    //   ref: "User"
+
+    // },
+    // chargeApplied: {
+    //   type: Boolean,
+    //   default: false
+    // }
+
   },
   { timestamps: true }
 );

@@ -426,7 +426,7 @@ export const toggleLikePost = async (req, res) => {
           recipientId: post.author._id,
           senderId: userId,
           type: 'post_like',
-          title: 'Someone liked your post',
+          title: `${req.user.username} liked your post`,
           message: `${req.user.username} liked your post`,
           postId
         });
