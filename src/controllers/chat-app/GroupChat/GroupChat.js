@@ -9,7 +9,7 @@ import { ApiError } from "../../../utils/ApiError.js";
 import { ApiResponse } from "../../../utils/ApiResponse.js";
 import { asyncHandler } from "../../../utils/asyncHandler.js";
 import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
-import  admin  from "../../../config/firebaseConfig.js"
+import admin from "../../../config/firebaseConfig.js"
 
 
 
@@ -391,87 +391,84 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
  * @description Send a message to a group chat
  */
 
-
 const sendGroupMessage = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { content, replyTo } = req.body;
 
+  // Validate input
   if (!content && !req.files?.attachments?.length) {
     throw new ApiError(400, "Message content or attachment is required");
   }
 
-  // Validate chatId format
   if (!mongoose.Types.ObjectId.isValid(chatId)) {
     throw new ApiError(400, "Invalid chat ID format");
   }
 
-  // Get group chat in single query with transaction for consistency
+  // Start transaction
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const groupChat = await GroupChat.findOneAndUpdate(
-      {
-        _id: chatId,
-        isGroupChat: true,
-        participants: req.user._id,
-      },
-      { $set: { lastActivity: new Date() } },
-      {
-        new: true,
-        session,
-      }
-    ).populate({
-      path: 'participants',
-      select: '_id username name email deviceToken isOnline lastSeen notificationSettings',
-      match: { _id: { $ne: req.user._id } }, // Exclude the sender
-    });
+    // 1. Fetch and validate group chat
+    const [groupChat, sender] = await Promise.all([
+      GroupChat.findOneAndUpdate(
+        {
+          _id: chatId,
+          isGroupChat: true,
+          participants: req.user._id,
+        },
+        { $set: { lastActivity: new Date() } },
+        {
+          new: true,
+          session,
+          populate: {
+            path: 'participants',
+            select: '_id username name deviceToken isOnline notificationSettings',
+            match: { _id: { $ne: req.user._id } },
+          }
+        }
+      ),
+      User.findById(req.user._id).select("username name avatar").lean()
+    ]);
 
     if (!groupChat) {
       throw new ApiError(404, "Group chat not found or you're not a participant");
     }
 
-    // Process attachments
-    const messageFiles = [];
-    if (req.files?.attachments) {
-      for (const attachment of req.files.attachments) {
-        try {
-          const fileData = {
-            url: getStaticFilePath(req, attachment.filename),
-            localPath: getLocalPath(attachment.filename),
-            fileType: attachment.mimetype.split("/")[0] || "other",
-            fileName: attachment.originalname,
-            size: attachment.size,
-          };
-
-          // Add additional metadata based on file type
-          if (attachment.mimetype.startsWith('image/')) {
-            // Extract image dimensions
-            const dimensions = await getImageDimensions(attachment.path);
-            fileData.dimensions = dimensions;
-          } else if (attachment.mimetype.startsWith('video/')) {
-            // Extract video dimensions and duration
-            const metadata = await getVideoMetadata(attachment.path);
-            fileData.dimensions = {
-              width: metadata.width,
-              height: metadata.height,
+    // 2. Process attachments in parallel
+    const messageFiles = req.files?.attachments
+      ? await Promise.all(
+        req.files.attachments.map(async (attachment) => {
+          try {
+            const fileData = {
+              url: getStaticFilePath(req, attachment.filename),
+              localPath: getLocalPath(attachment.filename),
+              fileType: attachment.mimetype.split("/")[0] || "other",
+              fileName: attachment.originalname,
+              size: attachment.size,
             };
-            fileData.duration = metadata.duration;
-          } else if (attachment.mimetype.startsWith('audio/')) {
-            // Extract audio duration
-            const duration = await getAudioDuration(attachment.path);
-            fileData.duration = duration;
+
+            // Process media metadata based on type
+            if (attachment.mimetype.startsWith('image/')) {
+              fileData.dimensions = await getImageDimensions(attachment.path);
+            } else if (attachment.mimetype.startsWith('video/')) {
+              const metadata = await getVideoMetadata(attachment.path);
+              fileData.dimensions = { width: metadata.width, height: metadata.height };
+              fileData.duration = metadata.duration;
+            } else if (attachment.mimetype.startsWith('audio/')) {
+              fileData.duration = await getAudioDuration(attachment.path);
+            }
+
+            return fileData;
+          } catch (error) {
+            console.error('Error processing attachment:', error);
+            return null;
           }
+        })
+      ).then(files => files.filter(Boolean))
+      : [];
 
-          messageFiles.push(fileData);
-        } catch (error) {
-          console.error('Error processing attachment:', error);
-          // Continue with other attachments even if one fails
-        }
-      }
-    }
-
-    // Prepare message data
+    // 3. Prepare message data
     const messageData = {
       sender: req.user._id,
       content: content || "",
@@ -479,7 +476,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       attachments: messageFiles,
     };
 
-    // Handle replyTo if provided
+    // 4. Handle reply if needed
     if (replyTo) {
       if (!mongoose.Types.ObjectId.isValid(replyTo)) {
         throw new ApiError(400, "Invalid replyTo message ID format");
@@ -509,32 +506,30 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       };
     }
 
-    // Create the message
-    const message = await GroupChatMessage.create([messageData], { session });
-    const createdMessage = message[0];
+    // 5. Create message and update group chat
+    const [createdMessage] = await GroupChatMessage.create([messageData], { session });
 
-    // Prepare update operations for unread counts
     const participantsToUpdate = groupChat.participants
       .filter(p => p._id.toString() !== req.user._id.toString())
       .map(p => p._id.toString());
 
-    const updateOps = {
-      $set: { lastMessage: createdMessage._id },
-      $inc: {
-        ...participantsToUpdate.reduce((acc, p) => {
-          acc[`unreadCounts.${p}.count`] = 1;
-          return acc;
-        }, {}),
+    await GroupChat.findByIdAndUpdate(
+      chatId,
+      {
+        $set: { lastMessage: createdMessage._id },
+        $inc: participantsToUpdate.reduce((acc, p) => ({
+          ...acc,
+          [`unreadCounts.${p}.count`]: 1
+        }), {}),
       },
-    };
+      { session }
+    );
 
-    await GroupChat.findByIdAndUpdate(chatId, updateOps, { session });
-
-    // Commit the transaction
+    // 6. Commit transaction
     await session.commitTransaction();
 
-    // Get populated message in single aggregation
-    const [populatedMessage] = await GroupChatMessage.aggregate([
+    // 7. Populate message data for response
+    const populatedMessage = await GroupChatMessage.aggregate([
       { $match: { _id: createdMessage._id } },
       {
         $lookup: {
@@ -587,36 +582,18 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
         },
       },
       { $project: { replyToMessage: 0 } },
-    ]);
+    ]).then(res => res[0]);
 
     if (!populatedMessage) {
       throw new ApiError(500, "Failed to populate message after creation");
     }
 
-    // Get sender info for notifications
-    const sender = await User.findById(req.user._id)
-      .select("username name avatar")
-      .lean();
-
+    // 8. Prepare notifications
     const senderName = sender.name || sender.username;
-    let notificationMessage = '';
+    const notificationMessage = content
+      ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
+      : getAttachmentNotificationText(senderName, messageFiles);
 
-    if (content) {
-      notificationMessage = `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`;
-    } else if (messageFiles.length > 0) {
-      const fileTypes = new Set(messageFiles.map(f => f.fileType));
-      if (fileTypes.has('image')) {
-        notificationMessage = `${senderName} sent a photo`;
-      } else if (fileTypes.has('video')) {
-        notificationMessage = `${senderName} sent a video`;
-      } else if (fileTypes.has('audio')) {
-        notificationMessage = `${senderName} sent an audio`;
-      } else {
-        notificationMessage = `${senderName} sent a file`;
-      }
-    }
-
-    // Prepare notification data
     const notificationData = {
       title: groupChat.name || `Group Chat`,
       body: notificationMessage,
@@ -632,101 +609,64 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       icon: sender.avatar || null,
     };
 
-    // Filter participants who should receive notifications
-    const participantsToNotify = groupChat.participants.filter(participant => {
-      // Exclude sender
-      if (participant._id.toString() === req.user._id.toString()) {
-        return false;
-      }
-
-      // Check if participant has device token
-      if (!participant.deviceToken) {
-        console.log(`User ${participant._id} has no device token`);
-        return false;
-      }
-
-      // Check notification settings if available
-      if (participant.notificationSettings) {
-        const groupChatSetting = participant.notificationSettings.groupChats;
-        if (groupChatSetting === 'none') {
-          return false;
+    // 9. Filter participants for notifications
+    const { participantsToNotify, onlineParticipants } = groupChat.participants.reduce(
+      (acc, participant) => {
+        if (participant._id.toString() === req.user._id.toString()) {
+          return acc;
         }
-        if (groupChatSetting === 'mentions_only') {
-          // Check if message mentions this user
-          if (!content?.includes(`@${participant.username}`)) {
-            return false;
-          }
+
+        if (!participant.deviceToken) {
+          console.log(`User ${participant._id} has no device token`);
+          return acc;
         }
-      }
 
-      // Check if user is online (optional - you might want to skip notifications for online users)
-      if (participant.isOnline) {
-        console.log(`User ${participant._id} is online, skipping notification`);
-        return false;
-      }
-
-      return true;
-    });
-
-    console.log(`Preparing to send notifications to ${participantsToNotify.length} participants`);
-
-    // Send notifications to filtered participants
-    const notificationPromises = participantsToNotify.map(async (participant) => {
-      try {
-        // Check if deviceToken is an array (multiple devices) or a single token
-        const tokens = Array.isArray(participant.deviceToken)
-          ? participant.deviceToken
-          : [participant.deviceToken];
-
-        console.log(`Sending notification to user ${participant._id} with ${tokens.length} tokens`);
-
-        const response = await sendFirebaseNotification(tokens, notificationData);
-
-        // Handle token cleanup if needed
-        if (response.failureCount > 0) {
-          const failedTokens = [];
-          response.responses.forEach((resp, idx) => {
-            if (!resp.success &&
-              (resp.error.code === 'messaging/invalid-registration-token' ||
-                resp.error.code === 'messaging/registration-token-not-registered')) {
-              failedTokens.push(tokens[idx]);
-            }
-          });
-
-          if (failedTokens.length > 0) {
-            console.log(`Removing ${failedTokens.length} invalid tokens for user ${participant._id}`);
-            await User.updateOne(
-              { _id: participant._id },
-              { $pull: { deviceToken: { $in: failedTokens } } }
-            );
-          }
+        if (shouldSkipNotification(participant, content)) {
+          return acc;
         }
-      } catch (error) {
-        console.error(`Failed to send notification to user ${participant._id}:`, error);
-      }
-    });
 
-    // Emit socket events to online participants
-    const onlineParticipants = groupChat.participants.filter(p =>
-      p._id.toString() !== req.user._id.toString() &&
-      p.isOnline
+        if (participant.isOnline) {
+          acc.onlineParticipants.push(participant);
+        } else {
+          acc.participantsToNotify.push(participant);
+        }
+
+        return acc;
+      },
+      { participantsToNotify: [], onlineParticipants: [] }
     );
 
-    console.log(`Sending socket events to ${onlineParticipants.length} online participants`);
+    // 10. Execute parallel operations
+    await Promise.all([
+      // Send notifications
+      ...participantsToNotify.map(participant =>
+        sendGroupNotification(
+          participant._id,
+          notificationData.title,
+          notificationData.body,
+          chatId.toString(),
+          createdMessage._id.toString(),
+          req.user._id.toString(),
+          senderName,
+          sender.avatar,
+          messageFiles.length > 0
+        ).catch(error => {
+          console.error(`Failed to send notification to user ${participant._id}:`, error);
+        })
+      ),
 
-    const socketEvents = onlineParticipants.map(participant =>
-      emitSocketEvent(
-        req,
-        participant._id.toString(),
-        ChatEventEnum.MESSAGE_RECEIVED_EVENT,
-        populatedMessage
-      ).catch(error => {
-        console.error(`Failed to emit socket event to user ${participant._id}:`, error);
-      })
-    );
-
-    // Run notifications and socket events in parallel
-    await Promise.all([...notificationPromises, ...socketEvents]);
+      // Send socket events
+      ...onlineParticipants.map(participant =>
+        emitSocketEvent(
+          req,
+          participant._id.toString(),
+          ChatEventEnum.MESSAGE_RECEIVED_EVENT,
+          populatedMessage
+        ).catch(error => {
+          console.error(`Failed to emit socket event to user ${participant._id}:`, error);
+        })
+      )
+    ]);
 
     return res
       .status(201)
@@ -744,6 +684,25 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     session.endSession();
   }
 });
+
+// Helper functions
+function getAttachmentNotificationText(senderName, files) {
+  const fileTypes = new Set(files.map(f => f.fileType));
+  if (fileTypes.has('image')) return `${senderName} sent a photo`;
+  if (fileTypes.has('video')) return `${senderName} sent a video`;
+  if (fileTypes.has('audio')) return `${senderName} sent an audio`;
+  return `${senderName} sent a file`;
+}
+
+function shouldSkipNotification(participant, content) {
+  if (!participant.notificationSettings) return false;
+
+  const setting = participant.notificationSettings.groupChats;
+  if (setting === 'none') return true;
+  if (setting === 'mentions_only' && !content?.includes(`@${participant.username}`)) return true;
+
+  return false;
+}
 
 
 /**
