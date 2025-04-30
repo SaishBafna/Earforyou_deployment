@@ -143,116 +143,107 @@ const chatCommonAggregation = (userId) => [
   { $sort: { sortField: -1 } },
 ];
 
+async function sendGroupNotification(
+  userId,
+  title,
+  message,
+  chatId,
+  messageId,
+  senderId,
+  senderName,
+  senderAvatar,
+  hasAttachments = false
+) {
+  // Get user with their notification settings
+  const user = await User.findById(userId).select('deviceToken notificationSettings isOnline');
 
-const sendFirebaseNotification = async (tokens, notificationData) => {
-  if (!tokens || tokens.length === 0) {
-    console.log('No tokens provided for notification');
-    return { successCount: 0, failureCount: 0 };
+  // Check if user should receive notification
+  if (!user) {
+    console.error("User not found:", userId);
+    return;
   }
 
-  // Ensure tokens is an array and filter out invalid tokens
-  const validTokens = Array.isArray(tokens)
-    ? tokens.filter(t => t && typeof t === 'string' && t.trim().length > 0)
-    : [];
-
-  if (validTokens.length === 0) {
-    console.log('No valid tokens after filtering');
-    return { successCount: 0, failureCount: 0 };
+  // Check if user has device token
+  if (!user.deviceToken) {
+    console.error("No device token found for user:", userId);
+    return;
   }
 
-  // Verify Firebase Admin is initialized
-  if (!admin.apps.length) {
-    console.error('Firebase Admin not initialized');
-    throw new Error('Firebase Admin SDK not initialized');
+  // Check notification settings if available
+  if (user.notificationSettings) {
+    const groupChatSetting = user.notificationSettings.groupChats;
+    if (groupChatSetting === 'none') {
+      console.log(`User ${userId} has disabled group chat notifications`);
+      return;
+    }
+    if (groupChatSetting === 'mentions_only') {
+      // For group chats, we would need to check if message mentions this user
+      // This would require passing the message content or mentions array
+      console.log(`User ${userId} only wants mentions, but mentions check not implemented`);
+      return;
+    }
   }
+
+  // Skip if user is online (optional)
+  if (user.isOnline) {
+    console.log(`User ${userId} is online, skipping notification`);
+    return;
+  }
+
+  // Prepare notification payload
+  const payload = {
+    android: {
+      priority: 'high',
+      notification: {
+        title: title,
+        body: message,
+        icon: senderAvatar || 'default', // Use default if no avatar
+        // Add other Android-specific options
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1, // Increment badge count
+          // Add other iOS-specific options
+        },
+      },
+    },
+    data: {
+      screen: 'GroupChat', // The screen name for group chat
+      params: JSON.stringify({
+        chatId: chatId,
+        messageId: messageId,
+        type: 'group_message',
+        senderId: senderId,
+        senderName: senderName,
+        senderAvatar: senderAvatar || '',
+        hasAttachments: hasAttachments.toString(),
+        // Include any other parameters your GroupChat screen needs
+      }),
+      click_action: 'FLUTTER_NOTIFICATION_CLICK', // Important for Flutter
+    },
+    token: user.deviceToken,
+  };
 
   try {
-    const message = {
-      notification: {
-        title: notificationData.title || 'New Message',
-        body: notificationData.body || 'You have a new message',
-      },
-      data: {
-        ...notificationData.data,
-        notification_foreground: 'true',
-        notification_android_channel_id: 'high_importance_channel',
-      },
-      tokens: validTokens,
-      android: {
-        priority: 'high',
-        notification: {
-          channel_id: 'high_importance_channel',
-          sound: 'default',
-          visibility: 'public',
-          notification_priority: 'PRIORITY_HIGH',
-        },
-      },
-      apns: {
-        headers: {
-          'apns-priority': '10',
-        },
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: 1,
-            mutableContent: 1,
-            contentAvailable: 1,
-          },
-        },
-      },
-      webpush: {
-        headers: {
-          Urgency: 'high',
-        },
-      },
-    };
-
-    console.log('Attempting to send notification to tokens:', validTokens);
-    const response = await admin.messaging().sendMulticast(message);
-
-    console.log('Notification response:', {
-      successCount: response.successCount,
-      failureCount: response.failureCount,
-    });
-
-    // Handle failures
-    if (response.failureCount > 0) {
-      const failedTokens = [];
-      response.responses.forEach((resp, idx) => {
-        if (!resp.success) {
-          failedTokens.push({
-            token: validTokens[idx],
-            error: resp.error,
-          });
-          console.error('Failed to send to token:', validTokens[idx], 'Error:', resp.error);
-
-          // Handle specific error cases
-          if (resp.error.code === 'messaging/invalid-registration-token' ||
-            resp.error.code === 'messaging/registration-token-not-registered') {
-            console.log(`Token ${validTokens[idx]} is invalid and should be removed`);
-          }
-        }
-      });
-    }
-
-    return response;
+    const response = await admin.messaging().send(payload);
+    console.log("Group notification sent successfully to user:", userId, response);
   } catch (error) {
-    console.error('Error sending Firebase notification:', {
-      error: error.message,
-      stack: error.stack,
-      code: error.code,
-      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-    });
+    console.error("Error sending group notification to user:", userId, error);
 
-    // Check for specific Firebase initialization errors
-    if (error.message.includes('Failed to parse private key') ||
-      error.message.includes('The default Firebase app does not exist')) {
-      console.error('Firebase Admin SDK initialization error. Verify your service account credentials.');
+    // Handle token cleanup if needed
+    if (error.code === 'messaging/invalid-registration-token' ||
+      error.code === 'messaging/registration-token-not-registered') {
+      console.log(`Removing invalid token for user ${userId}`);
+      await User.updateOne(
+        { _id: userId },
+        { $unset: { deviceToken: 1 } }
+      );
     }
-
-    throw error;
   }
-};
+}
 
 // Helper function to delete all messages and attachments for a chat
 const deleteCascadeChatMessages = async (chatId) => {
@@ -390,6 +381,7 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
  * @route POST /api/v1/chats/group/:chatId/messages
  * @description Send a message to a group chat
  */
+
 
 const sendGroupMessage = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
