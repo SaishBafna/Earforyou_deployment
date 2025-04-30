@@ -53,13 +53,13 @@ const chatSchema = new Schema(
         user: {
           type: Schema.Types.ObjectId,
           ref: "User",
-          required: true
+          required: true,
         },
         count: {
           type: Number,
-          default: 0
-        }
-      }
+          default: 0,
+        },
+      },
     ],
     pendingJoinRequests: [
       {
@@ -80,17 +80,17 @@ const chatSchema = new Schema(
       },
     ],
     settings: {
-
       singleUseLinks: {
         type: Boolean,
-        default: false
+        default: false,
       },
-      usedTokens: [{
-        token: String,
-        usedAt: Date,
-        usedBy: { type: Schema.Types.ObjectId, ref: "User" }
-      }],
-
+      usedTokens: [
+        {
+          token: String,
+          usedAt: Date,
+          usedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        },
+      ],
       joinByLink: {
         type: Boolean,
         default: false,
@@ -99,6 +99,9 @@ const chatSchema = new Schema(
         type: String,
         unique: true,
         sparse: true,
+      },
+      inviteLinkExpiresAt: {
+        type: Date,
       },
       sendMediaPermission: {
         type: String,
