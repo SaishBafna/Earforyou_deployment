@@ -322,6 +322,7 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
  * @route GET /api/v1/chats/group/:chatId/messages
  * @description Get all messages for a group chat with pagination
  */
+
 // const getAllGroupMessages = asyncHandler(async (req, res) => {
 //   const { chatId } = req.params;
 //   let { page = 1, limit = 20 } = req.query;
@@ -726,14 +727,31 @@ const getAllGroups = asyncHandler(async (req, res) => {
       {
         $addFields: {
           isJoined: { $in: [req.user._id, "$participants"] },
-          // Preserve unreadCount for joined groups, set to 0 for non-joined
+          // Get the unread count for the current user from unreadCounts array
           unreadCount: {
-            $cond: {
-              if: { $in: [req.user._id, "$participants"] },
-              then: "$unreadCount",
-              else: 0,
-            },
-          },
+            $ifNull: [
+              {
+                $let: {
+                  vars: {
+                    userCount: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: "$unreadCounts",
+                            as: "uc",
+                            cond: { $eq: ["$$uc.user", req.user._id] }
+                          }
+                        },
+                        0
+                      ]
+                    }
+                  },
+                  in: "$$userCount.count"
+                }
+              },
+              0 // Default to 0 if not found
+            ]
+          }
         },
       },
       ...chatCommonAggregation(req.user._id),
