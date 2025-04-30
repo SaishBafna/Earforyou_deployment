@@ -11,6 +11,9 @@ import { asyncHandler } from "../../../utils/asyncHandler.js";
 import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
 import admin from 'firebase-admin';
 
+
+
+
 /**
  * Middleware to check if a user has permission to send messages in a group chat
  */
@@ -141,89 +144,100 @@ const chatCommonAggregation = (userId) => [
   { $sort: { sortField: -1 } },
 ];
 
-const sendFirebaseNotification = async (tokens, notificationData, batchSize = 500) => {
-  // Convert single token to array if needed
-  const tokensArray = Array.isArray(tokens) ? tokens : [tokens];
 
-  // Filter out any empty tokens
-  const validTokens = tokensArray.filter(t => t && typeof t === 'string' && t.trim() !== '');
+const sendFirebaseNotification = async (tokens, notificationData) => {
+  if (!tokens || tokens.length === 0) {
+    console.log('No tokens provided for notification');
+    return { successCount: 0, failureCount: 0 };
+  }
+
+  // Filter out invalid tokens and ensure we have an array
+  const validTokens = Array.isArray(tokens)
+    ? tokens.filter(t => t && typeof t === 'string' && t.trim().length > 0)
+    : [];
 
   if (validTokens.length === 0) {
-    console.log('No valid tokens provided');
-    return { successCount: 0, failureCount: 0, responses: [] };
+    console.log('No valid tokens after filtering');
+    return { successCount: 0, failureCount: 0 };
   }
 
-  // Split tokens into batches
-  const tokenBatches = [];
-  for (let i = 0; i < validTokens.length; i += batchSize) {
-    tokenBatches.push(validTokens.slice(i, i + batchSize));
-  }
-
-  const allResponses = [];
-  let totalSuccessCount = 0;
-  let totalFailureCount = 0;
-  const allFailedTokens = [];
+  const message = {
+    notification: {
+      title: notificationData.title || 'New Message',
+      body: notificationData.body || 'You have a new message',
+    },
+    data: {
+      ...notificationData.data,
+      notification_foreground: 'true', // For Flutter to handle when app is in foreground
+      notification_android_channel_id: 'high_importance_channel', // Your channel ID
+    },
+    tokens: validTokens,
+    android: {
+      priority: 'high',
+      notification: {
+        channel_id: 'high_importance_channel',
+        sound: 'default',
+        visibility: 'public',
+        notification_priority: 'PRIORITY_HIGH',
+      },
+    },
+    apns: {
+      headers: {
+        'apns-priority': '10', // High priority for iOS
+      },
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1,
+          mutableContent: 1, // For Flutter to handle notifications
+          contentAvailable: 1, // For background handling
+        },
+      },
+    },
+    webpush: {
+      headers: {
+        Urgency: 'high',
+      },
+    },
+  };
 
   try {
-    // Process each batch sequentially
-    for (const [index, batchTokens] of tokenBatches.entries()) {
-      console.log(`Processing batch ${index + 1}/${tokenBatches.length} with ${batchTokens.length} tokens`);
+    console.log('Sending notification to tokens:', validTokens);
+    const response = await admin.messaging().sendMulticast(message);
 
-      const message = {
-        notification: {
-          title: notificationData.title,
-          body: notificationData.body
-        },
-        data: notificationData.data,
-        tokens: batchTokens,
-        android: {
-          priority: 'high'
-        },
-        apns: {
-          payload: {
-            aps: {
-              sound: 'default',
-              badge: 1
-            }
+    console.log('Notification response:', {
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+    });
+
+    // Handle failures (remove invalid tokens, etc.)
+    if (response.failureCount > 0) {
+      const failedTokens = [];
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          failedTokens.push({
+            token: validTokens[idx],
+            error: resp.error,
+          });
+          console.error('Failed to send to token:', validTokens[idx], 'Error:', resp.error);
+
+          // Handle specific error cases
+          if (resp.error.code === 'messaging/invalid-registration-token' ||
+            resp.error.code === 'messaging/registration-token-not-registered') {
+            // Token is no longer valid and should be removed from database
+            console.log(`Token ${validTokens[idx]} is invalid and should be removed`);
           }
         }
-      };
-
-      const response = await admin.messaging().sendMulticast(message);
-      allResponses.push(response);
-
-      // Update totals
-      totalSuccessCount += response.successCount;
-      totalFailureCount += response.failureCount;
-
-      // Collect failed tokens
-      if (response.failureCount > 0) {
-        response.responses.forEach((resp, idx) => {
-          if (!resp.success) {
-            allFailedTokens.push(batchTokens[idx]);
-          }
-        });
-      }
-
-      // Small delay between batches to avoid rate limiting
-      if (index < tokenBatches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
+      });
     }
 
-    if (allFailedTokens.length > 0) {
-      console.log(`Failed to send to ${allFailedTokens.length} tokens:`, allFailedTokens);
-    }
-
-    return {
-      successCount: totalSuccessCount,
-      failureCount: totalFailureCount,
-      responses: allResponses,
-      failedTokens: allFailedTokens
-    };
-
+    return response;
   } catch (error) {
-    console.error('Error sending Firebase notification:', error);
+    console.error('Error sending Firebase notification:', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+    });
     throw error;
   }
 };
@@ -368,8 +382,6 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
  */
 
 
-
-
 const sendGroupMessage = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { content, replyTo } = req.body;
@@ -378,216 +390,349 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Message content or attachment is required");
   }
 
-  // Get group chat in single query
-  const groupChat = await GroupChat.findOneAndUpdate(
-    {
-      _id: chatId,
-      isGroupChat: true,
-      participants: req.user._id
-    },
-    { $set: { lastActivity: new Date() } },
-    { new: true }
-  ).populate({
-    path: 'participants',
-    select: '_id username name email deviceToken',
-    match: { _id: { $ne: req.user._id } } // Exclude the sender
-  });
-
-  if (!groupChat) {
-    throw new ApiError(404, "Group chat not found or you're not a participant");
+  // Validate chatId format
+  if (!mongoose.Types.ObjectId.isValid(chatId)) {
+    throw new ApiError(400, "Invalid chat ID format");
   }
 
-  // Process attachments
-  const messageFiles = (req.files?.attachments || []).map((attachment) => ({
-    url: getStaticFilePath(req, attachment.filename),
-    localPath: getLocalPath(attachment.filename),
-    fileType: attachment.mimetype.split("/")[0] || "other",
-    fileName: attachment.originalname,
-    size: attachment.size,
-    ...(attachment.mimetype.startsWith('image/') || attachment.mimetype.startsWith('video/')) && {
-      dimensions: {
-        width: 0, // You'll need to extract these from the file
-        height: 0
+  // Get group chat in single query with transaction for consistency
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const groupChat = await GroupChat.findOneAndUpdate(
+      {
+        _id: chatId,
+        isGroupChat: true,
+        participants: req.user._id,
+      },
+      { $set: { lastActivity: new Date() } },
+      {
+        new: true,
+        session,
       }
-    },
-    ...(attachment.mimetype.startsWith('audio/') || attachment.mimetype.startsWith('video/')) && {
-      duration: 0 // You'll need to extract this from the file
+    ).populate({
+      path: 'participants',
+      select: '_id username name email deviceToken isOnline lastSeen notificationSettings',
+      match: { _id: { $ne: req.user._id } }, // Exclude the sender
+    });
+
+    if (!groupChat) {
+      throw new ApiError(404, "Group chat not found or you're not a participant");
     }
-  }));
 
-  // Prepare message data
-  const messageData = {
-    sender: req.user._id,
-    content: content || "",
-    chat: chatId,
-    attachments: messageFiles
-  };
+    // Process attachments
+    const messageFiles = [];
+    if (req.files?.attachments) {
+      for (const attachment of req.files.attachments) {
+        try {
+          const fileData = {
+            url: getStaticFilePath(req, attachment.filename),
+            localPath: getLocalPath(attachment.filename),
+            fileType: attachment.mimetype.split("/")[0] || "other",
+            fileName: attachment.originalname,
+            size: attachment.size,
+          };
 
-  // Handle replyTo if provided
-  if (replyTo) {
-    const repliedMessage = await GroupChatMessage.findOne({
-      _id: replyTo,
-      chat: chatId
-    })
-      .select('sender content attachments createdAt')
+          // Add additional metadata based on file type
+          if (attachment.mimetype.startsWith('image/')) {
+            // Extract image dimensions
+            const dimensions = await getImageDimensions(attachment.path);
+            fileData.dimensions = dimensions;
+          } else if (attachment.mimetype.startsWith('video/')) {
+            // Extract video dimensions and duration
+            const metadata = await getVideoMetadata(attachment.path);
+            fileData.dimensions = {
+              width: metadata.width,
+              height: metadata.height,
+            };
+            fileData.duration = metadata.duration;
+          } else if (attachment.mimetype.startsWith('audio/')) {
+            // Extract audio duration
+            const duration = await getAudioDuration(attachment.path);
+            fileData.duration = duration;
+          }
+
+          messageFiles.push(fileData);
+        } catch (error) {
+          console.error('Error processing attachment:', error);
+          // Continue with other attachments even if one fails
+        }
+      }
+    }
+
+    // Prepare message data
+    const messageData = {
+      sender: req.user._id,
+      content: content || "",
+      chat: chatId,
+      attachments: messageFiles,
+    };
+
+    // Handle replyTo if provided
+    if (replyTo) {
+      if (!mongoose.Types.ObjectId.isValid(replyTo)) {
+        throw new ApiError(400, "Invalid replyTo message ID format");
+      }
+
+      const repliedMessage = await GroupChatMessage.findOne({
+        _id: replyTo,
+        chat: chatId,
+      })
+        .select('sender content attachments createdAt')
+        .lean({ session });
+
+      if (!repliedMessage) {
+        throw new ApiError(400, "Replied message not found in this chat");
+      }
+
+      messageData.replyTo = {
+        messageId: repliedMessage._id,
+        sender: repliedMessage.sender,
+        content: repliedMessage.content,
+        attachments: repliedMessage.attachments?.map(att => ({
+          url: att.url,
+          fileType: att.fileType,
+          thumbnailUrl: att.thumbnailUrl,
+        })) || [],
+        originalCreatedAt: repliedMessage.createdAt,
+      };
+    }
+
+    // Create the message
+    const message = await GroupChatMessage.create([messageData], { session });
+    const createdMessage = message[0];
+
+    // Prepare update operations for unread counts
+    const participantsToUpdate = groupChat.participants
+      .filter(p => p._id.toString() !== req.user._id.toString())
+      .map(p => p._id.toString());
+
+    const updateOps = {
+      $set: { lastMessage: createdMessage._id },
+      $inc: {
+        ...participantsToUpdate.reduce((acc, p) => {
+          acc[`unreadCounts.${p}.count`] = 1;
+          return acc;
+        }, {}),
+      },
+    };
+
+    await GroupChat.findByIdAndUpdate(chatId, updateOps, { session });
+
+    // Commit the transaction
+    await session.commitTransaction();
+
+    // Get populated message in single aggregation
+    const [populatedMessage] = await GroupChatMessage.aggregate([
+      { $match: { _id: createdMessage._id } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "sender",
+          foreignField: "_id",
+          as: "sender",
+          pipeline: [{ $project: { username: 1, avatar: 1, email: 1, name: 1 } }],
+        },
+      },
+      { $unwind: "$sender" },
+      {
+        $lookup: {
+          from: "groupchatmessages",
+          localField: "replyTo.messageId",
+          foreignField: "_id",
+          as: "replyToMessage",
+          pipeline: [
+            {
+              $lookup: {
+                from: "users",
+                localField: "sender",
+                foreignField: "_id",
+                as: "sender",
+                pipeline: [{ $project: { username: 1, avatar: 1 } }],
+              },
+            },
+            { $unwind: "$sender" },
+            { $project: { content: 1, sender: 1, attachments: 1, createdAt: 1 } },
+          ],
+        },
+      },
+      { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          replyTo: {
+            $cond: {
+              if: { $ifNull: ["$replyTo", false] },
+              then: {
+                messageId: "$replyTo.messageId",
+                sender: "$replyTo.sender",
+                content: "$replyTo.content",
+                attachments: "$replyTo.attachments",
+                originalCreatedAt: "$replyTo.originalCreatedAt",
+                repliedMessage: "$replyToMessage",
+              },
+              else: null,
+            },
+          },
+        },
+      },
+      { $project: { replyToMessage: 0 } },
+    ]);
+
+    if (!populatedMessage) {
+      throw new ApiError(500, "Failed to populate message after creation");
+    }
+
+    // Get sender info for notifications
+    const sender = await User.findById(req.user._id)
+      .select("username name avatar")
       .lean();
 
-    if (!repliedMessage) {
-      throw new ApiError(400, "Replied message not found in this chat");
+    const senderName = sender.name || sender.username;
+    let notificationMessage = '';
+
+    if (content) {
+      notificationMessage = `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`;
+    } else if (messageFiles.length > 0) {
+      const fileTypes = new Set(messageFiles.map(f => f.fileType));
+      if (fileTypes.has('image')) {
+        notificationMessage = `${senderName} sent a photo`;
+      } else if (fileTypes.has('video')) {
+        notificationMessage = `${senderName} sent a video`;
+      } else if (fileTypes.has('audio')) {
+        notificationMessage = `${senderName} sent an audio`;
+      } else {
+        notificationMessage = `${senderName} sent a file`;
+      }
     }
 
-    messageData.replyTo = {
-      messageId: repliedMessage._id,
-      sender: repliedMessage.sender,
-      content: repliedMessage.content,
-      attachments: repliedMessage.attachments.map(att => ({
-        url: att.url,
-        fileType: att.fileType,
-        thumbnailUrl: att.thumbnailUrl
-      })),
-      originalCreatedAt: repliedMessage.createdAt
+    // Prepare notification data
+    const notificationData = {
+      title: groupChat.name || `Group Chat`,
+      body: notificationMessage,
+      data: {
+        chatId: chatId.toString(),
+        messageId: createdMessage._id.toString(),
+        type: 'group_message',
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        senderId: req.user._id.toString(),
+        senderName: senderName,
+        ...(messageFiles.length > 0 && { hasAttachments: 'true' }),
+      },
+      icon: sender.avatar || null,
     };
-  }
 
-  // Create the message
-  const message = await GroupChatMessage.create(messageData);
-
-  // Prepare update operations for unread counts
-  const participantsToUpdate = groupChat.participants
-    .filter(p => p._id.toString() !== req.user._id.toString())
-    .map(p => p._id.toString());
-
-  const updateOps = {
-    $set: { lastMessage: message._id },
-    $inc: {
-      ...participantsToUpdate.reduce((acc, p) => {
-        acc[`unreadCounts.${p}.count`] = 1;
-        return acc;
-      }, {})
-    }
-  };
-
-  await GroupChat.findByIdAndUpdate(chatId, updateOps);
-
-  // Get populated message in single aggregation
-  const [populatedMessage] = await GroupChatMessage.aggregate([
-    { $match: { _id: message._id } },
-    {
-      $lookup: {
-        from: "users",
-        localField: "sender",
-        foreignField: "_id",
-        as: "sender",
-        pipeline: [{ $project: { username: 1, avatar: 1, email: 1 } }]
+    // Filter participants who should receive notifications
+    const participantsToNotify = groupChat.participants.filter(participant => {
+      // Exclude sender
+      if (participant._id.toString() === req.user._id.toString()) {
+        return false;
       }
-    },
-    { $unwind: "$sender" },
-    {
-      $lookup: {
-        from: "groupchatmessages",
-        localField: "replyTo.messageId",
-        foreignField: "_id",
-        as: "replyToMessage",
-        pipeline: [
-          {
-            $lookup: {
-              from: "users",
-              localField: "sender",
-              foreignField: "_id",
-              as: "sender",
-              pipeline: [{ $project: { username: 1, avatar: 1 } }]
-            }
-          },
-          { $unwind: "$sender" },
-          { $project: { content: 1, sender: 1, attachments: 1, createdAt: 1 } }
-        ]
+
+      // Check if participant has device token
+      if (!participant.deviceToken) {
+        console.log(`User ${participant._id} has no device token`);
+        return false;
       }
-    },
-    { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
-    {
-      $addFields: {
-        replyTo: {
-          $cond: {
-            if: { $ifNull: ["$replyTo", false] },
-            then: {
-              messageId: "$replyTo.messageId",
-              sender: "$replyTo.sender",
-              content: "$replyTo.content",
-              attachments: "$replyTo.attachments",
-              originalCreatedAt: "$replyTo.originalCreatedAt",
-              repliedMessage: "$replyToMessage"
-            },
-            else: null
+
+      // Check notification settings if available
+      if (participant.notificationSettings) {
+        const groupChatSetting = participant.notificationSettings.groupChats;
+        if (groupChatSetting === 'none') {
+          return false;
+        }
+        if (groupChatSetting === 'mentions_only') {
+          // Check if message mentions this user
+          if (!content?.includes(`@${participant.username}`)) {
+            return false;
           }
         }
       }
-    },
-    { $project: { replyToMessage: 0 } }
-  ]);
 
-  if (!populatedMessage) {
-    throw new ApiError(500, "Failed to send message");
-  }
+      // Check if user is online (optional - you might want to skip notifications for online users)
+      if (participant.isOnline) {
+        console.log(`User ${participant._id} is online, skipping notification`);
+        return false;
+      }
 
-  // Get sender info for notifications
-  const sender = await User.findById(req.user._id)
-    .select("username name avatar")
-    .lean();
+      return true;
+    });
 
-  const senderName = sender.name || sender.username;
-  const notificationMessage = content
-    ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
-    : `${senderName} sent an attachment`;
+    console.log(`Preparing to send notifications to ${participantsToNotify.length} participants`);
 
-  // Prepare notification data
-  const notificationData = {
-    title: groupChat.name || `Group Chat`,
-    body: notificationMessage,
-    data: {
-      chatId: chatId.toString(),
-      messageId: message._id.toString(),
-      type: 'group_message',
-      click_action: 'FLUTTER_NOTIFICATION_CLICK'
-    },
-    icon: sender.avatar || null
-  };
-
-  // Send notifications to all participants except sender
-  const notificationPromises = groupChat.participants
-    .filter(participant =>
-      participant._id.toString() !== req.user._id.toString() &&
-      participant.deviceToken
-    )
-    .map(async (participant) => {
+    // Send notifications to filtered participants
+    const notificationPromises = participantsToNotify.map(async (participant) => {
       try {
-        await sendFirebaseNotification(
-          participant.deviceToken,
-          notificationData
-        );
+        // Check if deviceToken is an array (multiple devices) or a single token
+        const tokens = Array.isArray(participant.deviceToken)
+          ? participant.deviceToken
+          : [participant.deviceToken];
+
+        console.log(`Sending notification to user ${participant._id} with ${tokens.length} tokens`);
+
+        const response = await sendFirebaseNotification(tokens, notificationData);
+
+        // Handle token cleanup if needed
+        if (response.failureCount > 0) {
+          const failedTokens = [];
+          response.responses.forEach((resp, idx) => {
+            if (!resp.success &&
+              (resp.error.code === 'messaging/invalid-registration-token' ||
+                resp.error.code === 'messaging/registration-token-not-registered')) {
+              failedTokens.push(tokens[idx]);
+            }
+          });
+
+          if (failedTokens.length > 0) {
+            console.log(`Removing ${failedTokens.length} invalid tokens for user ${participant._id}`);
+            await User.updateOne(
+              { _id: participant._id },
+              { $pull: { deviceToken: { $in: failedTokens } } }
+            );
+          }
+        }
       } catch (error) {
         console.error(`Failed to send notification to user ${participant._id}:`, error);
-        // Optionally remove invalid tokens here
       }
     });
 
-  // Emit socket events to participants
-  const socketEvents = groupChat.participants
-    .filter(p => p._id.toString() !== req.user._id.toString())
-    .map(participant =>
+    // Emit socket events to online participants
+    const onlineParticipants = groupChat.participants.filter(p =>
+      p._id.toString() !== req.user._id.toString() &&
+      p.isOnline
+    );
+
+    console.log(`Sending socket events to ${onlineParticipants.length} online participants`);
+
+    const socketEvents = onlineParticipants.map(participant =>
       emitSocketEvent(
         req,
         participant._id.toString(),
         ChatEventEnum.MESSAGE_RECEIVED_EVENT,
         populatedMessage
-      )
+      ).catch(error => {
+        console.error(`Failed to emit socket event to user ${participant._id}:`, error);
+      })
     );
 
-  // Run notifications and socket events in parallel
-  await Promise.all([...notificationPromises, ...socketEvents]);
+    // Run notifications and socket events in parallel
+    await Promise.all([...notificationPromises, ...socketEvents]);
 
-  return res
-    .status(201)
-    .json(new ApiResponse(201, populatedMessage, "Message sent successfully"));
+    return res
+      .status(201)
+      .json(new ApiResponse(201, populatedMessage, "Message sent successfully"));
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('Error in sendGroupMessage:', {
+      error: error.message,
+      stack: error.stack,
+      chatId,
+      userId: req.user._id,
+    });
+    throw error;
+  } finally {
+    session.endSession();
+  }
 });
 
 
