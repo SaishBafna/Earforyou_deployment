@@ -25,8 +25,9 @@ const chatMessageSchema = new Schema(
           fileName: String,
           size: Number,
           thumbnailUrl: String,
-          duration: Number,
+          duration: Number, // for audio/video
           dimensions: {
+            // for images/videos
             width: Number,
             height: Number,
           },
@@ -35,7 +36,7 @@ const chatMessageSchema = new Schema(
       default: [],
       validate: {
         validator: function (v) {
-          return v.length <= 10;
+          return v.length <= 10; // Limit to 10 attachments per message
         },
         message: "Cannot attach more than 10 files",
       },
@@ -72,48 +73,45 @@ const chatMessageSchema = new Schema(
       default: false,
     },
     replyTo: {
-      type: new Schema(
-        {
-          messageId: {
-            type: Schema.Types.ObjectId,
-            ref: "GroupChatMessage",
-            required: true,
-          },
-          sender: {
-            type: Schema.Types.ObjectId,
-            ref: "User",
-            required: true,
-          },
-          content: {
-            type: String,
-            trim: true,
-          },
-          attachments: {
-            type: [
-              {
-                url: String,
-                fileType: String,
-                thumbnailUrl: String,
-              },
-            ],
-            default: [],
-          },
-          isDeleted: {
-            type: Boolean,
-            default: false,
-          },
-          deletedContentPlaceholder: {
-            type: String,
-            default: "This message was deleted",
-          },
-          originalCreatedAt: {
-            type: Date,
-            required: true,
-          },
+      type: new Schema({
+        messageId: {
+          type: Schema.Types.ObjectId,
+          ref: "GroupChatMessage",
+          required: true
         },
-        { _id: false }
-      ),
-      default: null,
+        sender: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          required: true
+        },
+        content: {
+          type: String,
+          trim: true
+        },
+        attachments: {
+          type: [
+            {
+              url: String,
+              fileType: String,
+              thumbnailUrl: String
+            }
+          ],
+          default: []
+        },
+        isDeleted: {
+          type: Boolean,
+          default: false
+        },
+        deletedContentPlaceholder: {
+          type: String,
+          default: "This message was deleted"
+        },
+        originalCreatedAt: {
+          type: Date,
+          required: true
+        }
+      }, { _id: false }),
+      default: null
     },
     reactions: [
       {
@@ -125,7 +123,7 @@ const chatMessageSchema = new Schema(
         emoji: {
           type: String,
           required: true,
-          maxlength: 5,
+          maxlength: 5, // Limit emoji length
         },
         createdAt: {
           type: Date,
@@ -134,6 +132,7 @@ const chatMessageSchema = new Schema(
       },
     ],
     metadata: {
+      // For future extensibility
       type: Map,
       of: Schema.Types.Mixed,
       default: {},
