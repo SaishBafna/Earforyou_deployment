@@ -146,7 +146,13 @@ const chatCommonAggregation = (userId) => [
 
 
 const sendFirebaseNotification = async (tokens, notificationData) => {
-  if (!tokens || tokens.length === 0) return;
+  // Convert single token to array if needed
+  const tokensArray = Array.isArray(tokens) ? tokens : [tokens];
+
+  // Filter out any empty tokens
+  const validTokens = tokensArray.filter(t => t && typeof t === 'string' && t.trim() !== '');
+
+  if (validTokens.length === 0) return;
 
   const message = {
     notification: {
@@ -154,7 +160,7 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
       body: notificationData.body
     },
     data: notificationData.data,
-    tokens: tokens.filter(t => t), // Remove any empty tokens
+    tokens: validTokens,
     android: {
       priority: 'high'
     },
@@ -175,7 +181,7 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
       const failedTokens = [];
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
-          failedTokens.push(tokens[idx]);
+          failedTokens.push(validTokens[idx]);
         }
       });
       console.log('Failed to send to tokens:', failedTokens);
@@ -323,6 +329,8 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
  * @route POST /api/v1/chats/group/:chatId/messages
  * @description Send a message to a group chat
  */
+
+
 
 
 const sendGroupMessage = asyncHandler(async (req, res) => {
