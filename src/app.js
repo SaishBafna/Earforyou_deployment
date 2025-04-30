@@ -144,7 +144,7 @@ app.use('/api/v1/msg91', msg91Routes);
 
 app.use('/api/v1', CallRoute);
 
-app.use('/api/v1', BlockUserRoute);
+app.use('/api/v1', BlockUserRoute); // Block User Route
 
 app.use('/api/v1', GroupRoute);
 // Added middleware
