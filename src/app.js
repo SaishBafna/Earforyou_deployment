@@ -119,8 +119,7 @@ import { scheduleNextRun } from "./controllers/CronJob/Expiry.js";
 import  Mood from "./routes/MoodRoute.js";
 import ThreadRoute from "./routes/ThreadRoute/ThreadRoute.js";
 import GroupRoute from "./routes/GroupRoute.js"
-import blockRoute from "./routes/BlockRoute.js";
-
+import BlockUserRoute from "./routes/BlockUserRoute.js" 
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");
@@ -145,7 +144,7 @@ app.use('/api/v1/msg91', msg91Routes);
 
 app.use('/api/v1', CallRoute);
 
-app.use('/api/v1', blockRoute);
+app.use('/api/v1', BlockUserRoute);
 
 app.use('/api/v1', GroupRoute);
 // Added middleware

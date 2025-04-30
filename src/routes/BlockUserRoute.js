@@ -1,5 +1,5 @@
 import express from 'express';
-import { blockUser, unblockUser, checkBlockStatus, getBlockedUsers } from '../controllers/BlockUser/BlockController';
+import { blockUser, unblockUser, checkBlockStatus, getBlockedUsers } from '../controllers/BlockUser/BlockController.js';
 
 const router = express.Router();
 

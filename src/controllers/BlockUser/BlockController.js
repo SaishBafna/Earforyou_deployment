@@ -1,5 +1,5 @@
-import Block from "../../models/Block";
-import User from "../../models/Users";
+import Block from "../../models/Block.js";
+import User from "../../models/Users.js";
 
 // Block a user
 export const blockUser = async (req, res) => {
