@@ -119,6 +119,7 @@ import { scheduleNextRun } from "./controllers/CronJob/Expiry.js";
 import  Mood from "./routes/MoodRoute.js";
 import ThreadRoute from "./routes/ThreadRoute/ThreadRoute.js";
 import GroupRoute from "./routes/GroupRoute.js"
+import blockRoute from "./routes/BlockRoute.js";
 
 app.get("/", (req, res) => {
   try {
@@ -143,6 +144,8 @@ scheduleNextRun();
 app.use('/api/v1/msg91', msg91Routes);
 
 app.use('/api/v1', CallRoute);
+
+app.use('/api/v1', blockRoute);
 
 app.use('/api/v1', GroupRoute);
 // Added middleware

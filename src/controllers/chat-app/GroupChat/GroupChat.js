@@ -11,9 +11,6 @@ import { asyncHandler } from "../../../utils/asyncHandler.js";
 import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
 import admin from 'firebase-admin';
 
-
-
-
 /**
  * Middleware to check if a user has permission to send messages in a group chat
  */
@@ -171,7 +168,7 @@ const sendFirebaseNotification = async (tokens, notificationData, batchSize = 50
     // Process each batch sequentially
     for (const [index, batchTokens] of tokenBatches.entries()) {
       console.log(`Processing batch ${index + 1}/${tokenBatches.length} with ${batchTokens.length} tokens`);
-      
+
       const message = {
         notification: {
           title: notificationData.title,
@@ -230,6 +227,8 @@ const sendFirebaseNotification = async (tokens, notificationData, batchSize = 50
     throw error;
   }
 };
+
+
 
 // Helper function to delete all messages and attachments for a chat
 const deleteCascadeChatMessages = async (chatId) => {
