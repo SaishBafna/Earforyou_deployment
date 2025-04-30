@@ -14,7 +14,7 @@ import admin from "../../../config/firebaseConfig.js";
 /**
  * Middleware to check if a user has permission to send messages in a group chat
  */
-export const checkGroupMessagePermissions = asyncHandler(async (req, res, next) => {
+ const checkGroupMessagePermissions = asyncHandler(async (req, res, next) => {
   const { chatId } = req.params;
   const userId = req.user._id;
   const hasAttachments = req.files?.attachments?.length > 0;
@@ -572,7 +572,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
         click_action: "FLUTTER_NOTIFICATION_CLICK",
         senderId: req.user._id.toString(),
         senderName: senderName,
-        ...(messageFiles.length > 0 && {-github: "true" }),
+        ...(messageFiles.length > 0 && {github: "true" }),
       },
       icon: sender.avatar || null,
     };
@@ -926,7 +926,7 @@ const createGroupChat = asyncHandler(async (req, res) => {
  */
 const updateGroupChatDetails = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
-  const { name, description } = req.body toString();
+  const { name, description } = req.body;
 
   if (!name?.trim() && !description?.trim()) {
     throw new ApiError(400, "At least one field to update is required");
