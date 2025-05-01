@@ -62,8 +62,186 @@ export const checkGroupMessagePermissions = asyncHandler(async (req, res, next) 
 });
 
 // Common aggregation pipeline for chat queries
+// const chatCommonAggregation = (userId) => [
+//   // Optimized participant lookup with minimal fields
+//   {
+//     $lookup: {
+//       from: "users",
+//       localField: "participants",
+//       foreignField: "_id",
+//       as: "participants",
+//       pipeline: [
+//         {
+//           $project: {
+//             username: 1,
+//             avatar: 1,
+//             email: 1,
+//             isOnline: 1,
+//             lastSeen: 1
+//           }
+//         }
+//       ],
+//     },
+//   },
+
+//   // Enhanced last message lookup with additional metadata
+//   {
+//     $lookup: {
+//       from: "groupchatmessages",
+//       localField: "lastMessage",
+//       foreignField: "_id",
+//       as: "lastMessage",
+//       pipeline: [
+//         {
+//           $lookup: {
+//             from: "users",
+//             localField: "sender",
+//             foreignField: "_id",
+//             as: "sender",
+//             pipeline: [
+//               {
+//                 $project: {
+//                   username: 1,
+//                   avatar: 1,
+//                   email: 1,
+//                   name: 1
+//                 }
+//               }
+//             ],
+//           },
+//         },
+//         { $unwind: "$sender" },
+//         {
+//           $addFields: {
+//             isEdited: "$edited",
+//             hasAttachments: { $gt: [{ $size: "$attachments" }, 0] }
+//           }
+//         }
+//       ],
+//     },
+//   },
+//   {
+//     $unwind: {
+//       path: "$lastMessage",
+//       preserveNullAndEmptyArrays: true
+//     }
+//   },
+
+//   // Admin lookup with status information
+//   {
+//     $lookup: {
+//       from: "users",
+//       localField: "admins",
+//       foreignField: "_id",
+//       as: "admins",
+//       pipeline: [
+//         {
+//           $project: {
+//             username: 1,
+//             avatar: 1,
+//             email: 1,
+//             isOnline: 1
+//           }
+//         }
+//       ],
+//     },
+//   },
+
+//   // CreatedBy lookup with additional details
+//   {
+//     $lookup: {
+//       from: "users",
+//       localField: "createdBy",
+//       foreignField: "_id",
+//       as: "createdBy",
+//       pipeline: [
+//         {
+//           $project: {
+//             username: 1,
+//             avatar: 1,
+//             email: 1,
+//             createdAt: 1
+//           }
+//         }
+//       ],
+//     },
+//   },
+//   {
+//     $unwind: {
+//       path: "$createdBy",
+//       preserveNullAndEmptyArrays: true
+//     }
+//   },
+
+//   // Enhanced unread count calculation with additional metadata
+//   {
+//     $addFields: {
+//       unreadCount: {
+//         $ifNull: [
+//           {
+//             $let: {
+//               vars: {
+//                 userUnread: {
+//                   $arrayElemAt: [
+//                     {
+//                       $filter: {
+//                         input: "$unreadCounts",
+//                         cond: { $eq: ["$$this.user", new mongoose.Types.ObjectId(userId)] },
+//                       },
+//                     },
+//                     0,
+//                   ],
+//                 },
+//               },
+//               in: "$$userUnread.count",
+//             },
+//           },
+//           0,
+//         ],
+//       },
+//       hasUnread: { $gt: ["$unreadCount", 0] },
+//       sortField: {
+//         $ifNull: [
+//           "$lastMessage.createdAt",
+//           "$lastActivity",
+//           "$createdAt"
+//         ]
+//       },
+//       participantCount: { $size: "$participants" },
+//       isAdmin: {
+//         $in: [new mongoose.Types.ObjectId(userId), "$admins._id"]
+//       }
+//     },
+//   },
+
+//   // Final projection to optimize returned data
+//   {
+//     $project: {
+//       name: 1,
+//       avatar: 1,
+//       description: 1,
+//       participants: 1,
+//       admins: 1,
+//       createdBy: 1,
+//       lastMessage: 1,
+//       unreadCount: 1,
+//       hasUnread: 1,
+//       createdAt: 1,
+//       updatedAt: 1,
+//       lastActivity: 1,
+//       participantCount: 1,
+//       isAdmin: 1,
+//       settings: 1,
+//       isGroupChat: 1
+//     }
+//   },
+
+//   // Sorting by most recent activity
+//   { $sort: { sortField: -1 } }
+// ];
+
+
 const chatCommonAggregation = (userId) => [
-  // Optimized participant lookup with minimal fields
   {
     $lookup: {
       from: "users",
@@ -83,8 +261,6 @@ const chatCommonAggregation = (userId) => [
       ],
     },
   },
-
-  // Enhanced last message lookup with additional metadata
   {
     $lookup: {
       from: "groupchatmessages",
@@ -126,8 +302,6 @@ const chatCommonAggregation = (userId) => [
       preserveNullAndEmptyArrays: true
     }
   },
-
-  // Admin lookup with status information
   {
     $lookup: {
       from: "users",
@@ -146,8 +320,6 @@ const chatCommonAggregation = (userId) => [
       ],
     },
   },
-
-  // CreatedBy lookup with additional details
   {
     $lookup: {
       from: "users",
@@ -172,8 +344,6 @@ const chatCommonAggregation = (userId) => [
       preserveNullAndEmptyArrays: true
     }
   },
-
-  // Enhanced unread count calculation with additional metadata
   {
     $addFields: {
       unreadCount: {
@@ -199,6 +369,29 @@ const chatCommonAggregation = (userId) => [
           0,
         ],
       },
+      lastReadMessage: {
+        $ifNull: [
+          {
+            $let: {
+              vars: {
+                userUnread: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: "$unreadCounts",
+                        cond: { $eq: ["$$this.user", new mongoose.Types.ObjectId(userId)] },
+                      },
+                    },
+                    0,
+                  ],
+                },
+              },
+              in: "$$userUnread.lastReadMessage",
+            },
+          },
+          null,
+        ],
+      },
       hasUnread: { $gt: ["$unreadCount", 0] },
       sortField: {
         $ifNull: [
@@ -213,8 +406,6 @@ const chatCommonAggregation = (userId) => [
       }
     },
   },
-
-  // Final projection to optimize returned data
   {
     $project: {
       name: 1,
@@ -225,6 +416,7 @@ const chatCommonAggregation = (userId) => [
       createdBy: 1,
       lastMessage: 1,
       unreadCount: 1,
+      lastReadMessage: 1,
       hasUnread: 1,
       createdAt: 1,
       updatedAt: 1,
@@ -235,8 +427,6 @@ const chatCommonAggregation = (userId) => [
       isGroupChat: 1
     }
   },
-
-  // Sorting by most recent activity
   { $sort: { sortField: -1 } }
 ];
 
@@ -484,7 +674,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { content, replyTo } = req.body;
 
-  // Validate input
   if (!content && !req.files?.attachments?.length) {
     throw new ApiError(400, "Message content or attachment is required");
   }
@@ -493,12 +682,10 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid chat ID format");
   }
 
-  // Start transaction
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    // 1. Fetch and validate group chat
     const [groupChat, sender] = await Promise.all([
       GroupChat.findOneAndUpdate(
         {
@@ -524,7 +711,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       throw new ApiError(404, "Group chat not found or you're not a participant");
     }
 
-    // 2. Process attachments in parallel
     const messageFiles = req.files?.attachments
       ? await Promise.all(
         req.files.attachments.map(async (attachment) => {
@@ -537,7 +723,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
               size: attachment.size,
             };
 
-            // Process media metadata based on type
             if (attachment.mimetype.startsWith('image/')) {
               fileData.dimensions = await getImageDimensions(attachment.path);
             } else if (attachment.mimetype.startsWith('video/')) {
@@ -557,7 +742,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       ).then(files => files.filter(Boolean))
       : [];
 
-    // 3. Prepare message data
     const messageData = {
       sender: req.user._id,
       content: content || "",
@@ -565,7 +749,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       attachments: messageFiles,
     };
 
-    // 4. Handle reply if needed
     if (replyTo) {
       if (!mongoose.Types.ObjectId.isValid(replyTo)) {
         throw new ApiError(400, "Invalid replyTo message ID format");
@@ -595,9 +778,9 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       };
     }
 
-    // 5. Create message and update group chat
     const [createdMessage] = await GroupChatMessage.create([messageData], { session });
 
+    // Update unread counts for all participants except sender
     const participantsToUpdate = groupChat.participants
       .filter(p => p._id.toString() !== req.user._id.toString())
       .map(p => p._id.toString());
@@ -608,16 +791,18 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
         $set: { lastMessage: createdMessage._id },
         $inc: participantsToUpdate.reduce((acc, p) => ({
           ...acc,
-          [`unreadCounts.${p}.count`]: 1
+          [`unreadCounts.$[elem].count`]: 1
         }), {}),
       },
-      { session }
+      {
+        session,
+        arrayFilters: [{ "elem.user": { $in: participantsToUpdate } }]
+      }
     );
 
-    // 6. Commit transaction
     await session.commitTransaction();
 
-    // 7. Populate message data for response
+    // Populate message data for response
     const populatedMessage = await GroupChatMessage.aggregate([
       { $match: { _id: createdMessage._id } },
       {
@@ -762,12 +947,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       .json(new ApiResponse(201, populatedMessage, "Message sent successfully"));
   } catch (error) {
     await session.abortTransaction();
-    console.error('Error in sendGroupMessage:', {
-      error: error.message,
-      stack: error.stack,
-      chatId,
-      userId: req.user._id,
-    });
+    console.error('Error in sendGroupMessage:', error);
     throw error;
   } finally {
     session.endSession();
@@ -881,7 +1061,6 @@ const getAllGroups = asyncHandler(async (req, res) => {
 const getAllGroupChats = asyncHandler(async (req, res) => {
   const { search, page = 1, limit = 20 } = req.query;
 
-  // Parse and validate pagination parameters
   const pageNum = parseInt(page);
   const limitNum = parseInt(limit);
   if (isNaN(pageNum) || isNaN(limitNum) || pageNum < 1 || limitNum < 1) {
@@ -890,19 +1069,17 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
 
   const skip = (pageNum - 1) * limitNum;
 
-  // Build match stage for aggregation
   const matchStage = {
     isGroupChat: true,
     participants: req.user._id,
     ...(search && { name: { $regex: search.trim(), $options: "i" } }),
   };
 
-  // Run aggregation and count in parallel
-  const [groupChats, totalCount] = await Promise.all([
+  const [groupChats, totalCount, totalUnreadCount] = await Promise.all([
     GroupChat.aggregate([
       { $match: matchStage },
       ...chatCommonAggregation(req.user._id),
-      { $sort: { sortField: -1 } }, // Ensure sorting is applied
+      { $sort: { sortField: -1 } },
       { $skip: skip },
       { $limit: limitNum },
       {
@@ -914,15 +1091,16 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
           createdBy: 1,
           lastMessage: 1,
           unreadCount: 1,
+          lastReadMessage: 1,
           createdAt: 1,
           lastActivity: 1,
         },
       },
     ]),
-    GroupChat.countDocuments(matchStage), // Get total count of matching documents
+    GroupChat.countDocuments(matchStage),
+    getTotalUnreadCount(req.user._id)
   ]);
 
-  // Calculate total pages
   const totalPages = Math.ceil(totalCount / limitNum);
 
   return res.status(200).json(
@@ -930,6 +1108,7 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
       200,
       {
         groupChats,
+        totalUnreadCount,
         page: pageNum,
         limit: limitNum,
         totalCount,
@@ -939,8 +1118,6 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
     )
   );
 });
-
-
 
 const getAllGroupMessages = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
@@ -953,7 +1130,6 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid page or limit parameters");
   }
 
-  // Verify user is a participant
   const isParticipant = await GroupChat.exists({
     _id: chatId,
     isGroupChat: true,
@@ -964,74 +1140,76 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Group chat not found or you're not a participant");
   }
 
-  // Get paginated messages with reply information including username
-  const messages = await GroupChatMessage.aggregate([
-    { $match: { chat: new mongoose.Types.ObjectId(chatId) } },
-    { $sort: { createdAt: -1 } },
-    { $skip: (page - 1) * limit },
-    { $limit: limit },
-    {
-      $lookup: {
-        from: "users",
-        localField: "sender",
-        foreignField: "_id",
-        as: "sender",
-        pipeline: [{ $project: { username: 1, avatar: 1, email: 1 } }]
-      }
-    },
-    { $unwind: "$sender" },
-    {
-      $lookup: {
-        from: "groupchatmessages",
-        localField: "replyTo.messageId",
-        foreignField: "_id",
-        as: "replyToMessage",
-        pipeline: [
-          {
-            $lookup: {
-              from: "users",
-              localField: "sender",
-              foreignField: "_id",
-              as: "sender",
-              pipeline: [{ $project: { username: 1, avatar: 1 } }]
-            }
-          },
-          { $unwind: "$sender" },
-          { $project: { content: 1, sender: 1, attachments: 1, createdAt: 1 } }
-        ]
-      }
-    },
-    { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
-    {
-      $addFields: {
-        replyTo: {
-          $cond: {
-            if: { $ifNull: ["$replyTo", false] },
-            then: {
-              messageId: "$replyTo.messageId",
-              sender: {
-                _id: "$replyTo.sender",
-                username: { $ifNull: ["$replyToMessage.sender.username", "Unknown"] }
-              },
-              content: "$replyTo.content",
-              attachments: "$replyTo.attachments",
-              originalCreatedAt: "$replyTo.originalCreatedAt",
-              repliedMessage: "$replyToMessage"
+  const [messages, totalCount] = await Promise.all([
+    GroupChatMessage.aggregate([
+      { $match: { chat: new mongoose.Types.ObjectId(chatId) } },
+      { $sort: { createdAt: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: "users",
+          localField: "sender",
+          foreignField: "_id",
+          as: "sender",
+          pipeline: [{ $project: { username: 1, avatar: 1, email: 1 } }]
+        }
+      },
+      { $unwind: "$sender" },
+      {
+        $lookup: {
+          from: "groupchatmessages",
+          localField: "replyTo.messageId",
+          foreignField: "_id",
+          as: "replyToMessage",
+          pipeline: [
+            {
+              $lookup: {
+                from: "users",
+                localField: "sender",
+                foreignField: "_id",
+                as: "sender",
+                pipeline: [{ $project: { username: 1, avatar: 1 } }]
+              }
             },
-            else: null
+            { $unwind: "$sender" },
+            { $project: { content: 1, sender: 1, attachments: 1, createdAt: 1 } }
+          ]
+        }
+      },
+      { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          replyTo: {
+            $cond: {
+              if: { $ifNull: ["$replyTo", false] },
+              then: {
+                messageId: "$replyTo.messageId",
+                sender: {
+                  _id: "$replyTo.sender",
+                  username: { $ifNull: ["$replyToMessage.sender.username", "Unknown"] }
+                },
+                content: "$replyTo.content",
+                attachments: "$replyTo.attachments",
+                originalCreatedAt: "$replyTo.originalCreatedAt",
+                repliedMessage: "$replyToMessage"
+              },
+              else: null
+            }
           }
         }
-      }
-    },
-    { $project: { replyToMessage: 0 } },
-    { $sort: { createdAt: 1 } } // Restore original chronological order
+      },
+      { $project: { replyToMessage: 0 } },
+      { $sort: { createdAt: 1 } }
+    ]),
+    GroupChatMessage.countDocuments({ chat: chatId })
   ]);
 
-  // Get total count for pagination
-  const totalCount = await GroupChatMessage.countDocuments({ chat: chatId });
   const totalPages = Math.ceil(totalCount / limit);
 
-  // Mark messages as read in bulk
+  // Mark messages as read and update unread counts
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+
   await Promise.all([
     GroupChatMessage.updateMany(
       {
@@ -1043,7 +1221,12 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
     ),
     GroupChat.updateOne(
       { _id: chatId, "unreadCounts.user": req.user._id },
-      { $set: { "unreadCounts.$.count": 0 } }
+      {
+        $set: {
+          "unreadCounts.$.count": 0,
+          "unreadCounts.$.lastReadMessage": lastMessage?._id || null
+        }
+      }
     )
   ]);
 
@@ -1055,6 +1238,122 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
     )
   );
 });
+
+
+
+// const getAllGroupMessages = asyncHandler(async (req, res) => {
+//   const { chatId } = req.params;
+//   let { page = 1, limit = 20 } = req.query;
+
+//   page = parseInt(page);
+//   limit = parseInt(limit);
+
+//   if (isNaN(page) || isNaN(limit) || page < 1 || limit < 1) {
+//     throw new ApiError(400, "Invalid page or limit parameters");
+//   }
+
+//   // Verify user is a participant
+//   const isParticipant = await GroupChat.exists({
+//     _id: chatId,
+//     isGroupChat: true,
+//     participants: req.user._id
+//   });
+
+//   if (!isParticipant) {
+//     throw new ApiError(404, "Group chat not found or you're not a participant");
+//   }
+
+//   // Get paginated messages with reply information including username
+//   const messages = await GroupChatMessage.aggregate([
+//     { $match: { chat: new mongoose.Types.ObjectId(chatId) } },
+//     { $sort: { createdAt: -1 } },
+//     { $skip: (page - 1) * limit },
+//     { $limit: limit },
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "sender",
+//         foreignField: "_id",
+//         as: "sender",
+//         pipeline: [{ $project: { username: 1, avatar: 1, email: 1 } }]
+//       }
+//     },
+//     { $unwind: "$sender" },
+//     {
+//       $lookup: {
+//         from: "groupchatmessages",
+//         localField: "replyTo.messageId",
+//         foreignField: "_id",
+//         as: "replyToMessage",
+//         pipeline: [
+//           {
+//             $lookup: {
+//               from: "users",
+//               localField: "sender",
+//               foreignField: "_id",
+//               as: "sender",
+//               pipeline: [{ $project: { username: 1, avatar: 1 } }]
+//             }
+//           },
+//           { $unwind: "$sender" },
+//           { $project: { content: 1, sender: 1, attachments: 1, createdAt: 1 } }
+//         ]
+//       }
+//     },
+//     { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
+//     {
+//       $addFields: {
+//         replyTo: {
+//           $cond: {
+//             if: { $ifNull: ["$replyTo", false] },
+//             then: {
+//               messageId: "$replyTo.messageId",
+//               sender: {
+//                 _id: "$replyTo.sender",
+//                 username: { $ifNull: ["$replyToMessage.sender.username", "Unknown"] }
+//               },
+//               content: "$replyTo.content",
+//               attachments: "$replyTo.attachments",
+//               originalCreatedAt: "$replyTo.originalCreatedAt",
+//               repliedMessage: "$replyToMessage"
+//             },
+//             else: null
+//           }
+//         }
+//       }
+//     },
+//     { $project: { replyToMessage: 0 } },
+//     { $sort: { createdAt: 1 } } // Restore original chronological order
+//   ]);
+
+//   // Get total count for pagination
+//   const totalCount = await GroupChatMessage.countDocuments({ chat: chatId });
+//   const totalPages = Math.ceil(totalCount / limit);
+
+//   // Mark messages as read in bulk
+//   await Promise.all([
+//     GroupChatMessage.updateMany(
+//       {
+//         chat: chatId,
+//         seenBy: { $ne: req.user._id },
+//         sender: { $ne: req.user._id }
+//       },
+//       { $addToSet: { seenBy: req.user._id }, $set: { isRead: true } }
+//     ),
+//     GroupChat.updateOne(
+//       { _id: chatId, "unreadCounts.user": req.user._id },
+//       { $set: { "unreadCounts.$.count": 0 } }
+//     )
+//   ]);
+
+//   return res.status(200).json(
+//     new ApiResponse(
+//       200,
+//       { messages, page, limit, totalCount, totalPages },
+//       "Group messages fetched successfully"
+//     )
+//   );
+// });
 
 /**
  * @route GET /api/v1/chats/group/:chatId
