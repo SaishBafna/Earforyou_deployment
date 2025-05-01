@@ -605,6 +605,86 @@ const getPaginatedMessages = async (chatId, userId, page = 1, limit = 20) => {
   };
 };
 
+
+
+
+const updateUnreadCounts = async (chatId, userId) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // Get the last message in the chat
+    const lastMessage = await GroupChatMessage.findOne({ chat: chatId })
+      .sort({ createdAt: -1 })
+      .select('_id')
+      .lean();
+
+    if (!lastMessage) {
+      await session.abortTransaction();
+      return;
+    }
+
+    // Count unread messages (messages after the last read message)
+    const unreadCount = await GroupChatMessage.countDocuments({
+      chat: chatId,
+      createdAt: { $gt: new Date() }, // This needs to be adjusted based on your lastReadMessage
+      sender: { $ne: userId },
+      seenBy: { $ne: userId }
+    });
+
+    // Update the unread count for the user
+    await GroupChat.updateOne(
+      { _id: chatId },
+      {
+        $set: {
+          "unreadCounts.$[elem].count": unreadCount,
+          "unreadCounts.$[elem].lastReadMessage": lastMessage._id
+        }
+      },
+      {
+        arrayFilters: [{ "elem.user": userId }],
+        session
+      }
+    );
+
+    await session.commitTransaction();
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('Error updating unread counts:', error);
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
+const getTotalUnreadCount = async (userId) => {
+  const result = await GroupChat.aggregate([
+    {
+      $match: {
+        participants: userId,
+        isGroupChat: true
+      }
+    },
+    {
+      $unwind: "$unreadCounts"
+    },
+    {
+      $match: {
+        "unreadCounts.user": userId
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        totalUnread: { $sum: "$unreadCounts.count" }
+      }
+    }
+  ]);
+
+  return result.length > 0 ? result[0].totalUnread : 0;
+};
+
+
 /**
  * @route GET /api/v1/chats/group/:chatId/messages
  * @description Get all messages for a group chat with pagination
@@ -2439,6 +2519,7 @@ export {
   generateGroupInviteLink,
   joinGroupViaLink,
   revokeGroupInviteLink,
-  getAllGroups
+  getAllGroups,
+  updateUnreadCounts
 
 };
