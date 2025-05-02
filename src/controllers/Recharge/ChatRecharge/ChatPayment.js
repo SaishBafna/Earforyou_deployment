@@ -6,6 +6,7 @@ import { ChatUserPremium } from "../../../models/Subscriptionchat/ChatUserPremiu
 import axios from "axios";
 import sha256 from "sha256";
 import admin from "../../../config/firebaseConfig.js";
+import User from "../../../models/Users.js";
 
 export const validateChatPayment = asyncHandler(async (req, res) => {
     const { merchantTransactionId, userId, planId } = req.query;
