@@ -3,9 +3,6 @@ import { ApiError } from "../../utils/ApiError.js";
 import { ChatUserPremium } from "../../models/Subscriptionchat/ChatUserPremium.js";
 import mongoose from "mongoose";
 
-
-
-
 export const checkChatAccess = asyncHandler(async (req, res, next) => {
     const { receiverId: chatId } = req.params;
     const userId = req.user._id;
@@ -20,34 +17,40 @@ export const checkChatAccess = asyncHandler(async (req, res, next) => {
     // Convert to ObjectId for consistent comparison
     const chatObjectId = new mongoose.Types.ObjectId(chatId);
 
-    console.log(`Looking for active plans for user ${userId}`);
+    // First, check if this chat was already used in any COMPLETED plan
+    const existingChatUsage = await ChatUserPremium.findOne({
+        user: userId,
+        "payment.status": "COMPLETED",
+        "usedChats.chatId": chatObjectId
+    }).populate('plan');
 
-    // Find the most recent active plan that hasn't been used for this chat
+    if (existingChatUsage) {
+        console.log(`Chat ${chatId} was already used in plan ${existingChatUsage._id}`);
+
+        // Allow access since chat was previously accessed with a valid plan
+        req.activePlan = {
+            _id: existingChatUsage._id,
+            remainingChats: existingChatUsage.remainingChats,
+            expiryDate: existingChatUsage.expiryDate,
+            plan: existingChatUsage.plan,
+            previouslyUsed: true,
+            lastUsedAt: existingChatUsage.usedChats.find(chat => chat.chatId.equals(chatObjectId)).usedAt
+        };
+
+        return next();
+    }
+
+    // Find the most recent active, COMPLETED plan with remaining chats
     const activePlan = await ChatUserPremium.findOne({
         user: userId,
         isActive: true,
         "payment.status": "COMPLETED",
         expiryDate: { $gt: new Date() },
-        remainingChats: { $gt: 0 },
-        "usedChats.chatId": { $ne: chatObjectId }
+        remainingChats: { $gt: 0 }
     }).sort({ purchaseDate: -1 }).populate('plan');
 
     if (activePlan) {
         console.log(`Found active plan ${activePlan._id} with ${activePlan.remainingChats} chats remaining`);
-
-        // Check if this chat was already used in any plan (active or inactive)
-        const chatUsedInAnyPlan = await ChatUserPremium.exists({
-            user: userId,
-            "usedChats.chatId": chatObjectId
-        });
-
-        if (chatUsedInAnyPlan) {
-            console.log(`Chat ${chatId} was already used in another plan`);
-            throw new ApiError(403, "This chat was already accessed using a different chat pack", null, {
-                suggestPurchase: true,
-                chatAlreadyUsed: true
-            });
-        }
 
         // Decrement remaining chats & update usedChats
         activePlan.remainingChats -= 1;
@@ -56,9 +59,9 @@ export const checkChatAccess = asyncHandler(async (req, res, next) => {
             usedAt: new Date()
         });
 
-        // Auto-deactivate if no chats left or expired
-        if (activePlan.remainingChats <= 0 || activePlan.expiryDate <= new Date()) {
-            console.log(`Auto-deactivating plan ${activePlan._id}`);
+        // Auto-deactivate if no chats left
+        if (activePlan.remainingChats <= 0) {
+            console.log(`Auto-deactivating plan ${activePlan._id} (no chats remaining)`);
             activePlan.isActive = false;
         }
 
@@ -78,115 +81,28 @@ export const checkChatAccess = asyncHandler(async (req, res, next) => {
 
     console.log(`No active plan found for user ${userId}`);
 
-    // Check if user has any inactive plans (for better error messaging)
-    const hasInactivePlans = await ChatUserPremium.exists({
+    // Check if user has any COMPLETED plans (even if expired/used up)
+    const hasCompletedPlans = await ChatUserPremium.exists({
         user: userId,
-        $or: [
-            { isActive: false },
-            { "payment.status": { $ne: "COMPLETED" } },
-            { expiryDate: { $lte: new Date() } },
-            { remainingChats: { $lte: 0 } }
-        ]
+        "payment.status": "COMPLETED"
     });
 
-    // Check if this specific chat was already used
-    const chatWasUsed = await ChatUserPremium.exists({
+    // Check if user has any plans that are not COMPLETED
+    const hasNonCompletedPlans = await ChatUserPremium.exists({
         user: userId,
-        "usedChats.chatId": chatObjectId
+        "payment.status": { $ne: "COMPLETED" }
     });
 
-    if (chatWasUsed) {
-        console.log(`Chat ${chatId} was previously used by user ${userId}`);
-        throw new ApiError(403, "This chat was already accessed using a different chat pack", null, {
-            suggestPurchase: true,
-            chatAlreadyUsed: true
-        });
+    let errorMessage = "No active chat packs available.";
+    let metadata = { suggestPurchase: true };
+
+    if (hasCompletedPlans) {
+        errorMessage = "Your chat packs have expired or been fully used. Please purchase a new pack.";
+        metadata.hasPreviousPlans = true;
+    } else if (hasNonCompletedPlans) {
+        errorMessage = "You have pending payments. Please complete your payment to access chats.";
+        metadata.hasPendingPayments = true;
     }
 
-    throw new ApiError(
-        403,
-        hasInactivePlans
-            ? "Your chat packs have expired or been fully used. Please purchase a new pack."
-            : "No active chat packs available. Please purchase a pack to start chatting.",
-        null,
-        {
-            suggestPurchase: true,
-            hasPreviousPlans: hasInactivePlans
-        }
-    );
+    throw new ApiError(403, errorMessage, null, metadata);
 });
-
-// export const checkChatAccess = asyncHandler(async (req, res, next) => {
-//     const { receiverId: chatId } = req.params; // Changed to match route param
-//     const userId = req.user._id;
-
-//     // Validate chatId format
-//     if (!mongoose.Types.ObjectId.isValid(chatId)) {
-//         throw new ApiError(400, "Invalid chat ID format");
-//     }
-
-//     // 1. Find and update the most appropriate active plan atomically
-//     const activePlan = await ChatUserPremium.findOneAndUpdate(
-//         {
-//             user: userId,
-//             isActive: true,
-//             expiryDate: { $gt: new Date() },
-//             remainingChats: { $gt: 0 },
-//             "usedChats.chatId": { $ne: chatId } // Prevent duplicate usage
-//         },
-//         [
-//             { // Using pipeline form for more complex logic
-//                 $set: {
-//                     remainingChats: { $subtract: ["$remainingChats", 1] },
-//                     usedChats: { $concatArrays: ["$usedChats", [{ chatId, usedAt: new Date() }]] },
-//                     isActive: {
-//                         $and: [
-//                             { $gt: ["$remainingChats", 1] }, // Will be 1 after decrement
-//                             { $gt: ["$expiryDate", new Date()] }
-//                         ]
-//                     },
-//                     lastUsedAt: new Date()
-//                 }
-//             }
-//         ],
-//         {
-//             new: true,
-//             sort: { purchaseDate: 1 } // Oldest first (FIFO)
-//         }
-//     ).populate('plan', 'name chatsAllowed validityDays');
-
-//     if (!activePlan) {
-//         // Check for potential reasons
-//         const hasInactivePlans = await ChatUserPremium.exists({
-//             user: userId,
-//             $or: [
-//                 { isActive: false },
-//                 { expiryDate: { $lte: new Date() } },
-//                 { remainingChats: { $lte: 0 } }
-//             ]
-//         });
-
-//         throw new ApiError(
-//             403,
-//             hasInactivePlans
-//                 ? "Your chat packs have expired or been fully used. Please purchase a new pack."
-//                 : "No active chat packs available. Please purchase a pack to start chatting.",
-//             null,
-//             { // Additional data for client
-//                 suggestPurchase: true,
-//                 hasPreviousPlans: hasInactivePlans
-//             }
-//         );
-//     }
-
-//     // Attach plan details to request
-//     req.activePlan = {
-//         _id: activePlan._id,
-//         remainingChats: activePlan.remainingChats,
-//         expiryDate: activePlan.expiryDate,
-//         plan: activePlan.plan,
-//         lastUsedAt: activePlan.lastUsedAt
-//     };
-
-//     next();
-// });
