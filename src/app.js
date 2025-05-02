@@ -116,10 +116,12 @@ import { protect } from "./middlewares/auth/authMiddleware.js";
 import ZohoRoute from './routes/ZohoRoute/ZohoRoute.js'
 import PlatformRoute from './routes/PlatfromCharges/PlatfromRoute.js'
 import { scheduleNextRun } from "./controllers/CronJob/Expiry.js";
-import  Mood from "./routes/MoodRoute.js";
+import Mood from "./routes/MoodRoute.js";
 import ThreadRoute from "./routes/ThreadRoute/ThreadRoute.js";
 import GroupRoute from "./routes/GroupRoute.js"
-import BlockUserRoute from "./routes/BlockUserRoute.js" 
+import BlockUserRoute from "./routes/BlockUserRoute.js"
+import Chatrecharge from "./routes/chatRecharge/ChatRechargeRoute.js"
+
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");
@@ -151,6 +153,8 @@ app.use('/api/v1', GroupRoute);
 
 
 app.use("/api/v1", authRoutes);
+
+app.use("/api/v1", Chatrecharge);
 
 app.use("/api/v1/thread", ThreadRoute);
 
