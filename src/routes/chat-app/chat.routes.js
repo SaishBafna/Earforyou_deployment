@@ -13,6 +13,7 @@ import { mongoIdPathVariableValidator } from "../../validators/common/mongodb.va
 import { validate } from "../../validators/validate.js";
 import { getAllAgents } from "../../controllers/chat-app/getAllAgentController.js";
 import { checkChatAccess } from "../../middlewares/auth/ChaeckChatUse.js";
+import { checkChatStatus } from "../../middlewares/auth/checkChatStatus.js";
 const router = Router();
 
 router.use(protect);
@@ -26,6 +27,7 @@ router
   .post(
     mongoIdPathVariableValidator("receiverId"),
     validate,
+    checkChatStatus,
     checkChatAccess,
     createOrGetAOneOnOneChat
   );

@@ -191,10 +191,7 @@ const createOrGetAOneOnOneChat = asyncHandler(async (req, res) => {
 
   // Check if it's a valid receiver
   const receiver = await User.findById(receiverId);
-  if (!receiver.ChatStatus) {
-    throw new ApiError(404, "Receiver does not exist  for chat now ");
 
-  }
 
   if (!receiver) {
     throw new ApiError(404, "Receiver does not exist");
