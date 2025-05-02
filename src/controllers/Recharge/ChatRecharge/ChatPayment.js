@@ -80,7 +80,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
 });
 
 // Helper function to send notifications
-async function sendNotification(userId, title, message) {
+async function sendNotification(userId, title, message,screen) {
     // Assuming you have the FCM device token stored in your database
     const user = await User.findById(userId);
     const deviceToken = user.deviceToken;
@@ -95,6 +95,10 @@ async function sendNotification(userId, title, message) {
             title: title,
             body: message,
         },
+        data: {
+            screen: screen, // This will be used in the client app to navigate
+        },
+
         token: deviceToken,
     };
 

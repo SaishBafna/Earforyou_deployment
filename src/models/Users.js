@@ -69,11 +69,21 @@ const userSchema = new mongoose.Schema(
     },
     userCategory: {
       type: String,
-      enum: ["Therapist", "Psychologist", "Profisnal_listner", 'User'],
+      enum: ["Therapist", "Psychologist", "Profisnal_listner", 'User','Healer'],
       default: 'User',
       index: true,
     },
     CallStatus: {
+      type: String,
+      enum: ['Active', 'InActive'],
+      default: 'Active'
+    },
+    CallStatus: {
+      type: String,
+      enum: ['Active', 'InActive'],
+      default: 'Active'
+    },
+    ChatStatus: {
       type: String,
       enum: ['Active', 'InActive'],
       default: 'Active'

@@ -29,7 +29,9 @@ import {
     getAllUserCategory,
     GetRegisterEnquiry,
     getTopListenersByRating,
-    getAllForCallUser
+    getAllForCallUser,
+    ChatStatusStatus,
+    getAllForChatStatus
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -47,7 +49,9 @@ router.post('/logout', protect, logoutUser);
 
 router.get('/getTopListenersByRating', getTopListenersByRating);
 
-router.get('/getAllForCallUser',protect,getAllForCallUser);
+router.get('/getAllForCallUser', protect, getAllForCallUser);
+
+router.get('/getAllForChatStatus', protect, getAllForChatStatus);
 
 
 // Route for updating user profile
@@ -109,6 +113,8 @@ router.get('/userStatics', protect, userStatics);
 router.get('/getUsersByLatestActivity', protect, getChatsWithLatestMessages);
 router.get('/getReviews/:userId', getReviews);
 router.post('/UpdateCallStatus', protect, UpdateCallStatus);
+
+router.post('/ChatStatusStatus', protect, ChatStatusStatus);
 
 router.get('/expirePlatformCharges', expirePlatformCharges);
 
