@@ -22,6 +22,7 @@ import {
     addOrUpdateBankDetails,
     getBankDetails,
     getAllUsers1,
+    getHealer,
     getAllUsers2,
     UpdateCallStatus,
     UserCategoryData,
@@ -82,6 +83,8 @@ router.get('/user/:userId', getUserById);
 
 // router.get('/users', protect, getAllUsers);
 router.get('/users', protect, getAllUsers1);
+
+router.get('/getHealer', protect, getHealer);
 
 router.get('/getAllUserCategory', protect, getAllUserCategory);
 

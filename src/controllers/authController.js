@@ -1694,6 +1694,238 @@ export const getAllUsers1 = async (req, res) => {
   }
 };
 
+export const getHealer = async (req, res) => {
+  try {
+    const genderFilter = req.query.gender?.toLowerCase();
+    const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+    const searchQuery = req.query.search?.trim() || "";
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = 21;
+    const skip = (page - 1) * limit;
+
+    // Validate gender parameter early
+    if (genderFilter && !["male", "female"].includes(genderFilter)) {
+      return res.status(400).json({
+        message: "Invalid gender parameter. Must be 'male' or 'female'",
+      });
+    }
+
+    // Build base match conditions
+    const matchConditions = {
+      _id: { $ne: loggedInUserId },
+      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+      userCategory: "Healer" // Add this condition to only get Healers
+    };
+
+    if (genderFilter) {
+      matchConditions.gender = genderFilter;
+    }
+
+    if (searchQuery) {
+      matchConditions.username = { $regex: searchQuery, $options: "i" };
+    }
+
+    // Get total count separately for better performance
+    const totalUsers = await User.countDocuments(matchConditions);
+
+    if (totalUsers === 0) {
+      let message = "No users found";
+      if (genderFilter) message = `No ${genderFilter} users found`;
+      return res.status(404).json({ message });
+    }
+
+    const currentTime = new Date();
+    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+
+    // Optimized main aggregation pipeline
+    const users = await User.aggregate([
+      // Match stage first to reduce documents early
+      { $match: matchConditions },
+
+      // Add a field to help with sorting
+      {
+        $addFields: {
+          sortOrder: {
+            $cond: {
+              if: { $eq: ["$status", "Online"] },
+              then: 1,
+              else: 0
+            }
+          }
+        }
+      },
+
+      // Sort by online status first, then by last seen
+      {
+        $sort: {
+          sortOrder: -1,  // Online users first
+          lastSeen: -1    // Then by most recently seen
+        }
+      },
+
+      // Paginate before heavy operations
+      { $skip: skip },
+      { $limit: limit },
+
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$user", "$$userId"] }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          as: "reviewStats"
+        }
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$user", "$$userId"] },
+              },
+            },
+            // Optionally project only needed fields to reduce payload size
+            {
+              $project: {
+                rating: 1,
+                comments: 1,
+                createdAt: 1,
+                reviewer: 1, // If you have a reviewer field (e.g., user who left the review)
+              },
+            },
+          ],
+          as: "reviews",
+        },
+      },
+
+      {
+        $lookup: {
+          from: "chats",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: [{ $size: "$participants" }, 2] },
+                    { $setIsSubset: [[loggedInUserId, "$$userId"], "$participants"] }
+                  ]
+                }
+              }
+            },
+            { $project: { _id: 1 } },
+            { $limit: 1 }
+          ],
+          as: "chat"
+        }
+      },
+
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: {
+            chatId: { $arrayElemAt: ["$chat._id", 0] },
+            userId: "$_id"
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $eq: ["$sender", "$$userId"] },
+                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } }
+                  ]
+                }
+              }
+            },
+            { $count: "unreadCount" }
+          ],
+          as: "unreadMessages"
+        }
+      },
+
+      // Final projection with computed fields
+      {
+        $project: {
+          username: 1,
+          name: 1,
+          email: 1,
+          gender: 1,
+          status: 1,
+          lastSeen: 1,
+          profilePhoto: 1,
+          UserStatus: 1,
+          shortDecs: 1,
+          CallStatus: 1,
+          decs: 1,
+          Language: 1,
+          Bio: 1,
+          avatarUrl: 1,
+          userCategory: 1,
+          userType: 1,
+          report: 1,
+          avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
+          reviews: 1, // Include the full reviews array          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          isOnline: { $eq: ["$status", "Online"] },
+          lastSeenStatus: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "Online"] }, then: "Online" },
+                { case: { $gte: ["$lastSeen", twentyFourHoursAgo] }, then: "recently" }
+              ],
+              default: "away"
+            }
+          },
+          unreadMessageCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0]
+          },
+          chatId: {
+            $ifNull: [{ $arrayElemAt: ["$chat._id", 0] }, null]
+          }
+        }
+      }
+    ]).exec();
+
+    // Send response
+    let message = "Users fetched successfully";
+    if (genderFilter) {
+      message = `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`;
+    }
+
+    res.status(200).json({
+      message,
+      users,
+      pagination: {
+        totalUsers,
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit),
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
 export const getAllForChatStatus = async (req, res) => {
   try {
     const genderFilter = req.query.gender?.toLowerCase();
