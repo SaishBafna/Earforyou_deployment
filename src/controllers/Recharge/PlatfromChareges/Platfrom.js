@@ -6,17 +6,233 @@ import uniqid from "uniqid";
 import User from "../../../models/Users.js";
 import MyPlan from "../../../models/Wallet/PlatfromCharges/myPlanSchema.js";
 import admin from 'firebase-admin';
-import { Coupon,CouponUsage } from "../../../models/CouponSystem/couponModel.js";
+import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js";
 
 
 // Adjust model imports as needed
 
+// export const validatePayment = async (req, res) => {
+//     let transaction;
+//     const { merchantTransactionId, userId, planId } = req.query;
+
+//     try {
+//         console.log("Step 1 - Validating payment with params:", { merchantTransactionId, userId, planId });
+
+//         // Validate input parameters
+//         if (!merchantTransactionId || !userId || !planId) {
+//             console.log("Step 1 - Missing required parameters");
+//             return res.status(400).json({ success: false, message: 'Missing required parameters' });
+//         }
+
+//         // Check for existing transaction
+//         const existingTransaction = await PlatformCharges.findOne({ where: { transactionId: merchantTransactionId } });
+//         if (existingTransaction) {
+//             console.log("Transaction already exists:", existingTransaction.status);
+//             return res.status(400).json({
+//                 success: false,
+//                 error: "Transaction with this ID already exists",
+//                 currentStatus: existingTransaction.status
+//             });
+//         }
+
+//         // Get plan details
+//         const planDetails = await MyPlan.findById(planId);
+//         if (!planDetails) {
+//             console.log("Step 1.5 - Plan details not found for planId:", planId);
+//             return res.status(404).json({ success: false, message: 'Plan details not found' });
+//         }
+
+//         const validityDays = planDetails.validityDays;
+//         console.log("Step 1.5 - Found plan with validity days:", validityDays);
+
+//         // Create pending transaction entry first
+//         transaction = await PlatformCharges.create({
+//             transactionId: merchantTransactionId,
+//             userId,
+//             planId,
+//             status: 'processing', // Start with processing status
+//             amount: planDetails.amount,
+//             planName: planDetails.planName
+//         });
+//         console.log("Step 2 - Created processing transaction:", transaction.id);
+
+//         // Construct the PhonePe status URL and checksum
+//         const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
+//         const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
+//         const sha256Hash = createHash('sha256').update(stringToHash).digest('hex');
+//         const xVerifyChecksum = `${sha256Hash}###${process.env.SALT_INDEX}`;
+
+//         // Make request to PhonePe
+//         console.log("Step 3 - Making status request to PhonePe");
+//         const response = await axios.get(statusUrl, {
+//             headers: {
+//                 "Content-Type": "application/json",
+//                 "X-VERIFY": xVerifyChecksum,
+//                 "X-MERCHANT-ID": process.env.MERCHANT_ID,
+//                 "accept": "application/json",
+//             },
+//             timeout: 10000 // 10 seconds timeout
+//         });
+
+//         const responseData = response.data;
+//         console.log("Step 4 - PhonePe Payment Status Response:", responseData);
+
+//         if (!responseData.success || !responseData.data) {
+//             throw new Error("Invalid response from payment gateway");
+//         }
+
+//         const paymentState = responseData.data.state;
+//         const paymentCode = responseData.code;
+
+//         // Handle different payment states
+//         switch (paymentState) {
+//             case 'COMPLETED':
+//                 if (paymentCode === "PAYMENT_SUCCESS") {
+//                     console.log("Step 5 - Payment successful, processing plan");
+
+//                     const lastPlan = await PlatformCharges.findOne({
+//                         userId,
+//                         status: { $in: ['active', 'queued', 'queued_confirmed'] }
+//                     }).sort({ endDate: -1 });
+
+//                     let now = new Date();
+//                     let startDate = now;
+//                     let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
+//                     console.log("Step 5 - Start and End Dates:", { startDate, endDate });
+//                     if (lastPlan) {
+//                         console.log("Step 5 - Last plan found:", {
+//                             id: lastPlan.id,
+//                             status: lastPlan.status,
+//                             endDate: lastPlan.endDate
+//                         });
+
+//                         if (['active', 'queued', 'queued_confirmed'].includes(lastPlan.status)) {
+//                             startDate = new Date(lastPlan.endDate);
+//                             endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
+//                         }
+//                     }
+
+//                     // Update transaction status based on existing plans
+//                     if (lastPlan && lastPlan.status === 'active') {
+//                         transaction.status = 'queued';
+//                         const title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
+//                         const message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days. Stay tuned! 🚀`;
+//                         const screen = 'dashboard';
+//                         await sendNotification(userId, title, message, screen);
+//                     } else {
+//                         transaction.status = 'active';
+//                         const title = `${planDetails.validityDays} Days Plan Activated! �`;
+//                         const message = `You can use the platform for ${planDetails.validityDays} days. Enjoy your experience! 🚀`;
+//                         const screen = 'dashboard';
+//                         await sendNotification(userId, title, message, screen);
+//                     }
+
+//                     transaction.startDate = startDate;
+//                     transaction.endDate = endDate;
+//                     transaction.paymentResponse = responseData;
+//                     await transaction.save();
+
+//                     console.log("Step 5 - Plan updated successfully:", {
+//                         id: transaction.id,
+//                         status: transaction.status,
+//                         startDate: transaction.startDate,
+//                         endDate: transaction.endDate
+//                     });
+
+//                     return res.status(200).json({
+//                         success: true,
+//                         message: `Payment successful and plan ${transaction.status === 'active' ? 'activated' : 'queued for activation'}`,
+//                         data: {
+//                             planId: transaction.id,
+//                             planName: planDetails.planName,
+//                             amount: planDetails.amount,
+//                             startDate: transaction.startDate,
+//                             endDate: transaction.endDate,
+//                             status: transaction.status
+//                         }
+//                     });
+//                 }
+//                 break;
+
+//             case 'PENDING':
+//                 console.log("Step 5 - Payment is still pending");
+//                 // Update transaction to pending status
+//                 transaction.status = 'pending';
+//                 transaction.paymentResponse = responseData;
+//                 await transaction.save();
+
+//                 const title = `Your ${planDetails.validityDays}-Day Plan is pending ⏳`;
+//                 const message = `Payment is still pending. Please check again later`;
+//                 await sendNotification(userId, title, message);
+
+//                 return res.status(202).json({
+//                     success: false,
+//                     message: 'Payment is still pending. Please check again later.',
+//                     data: responseData,
+//                     transactionId: transaction.id
+//                 });
+
+//             default:
+//                 // Payment failed or other status
+//                 console.log("Step 5 - Payment failed:", responseData);
+//                 transaction.status = 'failed';
+//                 transaction.paymentResponse = responseData;
+//                 transaction.error = responseData.message || 'Payment failed';
+//                 await transaction.save();
+
+//                 const failTitle = `Payment Failed ❌`;
+//                 const failMessage = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
+//                 await sendNotification(userId, failTitle, failMessage);
+
+//                 return res.status(400).json({
+//                     success: false,
+//                     message: 'Payment validation failed',
+//                     data: responseData,
+//                     transactionId: transaction.id
+//                 });
+//         }
+
+//     } catch (error) {
+//         console.error("Step 6 - Error in validatePayment:", {
+//             message: error.message,
+//             stack: error.stack,
+//             responseData: error.response?.data,
+//             status: error.response?.status
+//         });
+
+//         // Update transaction with error if it was created
+//         if (transaction) {
+//             transaction.status = 'failed';
+//             transaction.error = error.message;
+//             if (error.response?.data) {
+//                 transaction.paymentResponse = error.response.data;
+//             }
+//             await transaction.save();
+//         }
+
+//         const title = `Payment Processing Error`;
+//         const message = `We encountered an issue while processing your payment. Our team has been notified. Please check back later.`;
+//         const screen = 'Wallet_detail';
+//         await sendNotification(userId, title, message, screen);
+
+//         return res.status(500).json({
+//             success: false,
+//             message: 'Payment validation failed',
+//             error: error.response?.data?.message || error.message,
+//             transactionId: transaction?.id
+//         });
+//     }
+// };
+
+
+
+
 export const validatePayment = async (req, res) => {
     let transaction;
-    const { merchantTransactionId, userId, planId } = req.query;
+    const { merchantTransactionId, userId, planId, couponCode } = req.query;
 
     try {
-        console.log("Step 1 - Validating payment with params:", { merchantTransactionId, userId, planId });
+        console.log("Step 1 - Validating payment with params:", { merchantTransactionId, userId, planId, couponCode });
 
         // Validate input parameters
         if (!merchantTransactionId || !userId || !planId) {
@@ -42,8 +258,79 @@ export const validatePayment = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Plan details not found' });
         }
 
-        const validityDays = planDetails.validityDays;
-        console.log("Step 1.5 - Found plan with validity days:", validityDays);
+        let validityDays = planDetails.validityDays;
+        let couponDetails = null;
+        let extendedDays = 0;
+
+        // Process coupon if provided
+        if (couponCode) {
+            try {
+                console.log("Step 1.6 - Processing coupon code:", couponCode);
+                const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+
+                if (!coupon) {
+                    throw new Error("Coupon not found");
+                }
+
+                // Check coupon validity
+                if (!coupon.isUsable) {
+                    throw new Error("Coupon is not usable (expired, inactive, or max uses reached)");
+                }
+
+                // Check if user has already used this coupon
+                if (!coupon.isReusable) {
+                    const existingUsage = await CouponUsage.findOne({
+                        coupon: coupon._id,
+                        user: userId
+                    });
+
+                    if (existingUsage) {
+                        throw new Error("You have already used this coupon");
+                    }
+                }
+
+                // Check minimum order amount if applicable
+                if (coupon.minimumOrderAmount && planDetails.amount < coupon.minimumOrderAmount) {
+                    throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
+                }
+
+                // Apply coupon based on type
+                if (coupon.discountType === 'free_days') {
+                    extendedDays = coupon.discountValue;
+                    validityDays += extendedDays;
+                    console.log("Step 1.7 - Extended plan by", extendedDays, "days. New validity:", validityDays);
+                }
+
+                // Record coupon usage
+                await CouponUsage.create({
+                    coupon: coupon._id,
+                    user: userId,
+                    discountApplied: coupon.discountType === 'free_days' ? extendedDays : 0
+                });
+
+                // Update coupon usage count
+                coupon.currentUses += 1;
+                await coupon.save();
+
+                couponDetails = {
+                    code: coupon.code,
+                    discountType: coupon.discountType,
+                    discountValue: coupon.discountValue,
+                    extendedDays: extendedDays
+                };
+
+            } catch (couponError) {
+                console.log("Coupon processing error:", couponError.message);
+                // Continue without coupon but inform the user
+                await sendNotification(
+                    userId,
+                    'Coupon Not Applied',
+                    `Coupon could not be applied: ${couponError.message}. Payment processed without coupon.`
+                );
+            }
+        }
+
+        console.log("Step 1.8 - Final validity days after coupon processing:", validityDays);
 
         // Create pending transaction entry first
         transaction = await PlatformCharges.create({
@@ -52,7 +339,8 @@ export const validatePayment = async (req, res) => {
             planId,
             status: 'processing', // Start with processing status
             amount: planDetails.amount,
-            planName: planDetails.planName
+            planName: planDetails.planName,
+            couponDetails: couponDetails || undefined
         });
         console.log("Step 2 - Created processing transaction:", transaction.id);
 
@@ -98,6 +386,7 @@ export const validatePayment = async (req, res) => {
                     let now = new Date();
                     let startDate = now;
                     let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
+
                     console.log("Step 5 - Start and End Dates:", { startDate, endDate });
                     if (lastPlan) {
                         console.log("Step 5 - Last plan found:", {
@@ -115,14 +404,27 @@ export const validatePayment = async (req, res) => {
                     // Update transaction status based on existing plans
                     if (lastPlan && lastPlan.status === 'active') {
                         transaction.status = 'queued';
-                        const title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
-                        const message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days. Stay tuned! 🚀`;
+                        let title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
+                        let message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days`;
+
+                        if (couponDetails) {
+                            title = `Your ${validityDays}-Day Plan is Queued ⏳`;
+                            message += ` plus ${extendedDays} bonus days from coupon ${couponDetails.code}`;
+                        }
+
+                        message += `. Stay tuned! 🚀`;
                         const screen = 'dashboard';
                         await sendNotification(userId, title, message, screen);
                     } else {
                         transaction.status = 'active';
-                        const title = `${planDetails.validityDays} Days Plan Activated! �`;
-                        const message = `You can use the platform for ${planDetails.validityDays} days. Enjoy your experience! 🚀`;
+                        let title = `${validityDays} Days Plan Activated! 🎉`;
+                        let message = `You can use the platform for ${validityDays} days`;
+
+                        if (couponDetails) {
+                            message += ` (including ${extendedDays} bonus days from coupon ${couponDetails.code})`;
+                        }
+
+                        message += `. Enjoy your experience! 🚀`;
                         const screen = 'dashboard';
                         await sendNotification(userId, title, message, screen);
                     }
@@ -148,7 +450,9 @@ export const validatePayment = async (req, res) => {
                             amount: planDetails.amount,
                             startDate: transaction.startDate,
                             endDate: transaction.endDate,
-                            status: transaction.status
+                            status: transaction.status,
+                            couponApplied: couponDetails || null,
+                            extendedDays: extendedDays
                         }
                     });
                 }
@@ -161,7 +465,7 @@ export const validatePayment = async (req, res) => {
                 transaction.paymentResponse = responseData;
                 await transaction.save();
 
-                const title = `Your ${planDetails.validityDays}-Day Plan is pending ⏳`;
+                const title = `Your ${validityDays}-Day Plan is pending ⏳`;
                 const message = `Payment is still pending. Please check again later`;
                 await sendNotification(userId, title, message);
 
@@ -223,7 +527,6 @@ export const validatePayment = async (req, res) => {
         });
     }
 };
-
 
 // Additional endpoint to check pending payments
 export const checkPendingPayment = async (req, res) => {
