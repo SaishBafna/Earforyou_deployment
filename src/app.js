@@ -121,7 +121,7 @@ import ThreadRoute from "./routes/ThreadRoute/ThreadRoute.js";
 import GroupRoute from "./routes/GroupRoute.js"
 import BlockUserRoute from "./routes/BlockUserRoute.js"
 import Chatrecharge from "./routes/chatRecharge/ChatRechargeRoute.js"
-
+import Coupon from "./routes/CouponRoutes/couponRoutes.js"
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");
@@ -153,6 +153,8 @@ app.use('/api/v1', GroupRoute);
 
 
 app.use("/api/v1", authRoutes);
+
+app.use("/api/v1", Coupon);
 
 app.use("/api/v1", Chatrecharge);
 
