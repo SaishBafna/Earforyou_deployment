@@ -87,7 +87,6 @@ import {
 
 
 
-
 export const validateChatPayment = asyncHandler(async (req, res) => {
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
 
@@ -105,21 +104,24 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
     if (!user) throw new ApiError(404, "User not found");
     if (!plan) throw new ApiError(404, "Plan not found");
 
-    // Initialize coupon variables
+    // Initialize payment variables
     let originalAmount = plan.price;
     let finalAmount = originalAmount;
     let discountAmount = 0;
     let extraValidityDays = 0;
     let coupon = null;
+    let couponError = null;
 
-    // Apply coupon if provided
+    // Validate and apply coupon if provided
     if (couponCode) {
         try {
+            // First validate the coupon
             const couponResult = await validateAndApplyCoupon(
                 couponCode,
                 userId,
                 originalAmount,
-                user.isStaff
+                user.isStaff,
+                'days'
             );
 
             if (couponResult.isValid) {
@@ -127,14 +129,21 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
                 finalAmount = couponResult.finalAmount;
                 discountAmount = couponResult.discountAmount;
                 extraValidityDays = couponResult.freeDays || 0;
+
+                console.log("Coupon applied successfully:", {
+                    code: coupon.code,
+                    discountAmount,
+                    extraValidityDays
+                });
             }
         } catch (error) {
-            console.error("Coupon error:", error.message);
-            // Continue without coupon
+            couponError = error.message;
+            console.error("Coupon validation failed:", couponError);
+            // Continue with normal payment if coupon is invalid
         }
     }
 
-    // Check existing transaction
+    // Check for existing transaction
     if (await ChatUserPremium.exists({ "payment.merchantTransactionId": merchantTransactionId })) {
         throw new ApiError(400, "Transaction already processed");
     }
@@ -149,14 +158,18 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
             "X-VERIFY": checksum,
             "X-MERCHANT-ID": process.env.MERCHANT_ID,
         },
+        timeout: 10000 // 10 seconds timeout
     });
 
     const { code, data } = response.data;
     const { state, amount } = data;
 
-    // Validate payment amount
-    if (state === 'COMPLETED' && amount !== finalAmount * 100) {
-        throw new ApiError(400, `Amount mismatch. Expected ₹${finalAmount}, got ₹${amount / 100}`);
+    // Validate payment amount matches expected amount (after coupon discount)
+    if (state === 'COMPLETED') {
+        const paidAmount = amount ? amount / 100 : 0;
+        if (paidAmount !== finalAmount) {
+            throw new ApiError(400, `Amount mismatch. Expected ₹${finalAmount}, got ₹${paidAmount}`);
+        }
     }
 
     // Prepare payment record
@@ -176,7 +189,8 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
             discountValue: coupon.discountValue,
             extraValidityDays
         } : {
-            applied: false
+            applied: false,
+            error: couponError || null
         }
     };
 
@@ -187,7 +201,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
         paymentRecord
     );
 
-    // Record coupon usage if successful
+    // Record coupon usage if payment was successful and coupon was applied
     if (state === 'COMPLETED' && coupon) {
         await recordCouponTransaction(
             coupon._id,
@@ -195,15 +209,22 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
             merchantTransactionId,
             discountAmount
         );
+        console.log("Coupon usage recorded successfully");
     }
 
-    // Send notification
+    // Send appropriate notification
+    const notificationTitle = state === 'COMPLETED' 
+        ? 'Payment Successful' 
+        : 'Payment Failed';
+    
+    const notificationMessage = state === 'COMPLETED'
+        ? `Your ${plan.name} plan is now active! ${extraValidityDays > 0 ? `+${extraValidityDays} free days!` : ''}`
+        : 'Payment failed. Please try again.';
+
     await sendNotification(
         userId,
-        state === 'COMPLETED' ? 'Payment Successful' : 'Payment Failed',
-        state === 'COMPLETED'
-            ? `Your ${plan.name} plan is active! ${extraValidityDays > 0 ? `+${extraValidityDays} free days!` : ''}`
-            : 'Payment failed. Please try again.',
+        notificationTitle,
+        notificationMessage,
         'premium_chat'
     );
 
@@ -212,8 +233,9 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
             subscription,
             couponApplied: !!coupon,
             discountAmount,
-            extraValidityDays
-        }, `Payment processed successfully`)
+            extraValidityDays,
+            paymentStatus: state
+        }, state === 'COMPLETED' ? 'Payment processed successfully' : 'Payment processing failed')
     );
 });
 

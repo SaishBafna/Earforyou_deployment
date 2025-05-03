@@ -200,40 +200,53 @@ import { validateAndApplyCoupon, recordCouponTransaction } from '../../utils/cou
 export const validatePayment = async (req, res) => {
   const { merchantTransactionId, userId, planId, couponCode } = req.query;
 
+  // Validate input parameters
   if (!merchantTransactionId || !userId || !planId) {
-    return res.status(400).send("Invalid transaction ID, user ID, or plan ID");
+    return res.status(400).json({
+      success: false,
+      message: "Invalid transaction ID, user ID, or plan ID"
+    });
   }
 
   try {
-    // Fetch user to check if they're staff (for staff-only coupons)
-    const user = await User.findById(userId);
+    // Fetch user and plan details in parallel
+    const [user, plan] = await Promise.all([
+      User.findById(userId),
+      SubscriptionPlan.findById(planId)
+    ]);
+
     if (!user) {
-      return res.status(404).send("User not found");
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
     }
 
-    // Fetch the subscription plan
-    const plan = await SubscriptionPlan.findById(planId);
     if (!plan) {
-      return res.status(400).send("Invalid plan ID");
+      return res.status(400).json({
+        success: false,
+        message: "Invalid plan ID"
+      });
     }
 
+    // Initialize payment variables
     let originalAmount = plan.price;
     let finalAmount = originalAmount;
     let discountAmount = 0;
     let coupon = null;
     let couponApplied = false;
+    let couponError = null;
 
-    console.log("Original Amount:", originalAmount);
-    console.log("Coupon Code:", couponCode);
-
-    // Apply coupon if provided
+    // Validate and apply coupon if provided
     if (couponCode) {
       try {
+        // First validate the coupon
         const couponResult = await validateAndApplyCoupon(
           couponCode,
           userId,
           originalAmount,
-          user.isStaff // Pass whether user is staff
+          user.isStaff,
+          'wallet'
         );
 
         if (couponResult.isValid) {
@@ -241,10 +254,17 @@ export const validatePayment = async (req, res) => {
           finalAmount = couponResult.finalAmount;
           discountAmount = couponResult.discountAmount;
           couponApplied = true;
+
+          console.log("Coupon applied successfully:", {
+            code: coupon.code,
+            discountAmount,
+            finalAmount
+          });
         }
-      } catch (couponError) {
-        console.log("Coupon application failed:", couponError.message);
-        // Continue without coupon if there's an error
+      } catch (error) {
+        couponError = error.message;
+        console.log("Coupon application failed:", couponError);
+        // Continue with normal payment if coupon is invalid
       }
     }
 
@@ -261,25 +281,37 @@ export const validatePayment = async (req, res) => {
         "X-MERCHANT-ID": process.env.MERCHANT_ID,
         accept: "application/json",
       },
+      timeout: 10000 // 10 seconds timeout
     });
 
     console.log("Payment status response:", response.data);
 
     if (!response.data || !response.data.code || !response.data.data) {
-      return res.status(400).send({ success: false, message: "Invalid response from payment gateway" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid response from payment gateway"
+      });
     }
 
     const { code, data } = response.data;
     const { state, amount } = data;
+    const paidAmount = amount ? amount / 100 : 0;
 
     // Validate that the paid amount matches the expected amount (after coupon discount)
-    if (state === 'COMPLETED' && amount !== finalAmount * 100) {
-      return res.status(400).send({
+    if (state === 'COMPLETED' && paidAmount !== finalAmount) {
+      return res.status(400).json({
         success: false,
-        message: `Paid amount (₹${amount / 100}) doesn't match expected amount (₹${finalAmount})`
+        message: `Paid amount (₹${paidAmount}) doesn't match expected amount (₹${finalAmount})`,
+        details: {
+          originalAmount,
+          discountAmount,
+          couponApplied,
+          couponError
+        }
       });
     }
 
+    // Find or create wallet
     let wallet = await Wallet.findOne({ userId });
     if (!wallet) {
       wallet = await Wallet.create({
@@ -294,8 +326,9 @@ export const validatePayment = async (req, res) => {
       });
     }
 
+    // Prepare transaction record
     const transactionRecord = {
-      amount: amount ? amount / 100 : finalAmount,
+      amount: paidAmount || finalAmount,
       merchantTransactionId,
       state: state || 'PENDING',
       responseCode: code,
@@ -303,10 +336,14 @@ export const validatePayment = async (req, res) => {
       rechargeDate: new Date(),
       transactionId: merchantTransactionId,
       planId: planId,
-      couponApplied: couponApplied,
-      couponCode: coupon?.code,
-      originalAmount: originalAmount,
-      discountAmount: discountAmount
+      couponDetails: {
+        applied: couponApplied,
+        code: coupon?.code,
+        couponId: coupon?._id,
+        discountAmount,
+        originalAmount,
+        error: couponError || null
+      }
     };
 
     // Check if this transaction already exists in wallet
@@ -333,8 +370,7 @@ export const validatePayment = async (req, res) => {
         if (code === 'PAYMENT_SUCCESS') {
           // Only add balance if this is a new completion
           if (!existingTransaction || existingTransaction.state !== 'COMPLETED') {
-            const newBalance = wallet.balance + plan.talkTime;
-            wallet.balance = newBalance;
+            wallet.balance += plan.talkTime;
             wallet.talkTime = (wallet.talkTime || 0) + plan.talkTime;
             await wallet.save();
 
@@ -348,17 +384,19 @@ export const validatePayment = async (req, res) => {
               );
             }
 
+            // Send success notification
             await sendNotification(
               userId,
               "Payment Successful",
               `Your wallet has been credited with ₹${transactionRecord.amount}. ` +
               `New balance: ₹${wallet.balance}. ` +
               `You have been credited with ${plan.talkTime} minutes of talk time.` +
-              (couponApplied ? ` (₹${discountAmount} discount applied)` : '')
+              (couponApplied ? ` (₹${discountAmount} discount applied)` : ''),
+              "wallet"
             );
           }
 
-          return res.status(200).send({
+          return res.status(200).json({
             success: true,
             message: "Payment validated and wallet updated",
             data: {
@@ -374,24 +412,18 @@ export const validatePayment = async (req, res) => {
         break;
 
       case 'PENDING':
-        const screen = "dashboard";
         await sendNotification(
           userId,
           "Payment Pending",
           `Your payment of ₹${transactionRecord.amount} is pending. ` +
           `Transaction ID: ${merchantTransactionId}.` +
           (couponApplied ? ` (₹${discountAmount} discount will be applied)` : ''),
-          screen
+          "wallet"
         );
-        return res.status(200).send({
+        return res.status(200).json({
           success: true,
           message: "Payment is pending",
-          data: {
-            transaction: transactionRecord,
-            couponApplied,
-            discountAmount,
-            originalAmount
-          }
+          data: transactionRecord
         });
 
       case 'FAILED':
@@ -400,17 +432,12 @@ export const validatePayment = async (req, res) => {
           "Payment Failed",
           `Your payment of ₹${transactionRecord.amount} failed. ` +
           `Transaction ID: ${merchantTransactionId}.`,
-          "Wallet_detail"
+          "wallet"
         );
-        return res.status(400).send({
+        return res.status(400).json({
           success: false,
           message: "Payment failed",
-          data: {
-            transaction: transactionRecord,
-            couponApplied,
-            discountAmount,
-            originalAmount
-          }
+          data: transactionRecord
         });
 
       default:
@@ -419,40 +446,42 @@ export const validatePayment = async (req, res) => {
           "Payment Status Unknown",
           `Your payment status is unknown. ` +
           `Transaction ID: ${merchantTransactionId}. ` +
-          `Please contact support.`
+          `Please contact support.`,
+          "wallet"
         );
-        return res.status(400).send({
+        return res.status(400).json({
           success: false,
           message: "Unknown payment status",
-          data: {
-            transaction: transactionRecord,
-            couponApplied,
-            discountAmount,
-            originalAmount
-          }
+          data: transactionRecord
         });
     }
 
   } catch (error) {
     console.error("Error in payment validation:", error);
 
-    // Try to send a notification about the error
+    // Try to send error notification
     try {
       await sendNotification(
         userId,
         "Payment Verification Error",
         `There was an error verifying your payment. ` +
         `Transaction ID: ${merchantTransactionId}. ` +
-        `Please contact support.`
+        `Please contact support.`,
+        "wallet"
       );
     } catch (notificationError) {
       console.error("Failed to send error notification:", notificationError);
     }
 
-    return res.status(500).send({
+    return res.status(500).json({
       success: false,
-      error: "Payment validation failed",
-      message: error.message
+      message: "Payment validation failed",
+      error: error.message,
+      details: {
+        merchantTransactionId,
+        userId,
+        planId
+      }
     });
   }
 };

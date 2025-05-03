@@ -226,7 +226,6 @@ import { validateAndApplyCoupon, recordCouponTransaction } from "../../../utils/
 // };
 
 
-
 export const validatePayment = async (req, res) => {
     let transaction;
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
@@ -269,14 +268,18 @@ export const validatePayment = async (req, res) => {
         let extraValidityDays = 0;
         let coupon = null;
         let couponApplied = false;
+        let couponError = null;
 
         // Apply coupon if provided
         if (couponCode) {
             try {
+                // First validate the coupon
                 const couponResult = await validateAndApplyCoupon(
                     couponCode,
                     userId,
                     originalAmount,
+                    user.isStaff,
+                    'days'
                 );
 
                 if (couponResult.isValid) {
@@ -292,13 +295,14 @@ export const validatePayment = async (req, res) => {
                         extraValidityDays
                     });
                 }
-            } catch (couponError) {
-                console.log("Coupon application failed:", couponError.message);
-                // Continue without coupon if there's an error
+            } catch (error) {
+                couponError = error.message;
+                console.log("Coupon application failed:", couponError);
+                // Continue with normal recharge if coupon is invalid
             }
         }
 
-        // Create pending transaction entry first
+        // Create transaction entry
         transaction = await PlatformCharges.create({
             transactionId: merchantTransactionId,
             userId,
@@ -316,7 +320,8 @@ export const validatePayment = async (req, res) => {
                 discountAmount,
                 extraValidityDays
             } : {
-                applied: false
+                applied: false,
+                error: couponError || null
             }
         });
         console.log("Step 2 - Created processing transaction:", transaction.id);
