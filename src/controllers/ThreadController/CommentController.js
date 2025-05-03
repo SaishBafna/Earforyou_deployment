@@ -68,7 +68,8 @@ export const createComment = async (req, res) => {
           title: 'New comment on your post',
           message: `${req.user.username} commented on your post: "${content.substring(0, 30)}..."`,
           postId: postId,
-          commentId: comment._id
+          commentId: comment._id,
+          screen:"Details_express"
         });
       }
 
@@ -81,7 +82,8 @@ export const createComment = async (req, res) => {
           title: 'New reply to your comment',
           message: `${req.user.username} replied to your comment: "${content.substring(0, 30)}..."`,
           postId: postId,
-          commentId: comment._id
+          commentId: comment._id,
+          screen:"Details_express"
         });
       }
     } catch (notificationError) {
@@ -271,7 +273,8 @@ export const toggleLikeComment = async (req, res) => {
           title: 'New like on your comment',
           message: `${req.user.username} liked your comment`,
           postId: comment.post,
-          commentId: comment._id
+          commentId: comment._id,
+          screen:"Details_express"
         });
       }
     }

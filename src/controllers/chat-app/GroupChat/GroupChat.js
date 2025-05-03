@@ -498,7 +498,7 @@ async function sendGroupNotification(
       },
     },
     data: {
-      screen: 'GroupChat', // The screen name for group chat
+      screen: 'Group_Chat', // The screen name for group chat
       params: JSON.stringify({
         chatId: chatId,
         messageId: messageId,

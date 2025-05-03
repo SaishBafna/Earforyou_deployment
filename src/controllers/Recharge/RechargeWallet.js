@@ -36,7 +36,7 @@ export const initiatePayment = async (req, res) => {
 
     const { price, talkTime } = plan;
 
-   console.log("price", price)
+    console.log("price", price)
     // Check if the user has a wallet
 
     // Generate a unique merchant transaction ID
@@ -44,7 +44,7 @@ export const initiatePayment = async (req, res) => {
 
     // Fetch user to get the mobile number (optional)
     const user = await User.findById(userId);
-    if (!user ) {
+    if (!user) {
       return res.status(400).json({
         success: false,
         message: 'User not found or mobile number is missing'
@@ -59,7 +59,7 @@ export const initiatePayment = async (req, res) => {
       redirectUrl: `${process.env.APP_BE_URL}/api/v1/validate/${merchantTransactionId}/${userId}`,
       redirectUrl: 'com.earforall://payment',
       redirectMode: 'POST',
-      
+
       paymentInstrument: { type: "PAY_PAGE" },
     };
 
@@ -313,11 +313,13 @@ export const validatePayment = async (req, res) => {
         break;
 
       case 'PENDING':
+        const screen = "dashboard"
         await sendNotification(
           userId,
           "Payment Pending",
           `Your payment of ₹${transactionRecord.amount} is pending. ` +
-          `Transaction ID: ${merchantTransactionId}.`
+          `Transaction ID: ${merchantTransactionId}.`,
+          screen
         );
         return res.status(200).send({
           success: true,
@@ -330,7 +332,8 @@ export const validatePayment = async (req, res) => {
           userId,
           "Payment Failed",
           `Your payment of ₹${transactionRecord.amount} failed. ` +
-          `Transaction ID: ${merchantTransactionId}.`
+          `Transaction ID: ${merchantTransactionId}.`,
+          "Wallet_detail"
         );
         return res.status(400).send({
           success: false,
@@ -577,7 +580,8 @@ export const transferEarningsToWallet = async (req, res) => {
 
     const title = "Balance transferred successfully"
     const message = `Balance Added in Calling Wallet ${amount}`
-    await sendNotification(userId, title, message)
+    const screen = "dashboard"
+    await sendNotification(userId, title, message, screen)
 
 
     return res.status(200).json({
@@ -606,7 +610,7 @@ export const transferEarningsToWallet = async (req, res) => {
 
 
 
-async function sendNotification(userId, title, message) {
+async function sendNotification(userId, title, message, screen) {
   // Assuming you have the FCM device token stored in your database
   const user = await User.findById(userId);
   const deviceToken = user.deviceToken;
@@ -620,6 +624,9 @@ async function sendNotification(userId, title, message) {
     notification: {
       title: title,
       body: message,
+    },
+    data: {
+      screen: screen, // This will be used in the client app to navigate
     },
     token: deviceToken,
   };

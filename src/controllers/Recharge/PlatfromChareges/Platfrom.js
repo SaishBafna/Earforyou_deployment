@@ -279,12 +279,14 @@ export const validatePayment = async (req, res) => {
                         transaction.status = 'queued';
                         const title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
                         const message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days. Stay tuned! 🚀`;
-                        await sendNotification(userId, title, message);
+                        const screen = 'dashboard';
+                        await sendNotification(userId, title, message, screen);
                     } else {
                         transaction.status = 'active';
                         const title = `${planDetails.validityDays} Days Plan Activated! �`;
                         const message = `You can use the platform for ${planDetails.validityDays} days. Enjoy your experience! 🚀`;
-                        await sendNotification(userId, title, message);
+                        const screen = 'dashboard';
+                        await sendNotification(userId, title, message, screen);
                     }
 
                     transaction.startDate = startDate;
@@ -372,7 +374,8 @@ export const validatePayment = async (req, res) => {
 
         const title = `Payment Processing Error`;
         const message = `We encountered an issue while processing your payment. Our team has been notified. Please check back later.`;
-        await sendNotification(userId, title, message);
+        const screen = 'Wallet_detail';
+        await sendNotification(userId, title, message, screen);
 
         return res.status(500).json({
             success: false,
@@ -616,7 +619,7 @@ export const getAllPlans = async (req, res) => {
 
 
 
-async function sendNotification(userId, title, message) {
+async function sendNotification(userId, title, message, screen) {
     // Assuming you have the FCM device token stored in your database
     const user = await User.findById(userId);
     const deviceToken = user.deviceToken;
@@ -630,6 +633,9 @@ async function sendNotification(userId, title, message) {
         notification: {
             title: title,
             body: message,
+        },
+        data: {
+            screen: screen, // This will be used in the client app to navigate
         },
         token: deviceToken,
     };

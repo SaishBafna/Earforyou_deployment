@@ -88,7 +88,8 @@ const processMentions = async (content, postId, senderId) => {
         type: 'mention',
         title: 'You were mentioned in a post',
         message: `You were mentioned in a post`,
-        postId
+        postId,
+        screen:"Express_room"
       });
     }
   }
@@ -428,7 +429,8 @@ export const toggleLikePost = async (req, res) => {
           type: 'post_like',
           title: `${req.user.username} liked your post`,
           message: `${req.user.username} liked your post`,
-          postId
+          postId,
+          screen:"Express_room"
         });
       }
     }

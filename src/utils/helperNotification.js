@@ -2,6 +2,7 @@ import ThreadNotificationModel from '../models/ThreadNotification.js';
 import User from '../models/Users.js';
 import admin from 'firebase-admin';
 import logger from '../config/logger.js';
+import { date } from 'joi';
 
 /**
  * Stores a thread notification in the database
@@ -27,7 +28,7 @@ export const createThreadNotification = async (data) => {
  * @param {string} type - Notification type
  * @param {Object} metadata - Additional metadata
  */
-export const sendPushNotification = async (userId, title, message, type, metadata = {}) => {
+export const sendPushNotification = async (userId, title, message, type, metadata = {}, screen) => {
     try {
         const user = await User.findById(userId).select('deviceToken username avatarUrl');
         if (!user) {
@@ -58,6 +59,9 @@ export const sendPushNotification = async (userId, title, message, type, metadat
                 imageUrl: stringifiedMetadata.senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png'
             },
             token: user.deviceToken,
+            data: {
+                screen: screen || 'Notification',
+            }
         };
 
         await admin.messaging().send(payload);
@@ -82,7 +86,7 @@ export const sendPushNotification = async (userId, title, message, type, metadat
  */
 export const notifyUser = async (options) => {
     try {
-        const { recipientId, senderId, type, title, message, postId, commentId } = options;
+        const { recipientId, senderId, type, title, message, postId, commentId, screen } = options;
 
         // Get sender info if available
         let sender = null;
@@ -103,7 +107,7 @@ export const notifyUser = async (options) => {
             post: postId,
             comment: commentId,
             read: false,
-            createdAt: new Date()
+            createdAt: new Date(),
         });
 
         // Send push notification
@@ -119,7 +123,9 @@ export const notifyUser = async (options) => {
                 postId: postId || '',
                 commentId: commentId || '',
                 notificationId: notification._id.toString()
-            }
+            },
+            screen
+
         );
 
         return notification;
