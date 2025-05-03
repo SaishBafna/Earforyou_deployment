@@ -2,7 +2,6 @@ import ThreadNotificationModel from '../models/ThreadNotification.js';
 import User from '../models/Users.js';
 import admin from 'firebase-admin';
 import logger from '../config/logger.js';
-import { date } from 'joi';
 
 /**
  * Stores a thread notification in the database
