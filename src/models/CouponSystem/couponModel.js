@@ -42,8 +42,8 @@ const couponSchema = new mongoose.Schema({
     },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
+        ref: 'Admin',
+        required: false
     },
     ownerType: {
         type: String,
@@ -51,7 +51,7 @@ const couponSchema = new mongoose.Schema({
         required: true
     },
     minimumOrderAmount: Number,
-   
+
     isStaffOnly: {
         type: Boolean,
         default: false
@@ -100,7 +100,7 @@ const usageSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
-    
+
     discountApplied: {
         type: Number,
         required: true
