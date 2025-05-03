@@ -34,11 +34,9 @@ const PlatformChargesSchema = new mongoose.Schema({
     // Payment details
     amount: {
         type: Number,
-        required: true
     },
     originalAmount: {
         type: Number,
-        required: true
     },
     discountAmount: {
         type: Number,

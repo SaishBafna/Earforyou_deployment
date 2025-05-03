@@ -223,6 +223,9 @@ export const validatePayment = async (req, res) => {
     let coupon = null;
     let couponApplied = false;
 
+    console.log("Original Amount:", originalAmount);
+    console.log("Coupon Code:", couponCode);
+
     // Apply coupon if provided
     if (couponCode) {
       try {

@@ -277,7 +277,6 @@ export const validatePayment = async (req, res) => {
                     couponCode,
                     userId,
                     originalAmount,
-                    user.isStaff // Pass whether user is staff
                 );
 
                 if (couponResult.isValid) {
