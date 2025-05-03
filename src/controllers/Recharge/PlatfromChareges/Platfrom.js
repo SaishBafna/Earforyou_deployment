@@ -226,7 +226,6 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 
 
 
-
 export const validatePayment = async (req, res) => {
     let transaction;
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
@@ -241,7 +240,7 @@ export const validatePayment = async (req, res) => {
         }
 
         // Check for existing transaction
-        const existingTransaction = await PlatformCharges.findOne({ where: { transactionId: merchantTransactionId } });
+        const existingTransaction = await PlatformCharges.findOne({ transactionId: merchantTransactionId });
         if (existingTransaction) {
             console.log("Transaction already exists:", existingTransaction.status);
             return res.status(400).json({
@@ -322,11 +321,15 @@ export const validatePayment = async (req, res) => {
             } catch (couponError) {
                 console.log("Coupon processing error:", couponError.message);
                 // Continue without coupon but inform the user
-                await sendNotification(
-                    userId,
-                    'Coupon Not Applied',
-                    `Coupon could not be applied: ${couponError.message}. Payment processed without coupon.`
-                );
+                try {
+                    await sendNotification(
+                        userId,
+                        'Coupon Not Applied',
+                        `Coupon could not be applied: ${couponError.message.toString()}. Payment processed without coupon.`
+                    );
+                } catch (notificationError) {
+                    console.error("Failed to send coupon error notification:", notificationError);
+                }
             }
         }
 
@@ -337,7 +340,7 @@ export const validatePayment = async (req, res) => {
             transactionId: merchantTransactionId,
             userId,
             planId,
-            status: 'processing', // Start with processing status
+            status: 'processing',
             amount: planDetails.amount,
             planName: planDetails.planName,
             couponDetails: couponDetails || undefined
@@ -359,7 +362,7 @@ export const validatePayment = async (req, res) => {
                 "X-MERCHANT-ID": process.env.MERCHANT_ID,
                 "accept": "application/json",
             },
-            timeout: 10000 // 10 seconds timeout
+            timeout: 10000
         });
 
         const responseData = response.data;
@@ -383,19 +386,21 @@ export const validatePayment = async (req, res) => {
                         status: { $in: ['active', 'queued', 'queued_confirmed'] }
                     }).sort({ endDate: -1 });
 
-                    let now = new Date();
+                    const now = new Date();
                     let startDate = now;
                     let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
                     console.log("Step 5 - Start and End Dates:", { startDate, endDate });
-                    if (lastPlan) {
+
+                    if (lastPlan && lastPlan.endDate && ['active', 'queued', 'queued_confirmed'].includes(lastPlan.status)) {
                         console.log("Step 5 - Last plan found:", {
                             id: lastPlan.id,
                             status: lastPlan.status,
                             endDate: lastPlan.endDate
                         });
 
-                        if (['active', 'queued', 'queued_confirmed'].includes(lastPlan.status)) {
+                        // Only use lastPlan.endDate if it's a valid date
+                        if (lastPlan.endDate instanceof Date && !isNaN(lastPlan.endDate.getTime())) {
                             startDate = new Date(lastPlan.endDate);
                             endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
                         }
@@ -404,8 +409,8 @@ export const validatePayment = async (req, res) => {
                     // Update transaction status based on existing plans
                     if (lastPlan && lastPlan.status === 'active') {
                         transaction.status = 'queued';
-                        let title = `Your ${planDetails.validityDays}-Day Plan is Queued ⏳`;
-                        let message = `Your subscription will be activated soon. You will have access to the platform for ${planDetails.validityDays} days`;
+                        let title = `Your ${validityDays}-Day Plan is Queued ⏳`;
+                        let message = `Your subscription will be activated soon. You will have access to the platform for ${validityDays} days`;
 
                         if (couponDetails) {
                             title = `Your ${validityDays}-Day Plan is Queued ⏳`;
@@ -413,8 +418,16 @@ export const validatePayment = async (req, res) => {
                         }
 
                         message += `. Stay tuned! 🚀`;
-                        const screen = 'dashboard';
-                        await sendNotification(userId, title, message, screen);
+                        try {
+                            await sendNotification(
+                                userId,
+                                title,
+                                message,
+                                'dashboard'
+                            );
+                        } catch (notificationError) {
+                            console.error("Failed to send queued notification:", notificationError);
+                        }
                     } else {
                         transaction.status = 'active';
                         let title = `${validityDays} Days Plan Activated! 🎉`;
@@ -425,8 +438,24 @@ export const validatePayment = async (req, res) => {
                         }
 
                         message += `. Enjoy your experience! 🚀`;
-                        const screen = 'dashboard';
-                        await sendNotification(userId, title, message, screen);
+                        try {
+                            await sendNotification(
+                                userId,
+                                title,
+                                message,
+                                'dashboard'
+                            );
+                        } catch (notificationError) {
+                            console.error("Failed to send activation notification:", notificationError);
+                        }
+                    }
+
+                    // Ensure dates are valid before saving
+                    if (!(startDate instanceof Date) || isNaN(startDate.getTime())) {
+                        startDate = now;
+                    }
+                    if (!(endDate instanceof Date) || isNaN(endDate.getTime())) {
+                        endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
                     }
 
                     transaction.startDate = startDate;
@@ -465,9 +494,16 @@ export const validatePayment = async (req, res) => {
                 transaction.paymentResponse = responseData;
                 await transaction.save();
 
-                const title = `Your ${validityDays}-Day Plan is pending ⏳`;
-                const message = `Payment is still pending. Please check again later`;
-                await sendNotification(userId, title, message);
+                try {
+                    await sendNotification(
+                        userId,
+                        `Your ${validityDays}-Day Plan is pending ⏳`,
+                        `Payment is still pending. Please check again later`,
+                        'dashboard'
+                    );
+                } catch (notificationError) {
+                    console.error("Failed to send pending notification:", notificationError);
+                }
 
                 return res.status(202).json({
                     success: false,
@@ -484,9 +520,16 @@ export const validatePayment = async (req, res) => {
                 transaction.error = responseData.message || 'Payment failed';
                 await transaction.save();
 
-                const failTitle = `Payment Failed ❌`;
-                const failMessage = `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`;
-                await sendNotification(userId, failTitle, failMessage);
+                try {
+                    await sendNotification(
+                        userId,
+                        `Payment Failed ❌`,
+                        `We encountered a network issue while processing your payment. If the amount was deducted, please contact support for a refund. 🔄`,
+                        'Wallet_detail'
+                    );
+                } catch (notificationError) {
+                    console.error("Failed to send failure notification:", notificationError);
+                }
 
                 return res.status(400).json({
                     success: false,
@@ -511,13 +554,23 @@ export const validatePayment = async (req, res) => {
             if (error.response?.data) {
                 transaction.paymentResponse = error.response.data;
             }
-            await transaction.save();
+            try {
+                await transaction.save();
+            } catch (saveError) {
+                console.error("Failed to save failed transaction:", saveError);
+            }
         }
 
-        const title = `Payment Processing Error`;
-        const message = `We encountered an issue while processing your payment. Our team has been notified. Please check back later.`;
-        const screen = 'Wallet_detail';
-        await sendNotification(userId, title, message, screen);
+        try {
+            await sendNotification(
+                userId,
+                `Payment Processing Error`,
+                `We encountered an issue while processing your payment. Our team has been notified. Please check back later.`,
+                'Wallet_detail'
+            );
+        } catch (notificationError) {
+            console.error("Failed to send error notification:", notificationError);
+        }
 
         return res.status(500).json({
             success: false,

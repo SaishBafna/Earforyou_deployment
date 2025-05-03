@@ -482,10 +482,6 @@ export const validatePayment = async (req, res) => {
 
 
 
-
-
-
-
 export const getRechargeHistory = async (req, res) => {
   try {
     const { userId } = req.params; // Assuming userId is passed as a route parameter
