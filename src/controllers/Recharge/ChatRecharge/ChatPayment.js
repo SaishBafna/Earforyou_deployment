@@ -7,10 +7,87 @@ import axios from "axios";
 import sha256 from "sha256";
 import admin from "../../../config/firebaseConfig.js";
 import User from "../../../models/Users.js";
+import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js";
+
+// export const validateChatPayment = asyncHandler(async (req, res) => {
+//     const { merchantTransactionId, userId, planId } = req.query;
+
+//     // Validate required parameters
+//     if (!merchantTransactionId || !userId || !planId) {
+//         throw new ApiError(400, "Missing required parameters");
+//     }
+
+//     // Check if this transaction already exists
+//     const existingSubscription = await ChatUserPremium.findOne({
+//         "payment.merchantTransactionId": merchantTransactionId
+//     });
+
+//     if (existingSubscription) {
+//         return res.status(200).json(
+//             new ApiResponse(200, existingSubscription, "Payment already processed")
+//         );
+//     }
+
+//     // Verify payment status with PhonePe
+//     const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
+//     const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
+//     const xVerifyChecksum = `${sha256(stringToHash)}###${process.env.SALT_INDEX}`;
+
+//     const response = await axios.get(statusUrl, {
+//         headers: {
+//             "Content-Type": "application/json",
+//             "X-VERIFY": xVerifyChecksum,
+//             "X-MERCHANT-ID": process.env.MERCHANT_ID,
+//         },
+//     });
+
+//     const { code, data } = response.data;
+//     const { state, amount } = data;
+
+//     // Create payment record
+//     const paymentRecord = {
+//         merchantTransactionId,
+//         amount: amount / 100, // Convert paisa to rupees
+//         status: state,
+//         gatewayResponse: response.data,
+//         completedAt: state === 'COMPLETED' ? new Date() : null
+//     };
+
+//     // Create subscription record
+//     const subscription = await ChatUserPremium.createFromPayment(
+//         userId,
+//         planId,
+//         paymentRecord
+//     );
+
+//     // Send notification based on payment state
+//     if (state === 'COMPLETED') {
+//         await sendNotification(
+//             userId,
+//             'Payment Successful',
+//             `Your payment of ₹${paymentRecord.amount} for premium chat features was successful. Enjoy your subscription!`
+//         );
+//     } else if (state === 'FAILED') {
+//         await sendNotification(
+//             userId,
+//             'Payment Failed',
+//             'Your payment for premium chat features failed. Please try again.'
+//         );
+//     }
+
+//     return res.status(200).json(
+//         new ApiResponse(200, subscription, `Payment ${state.toLowerCase()} and subscription recorded`)
+//     );
+// });
+
+
+
+
+// Helper function to send notifications
 
 
 export const validateChatPayment = asyncHandler(async (req, res) => {
-    const { merchantTransactionId, userId, planId } = req.query;
+    const { merchantTransactionId, userId, planId, couponCode } = req.query;
 
     // Validate required parameters
     if (!merchantTransactionId || !userId || !planId) {
@@ -44,28 +121,129 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
     const { code, data } = response.data;
     const { state, amount } = data;
 
+    // Get the plan details
+    const plan = await ChatPremium.findById(planId);
+    if (!plan) {
+        throw new ApiError(404, "Subscription plan not found");
+    }
+
+    // Initialize variables for coupon processing
+    let couponApplied = null;
+    let discountAmount = 0;
+    let extendedDays = 0;
+    let finalAmount = amount / 100; // Convert paisa to rupees
+
+    // Process coupon if provided
+    if (couponCode) {
+        try {
+            const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+
+            if (!coupon) {
+                throw new ApiError(404, "Coupon not found");
+            }
+
+            // Check coupon validity
+            if (!coupon.isUsable) {
+                throw new ApiError(400, "Coupon is not usable (expired, inactive, or max uses reached)");
+            }
+
+            // Check if user has already used this coupon
+            if (!coupon.isReusable) {
+                const existingUsage = await CouponUsage.findOne({
+                    coupon: coupon._id,
+                    user: userId
+                });
+
+                if (existingUsage) {
+                    throw new ApiError(400, "You have already used this coupon");
+                }
+            }
+
+            // Check minimum order amount if applicable
+            if (coupon.minimumOrderAmount && finalAmount < coupon.minimumOrderAmount) {
+                throw new ApiError(400, `Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
+            }
+
+            // Apply discount based on coupon type
+            switch (coupon.discountType) {
+                case 'percentage':
+                    discountAmount = finalAmount * (coupon.discountValue / 100);
+                    finalAmount = finalAmount - discountAmount;
+                    break;
+
+                case 'fixed':
+                    discountAmount = Math.min(coupon.discountValue, finalAmount);
+                    finalAmount = finalAmount - discountAmount;
+                    break;
+
+                case 'free_days':
+                    extendedDays = coupon.discountValue;
+                    break;
+
+                default:
+                    throw new ApiError(400, "Invalid coupon type");
+            }
+
+            // Record coupon usage
+            await CouponUsage.create({
+                coupon: coupon._id,
+                user: userId,
+                discountApplied: discountAmount
+            });
+
+            // Update coupon usage count
+            coupon.currentUses += 1;
+            await coupon.save();
+
+            couponApplied = coupon.code;
+        } catch (error) {
+            // If coupon processing fails, proceed without coupon but inform the user
+            console.error("Coupon processing error:", error.message);
+            // You might want to notify the user about the coupon error here
+        }
+    }
+
     // Create payment record
     const paymentRecord = {
         merchantTransactionId,
-        amount: amount / 100, // Convert paisa to rupees
+        amount: amount / 100, // Original amount in rupees
+        finalAmount, // Amount after coupon discount
+        discountAmount,
+        couponApplied,
         status: state,
         gatewayResponse: response.data,
         completedAt: state === 'COMPLETED' ? new Date() : null
     };
 
+    // Calculate expiry date with possible coupon extension
+    let expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + plan.validityDays + extendedDays);
+
     // Create subscription record
-    const subscription = await ChatUserPremium.createFromPayment(
-        userId,
-        planId,
-        paymentRecord
-    );
+    const subscription = await ChatUserPremium.create({
+        user: userId,
+        plan: planId,
+        expiryDate,
+        remainingChats: plan.chatsAllowed,
+        isActive: state === 'COMPLETED',
+        payment: paymentRecord
+    });
 
     // Send notification based on payment state
     if (state === 'COMPLETED') {
+        let message = `Your payment of ₹${paymentRecord.finalAmount} for premium chat features was successful.`;
+        if (couponApplied) {
+            message += ` (Coupon ${couponApplied} applied, saved ₹${discountAmount})`;
+        }
+        if (extendedDays > 0) {
+            message += ` Your subscription has been extended by ${extendedDays} days.`;
+        }
+        message += ' Enjoy your subscription!';
+
         await sendNotification(
             userId,
             'Payment Successful',
-            `Your payment of ₹${paymentRecord.amount} for premium chat features was successful. Enjoy your subscription!`
+            message
         );
     } else if (state === 'FAILED') {
         await sendNotification(
@@ -79,9 +257,6 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
         new ApiResponse(200, subscription, `Payment ${state.toLowerCase()} and subscription recorded`)
     );
 });
-
-// Helper function to send notifications
-
 
 
 

@@ -6,8 +6,7 @@ import uniqid from "uniqid";
 import User from "../../../models/Users.js";
 import MyPlan from "../../../models/Wallet/PlatfromCharges/myPlanSchema.js";
 import admin from 'firebase-admin';
-import { validateAndApplyCoupon, recordCouponTransaction } from "../../../utils/couponHelper.js";
-
+import { Coupon,CouponUsage } from "../../../models/CouponSystem/couponModel.js";
 
 
 // Adjust model imports as needed

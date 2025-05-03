@@ -9,8 +9,7 @@ import firebaseConfig from '../../config/firebaseConfig.js';
 import SubscriptionPlan from '../../models/Subscription/Subscription.js';
 import EarningWallet from '../../models/Wallet/EarningWallet.js';
 import mongoose from 'mongoose'; // If using ES modules
-import { validateAndApplyCoupon, recordCouponTransaction } from '../../utils/couponHelper.js';
-
+import { Coupon,CouponUsage } from '../../models/CouponSystem/couponModel.js';
 
 
 
