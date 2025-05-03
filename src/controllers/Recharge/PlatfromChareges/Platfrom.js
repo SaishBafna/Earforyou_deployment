@@ -229,7 +229,7 @@ import { validateAndApplyCoupon, recordCouponTransaction } from "../../../utils/
 
 export const validatePayment = async (req, res) => {
     let transaction;
-    const { merchantTransactionId, userId, planId, couponCode } = req.params;
+    const { merchantTransactionId, userId, planId, couponCode } = req.query;
 
     try {
         console.log("Step 1 - Validating payment with params:", { merchantTransactionId, userId, planId, couponCode });
