@@ -1,13 +1,13 @@
 import express from 'express';
 // import { verifyPayment } from '../../controllers/Recharge/RechargeWallet.js'
-import { initiatePayment, validatePayment, getRechargeHistory, getAllPlans, transferEarningsToWallet, getEarningHistory } from '../../controllers/Recharge/RechargeWallet.js'
+import { validatePayment, getRechargeHistory, getAllPlans, transferEarningsToWallet, getEarningHistory } from '../../controllers/Recharge/RechargeWallet.js'
 import { deductPerMinute, getCallRate } from '../../controllers/Recharge/Decudition.js'
 import { protect } from '../../middlewares/auth/authMiddleware.js'
 import { requestWithdrawal, getWithdrawal } from '../../controllers/Withdrawal/Withdrawal.js';
 import { createCallRate, updateCallRate, getAllCallRates, getCallRateByCategory } from '../../controllers/Recharge/RatePerMinController.js';
 const router = express.Router();
 
-router.post("/pay", initiatePayment);
+// router.post("/pay", initiatePayment);
 
 router.get("/getCallRate", getCallRate);
 

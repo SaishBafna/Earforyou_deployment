@@ -1,5 +1,6 @@
 import { Coupon, CouponUsage } from "../../models/CouponSystem/couponModel.js";
 // Create a new coupon
+
 export const createCoupon = async (req, res) => {
     try {
         const { user } = req;

@@ -51,14 +51,7 @@ const couponSchema = new mongoose.Schema({
         required: true
     },
     minimumOrderAmount: Number,
-    applicableProducts: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Product'
-    }],
-    applicableCategories: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Category'
-    }],
+   
     isStaffOnly: {
         type: Boolean,
         default: false
@@ -107,10 +100,7 @@ const usageSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
-    order: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Order'
-    },
+    
     discountApplied: {
         type: Number,
         required: true

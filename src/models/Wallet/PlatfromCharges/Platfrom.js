@@ -23,7 +23,7 @@ const PlatformChargesSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending','processing','failed', 'active', 'expired', 'queued', 'queued_confirmed'],
+        enum: ['pending', 'processing', 'failed', 'active', 'expired', 'queued', 'queued_confirmed'],
         default: 'pending'
     },
     transactionId: {
@@ -31,10 +31,61 @@ const PlatformChargesSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
+    // Payment details
+    amount: {
+        type: Number,
+        required: true
+    },
+    originalAmount: {
+        type: Number,
+        required: true
+    },
+    discountAmount: {
+        type: Number,
+        default: 0
+    },
+    // Coupon details
+    couponDetails: {
+        applied: {
+            type: Boolean,
+            default: false
+        },
+        code: {
+            type: String
+        },
+        couponId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Coupon'
+        },
+        discountType: {
+            type: String,
+            enum: ['percentage', 'fixed', 'free_days']
+        },
+        discountValue: {
+            type: Number
+        },
+        extraValidityDays: {
+            type: Number,
+            default: 0
+        }
+    },
+    // Payment response
+    paymentResponse: {
+        type: mongoose.Schema.Types.Mixed
+    },
+    error: {
+        type: String
+    },
     createdAt: {
         type: Date,
         default: Date.now
+    },
+    updatedAt: {
+        type: Date,
+        default: Date.now
     }
+}, {
+    timestamps: true // This will automatically add createdAt and updatedAt fields
 });
 
 // Pre-save middleware to update status based on dates
@@ -42,6 +93,9 @@ PlatformChargesSchema.pre('save', function (next) {
     const today = new Date();
     const todayStart = new Date(today.setHours(0, 0, 0, 0));
     const todayEnd = new Date(today.setHours(23, 59, 59, 999));
+
+    // Update the updatedAt field
+    this.updatedAt = new Date();
 
     // If status is 'active' and endDate is today, set status to 'expired' and endDate to 23:59
     if (this.status === 'active' && this.endDate) {
@@ -107,6 +161,15 @@ PlatformChargesSchema.statics.updateStatuses = async function () {
             }
         }
     );
+};
+
+// Method to calculate end date with coupon extra validity
+PlatformChargesSchema.methods.calculateEndDate = function (startDate, planValidityDays) {
+    const extraDays = this.couponDetails.extraValidityDays || 0;
+    const totalValidityDays = planValidityDays + extraDays;
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + totalValidityDays);
+    return endDate;
 };
 
 const PlatformCharges = mongoose.model('PlatformCharges', PlatformChargesSchema);
