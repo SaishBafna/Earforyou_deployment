@@ -421,3 +421,62 @@ export const getAllChatPremiumPlans = async (req, res) => {
         });
     }
 };
+
+
+
+import { ChatUserPremium } from "./path-to-your-model";
+
+// Get paginated premium user data
+export const getPaginatedPremiumUsers = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Get the total count for pagination info
+        const total = await ChatUserPremium.countDocuments();
+
+        // Get the paginated data with necessary population
+        const premiumUsers = await ChatUserPremium.find()
+            .populate('user', 'name email') // Only get name and email from user
+            .populate('plan', 'name chatsAllowed validityDays price') // Get relevant plan info
+            .sort({ createdAt: -1 }) // Newest first
+            .skip(skip)
+            .limit(limit)
+            .lean(); // Convert to plain JS objects
+
+        // Format the data for display
+        const formattedData = premiumUsers.map(user => ({
+            id: user._id,
+            userName: user.user?.name || 'N/A',
+            userEmail: user.user?.email || 'N/A',
+            planName: user.plan?.name || 'N/A',
+            purchaseDate: user.purchaseDate.toLocaleDateString(),
+            expiryDate: user.expiryDate.toLocaleDateString(),
+            remainingChats: user.remainingChats,
+            usedChats: user.usedChats.length,
+            isActive: user.isActive,
+            paymentStatus: user.payment.status,
+            paymentAmount: user.payment.amount,
+            paymentCurrency: user.payment.currency
+        }));
+
+        res.json({
+            success: true,
+            data: formattedData,
+            pagination: {
+                total,
+                page,
+                pages: Math.ceil(total / limit),
+                limit
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch premium users',
+            error: error.message
+        });
+    }
+};
+
