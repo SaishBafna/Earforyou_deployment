@@ -123,6 +123,7 @@ import BlockUserRoute from "./routes/BlockUserRoute.js"
 import Chatrecharge from "./routes/chatRecharge/ChatRechargeRoute.js"
 import Coupon from "./routes/CouponRoutes/couponRoutes.js"
 import Meditation from "./routes/MeditationRoute/MeditationRoute.js"
+import './controllers/Recharge/ChatRecharge/chatjob.js'
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");

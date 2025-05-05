@@ -424,8 +424,7 @@ export const getAllChatPremiumPlans = async (req, res) => {
 
 
 
-import { ChatUserPremium } from "./path-to-your-model";
-
+// @desc    Update a chat premium plan
 // Get paginated premium user data
 export const getPaginatedPremiumUsers = async (req, res) => {
     try {
