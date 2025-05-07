@@ -888,13 +888,19 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 });
 
 
-
-
 // Process file attachments
 async function processAttachments(attachments, req) {
+  console.debug('[processAttachments] Starting to process', attachments?.length, 'attachments');
+
   return Promise.all(
-    attachments.map(async (attachment) => {
+    attachments.map(async (attachment, index) => {
       try {
+        console.debug(`[processAttachments] Processing attachment ${index + 1}:`, {
+          filename: attachment.filename,
+          mimetype: attachment.mimetype,
+          size: attachment.size
+        });
+
         const fileData = {
           url: getStaticFilePath(req, attachment.filename),
           localPath: getLocalPath(attachment.filename),
@@ -904,80 +910,124 @@ async function processAttachments(attachments, req) {
         };
 
         if (attachment.mimetype.startsWith('image/')) {
+          console.debug(`[processAttachments] Processing image dimensions for attachment ${index + 1}`);
           fileData.dimensions = await getImageDimensions(attachment.path);
+          console.debug(`[processAttachments] Image dimensions:`, fileData.dimensions);
         } else if (attachment.mimetype.startsWith('video/')) {
+          console.debug(`[processAttachments] Processing video metadata for attachment ${index + 1}`);
           const metadata = await getVideoMetadata(attachment.path);
           fileData.dimensions = { width: metadata.width, height: metadata.height };
           fileData.duration = metadata.duration;
+          console.debug(`[processAttachments] Video metadata:`, metadata);
         } else if (attachment.mimetype.startsWith('audio/')) {
+          console.debug(`[processAttachments] Processing audio duration for attachment ${index + 1}`);
           fileData.duration = await getAudioDuration(attachment.path);
+          console.debug(`[processAttachments] Audio duration:`, fileData.duration);
         }
 
+        console.debug(`[processAttachments] Successfully processed attachment ${index + 1}:`, fileData);
         return fileData;
       } catch (error) {
-        console.error('Error processing attachment:', error);
+        console.error(`[processAttachments] Error processing attachment ${index + 1}:`, {
+          error: error.message,
+          stack: error.stack,
+          attachment: {
+            filename: attachment.filename,
+            mimetype: attachment.mimetype
+          }
+        });
         return null;
       }
     })
-  ).then(files => files.filter(Boolean));
+  ).then(files => {
+    const validFiles = files.filter(Boolean);
+    console.debug('[processAttachments] Completed processing. Valid files:', validFiles.length);
+    return validFiles;
+  });
 }
 
 // Populate message with sender and reply data
 async function populateMessage(messageId) {
-  return GroupChatMessage.aggregate([
-    { $match: { _id: messageId } },
-    {
-      $lookup: {
-        from: "users",
-        localField: "sender",
-        foreignField: "_id",
-        as: "sender",
-        pipeline: [{ $project: { username: 1, avatar: 1, email: 1, name: 1 } }],
+  console.debug('[populateMessage] Starting to populate message:', messageId);
+
+  try {
+    const result = await GroupChatMessage.aggregate([
+      { $match: { _id: messageId } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "sender",
+          foreignField: "_id",
+          as: "sender",
+          pipeline: [{ $project: { username: 1, avatar: 1, email: 1, name: 1 } }],
+        },
       },
-    },
-    { $unwind: "$sender" },
-    {
-      $lookup: {
-        from: "groupchatmessages",
-        localField: "replyTo.messageId",
-        foreignField: "_id",
-        as: "replyToMessage",
-        pipeline: [
-          {
-            $lookup: {
-              from: "users",
-              localField: "sender",
-              foreignField: "_id",
-              as: "sender",
-              pipeline: [{ $project: { username: 1, avatar: 1 } }],
+      { $unwind: "$sender" },
+      {
+        $lookup: {
+          from: "groupchatmessages",
+          localField: "replyTo.messageId",
+          foreignField: "_id",
+          as: "replyToMessage",
+          pipeline: [
+            {
+              $lookup: {
+                from: "users",
+                localField: "sender",
+                foreignField: "_id",
+                as: "sender",
+                pipeline: [{ $project: { username: 1, avatar: 1 } }],
+              },
             },
-          },
-          { $unwind: "$sender" },
-          { $project: { content: 1, sender: 1, attachments: 1, createdAt: 1 } },
-        ],
+            { $unwind: "$sender" },
+            { $project: { content: 1, sender: 1, attachments: 1, createdAt: 1 } },
+          ],
+        },
       },
-    },
-    { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
-    {
-      $addFields: {
-        replyTo: {
-          $cond: {
-            if: { $ifNull: ["$replyTo", false] },
-            then: {
-              messageId: "$replyTo.messageId",
-              sender: "$replyTo.sender",
-              content: "$replyTo.content",
-              attachments: "$replyTo.attachments",
-              originalCreatedAt: "$replyTo.originalCreatedAt",
-              repliedMessage: "$replyToMessage",
+      { $unwind: { path: "$replyToMessage", preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          replyTo: {
+            $cond: {
+              if: { $ifNull: ["$replyTo", false] },
+              then: {
+                messageId: "$replyTo.messageId",
+                sender: "$replyTo.sender",
+                content: "$replyTo.content",
+                attachments: "$replyTo.attachments",
+                originalCreatedAt: "$replyTo.originalCreatedAt",
+                repliedMessage: "$replyToMessage",
+              },
+              else: null,
             },
-            else: null,
           },
         },
       },
-    },
-    { $project: { replyToMessage: 0 } },
-  ]).then(res => res[0]);
+      { $project: { replyToMessage: 0 } },
+    ]);
+
+    const populatedMessage = result[0];
+
+    if (!populatedMessage) {
+      console.error('[populateMessage] Failed to populate message - empty result');
+      return null;
+    }
+
+    console.debug('[populateMessage] Successfully populated message:', {
+      messageId: populatedMessage._id,
+      sender: populatedMessage.sender?.username,
+      hasReply: !!populatedMessage.replyTo
+    });
+
+    return populatedMessage;
+  } catch (error) {
+    console.error('[populateMessage] Error populating message:', {
+      error: error.message,
+      stack: error.stack,
+      messageId
+    });
+    throw error;
+  }
 }
 
 // Deliver message in real-time to participants
@@ -989,25 +1039,45 @@ async function deliverMessageRealTime({
   attachments,
   content
 }) {
+  console.debug('[deliverMessageRealTime] Starting real-time delivery for message:', message._id);
+
   const senderName = sender.name || sender.username;
+  console.debug('[deliverMessageRealTime] Sender:', senderName);
 
   // Categorize participants
   const { participantsToNotify, onlineParticipants } = groupChat.participants.reduce(
     (acc, participant) => {
-      if (participant._id.equals(req.user._id)) return acc;
-      if (!participant.deviceToken && !participant.isOnline) return acc;
+      if (participant._id.equals(req.user._id)) {
+        console.debug(`[deliverMessageRealTime] Skipping sender (${participant._id})`);
+        return acc;
+      }
 
-      if (shouldSkipNotification(participant, content)) return acc;
+      if (!participant.deviceToken && !participant.isOnline) {
+        console.debug(`[deliverMessageRealTime] Skipping participant ${participant._id} (no device token and offline)`);
+        return acc;
+      }
+
+      if (shouldSkipNotification(participant, content)) {
+        console.debug(`[deliverMessageRealTime] Skipping notifications for participant ${participant._id} (notification settings)`);
+        return acc;
+      }
 
       if (participant.isOnline) {
+        console.debug(`[deliverMessageRealTime] Participant ${participant._id} is online`);
         acc.onlineParticipants.push(participant);
       } else {
+        console.debug(`[deliverMessageRealTime] Participant ${participant._id} is offline (will receive notification)`);
         acc.participantsToNotify.push(participant);
       }
       return acc;
     },
     { participantsToNotify: [], onlineParticipants: [] }
   );
+
+  console.debug('[deliverMessageRealTime] Delivery targets:', {
+    online: onlineParticipants.length,
+    offline: participantsToNotify.length
+  });
 
   // Prepare socket data with additional metadata
   const socketData = {
@@ -1017,40 +1087,77 @@ async function deliverMessageRealTime({
     unreadCount: 1 // Indicate this is a new message
   };
 
-  // Execute real-time delivery in parallel
-  await Promise.all([
-    // Send push notifications to offline users
-    ...participantsToNotify.map(participant =>
-      sendPushNotification(participant, senderName, content, attachments, groupChat, message)
-    ),
+  console.debug('[deliverMessageRealTime] Prepared socket data:', socketData);
 
-    // Send socket events to online users
-    ...onlineParticipants.map(participant =>
-      emitSocketEventWithRetry(
-        req,
-        participant._id.toString(),
-        ChatEventEnum.MESSAGE_RECEIVED_EVENT,
-        socketData
-      )
-    )
-  ]);
+  try {
+    // Execute real-time delivery in parallel
+    await Promise.all([
+      // Send push notifications to offline users
+      ...participantsToNotify.map(participant => {
+        console.debug(`[deliverMessageRealTime] Sending push notification to ${participant._id}`);
+        return sendPushNotification(participant, senderName, content, attachments, groupChat, message)
+          .then(() => console.debug(`[deliverMessageRealTime] Successfully sent push to ${participant._id}`))
+          .catch(error => console.error(`[deliverMessageRealTime] Failed to send push to ${participant._id}:`, error));
+      }),
+
+      // Send socket events to online users
+      ...onlineParticipants.map(participant => {
+        console.debug(`[deliverMessageRealTime] Sending socket event to ${participant._id}`);
+        return emitSocketEventWithRetry(
+          req,
+          participant._id.toString(),
+          ChatEventEnum.MESSAGE_RECEIVED_EVENT,
+          socketData
+        )
+          .then(() => console.debug(`[deliverMessageRealTime] Successfully sent socket event to ${participant._id}`))
+          .catch(error => console.error(`[deliverMessageRealTime] Failed to send socket event to ${participant._id}:`, error));
+      })
+    ]);
+
+    console.debug('[deliverMessageRealTime] Completed all delivery attempts');
+  } catch (error) {
+    console.error('[deliverMessageRealTime] Error during delivery:', {
+      error: error.message,
+      stack: error.stack,
+      messageId: message._id
+    });
+    throw error;
+  }
 }
 
 // Socket event with retry logic
 async function emitSocketEventWithRetry(req, userId, event, data, retries = 3) {
+  console.debug(`[emitSocketEventWithRetry] Attempting to send socket event to ${userId} (${retries} retries)`);
+
   for (let i = 0; i < retries; i++) {
     try {
+      console.debug(`[emitSocketEventWithRetry] Attempt ${i + 1} for user ${userId}`);
       await emitSocketEvent(req, userId, event, data);
+      console.debug(`[emitSocketEventWithRetry] Success on attempt ${i + 1} for user ${userId}`);
       return;
     } catch (error) {
-      if (i === retries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, 200 * (i + 1)));
+      console.error(`[emitSocketEventWithRetry] Attempt ${i + 1} failed for user ${userId}:`, {
+        error: error.message,
+        attempt: i + 1,
+        totalAttempts: retries
+      });
+
+      if (i === retries - 1) {
+        console.error(`[emitSocketEventWithRetry] All attempts failed for user ${userId}`);
+        throw error;
+      }
+
+      const delay = 200 * (i + 1);
+      console.debug(`[emitSocketEventWithRetry] Waiting ${delay}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 }
 
 // Send push notification
 async function sendPushNotification(participant, senderName, content, attachments, groupChat, message) {
+  console.debug(`[sendPushNotification] Preparing notification for ${participant._id}`);
+
   const notificationMessage = content
     ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
     : getAttachmentNotificationText(senderName, attachments);
@@ -1070,6 +1177,8 @@ async function sendPushNotification(participant, senderName, content, attachment
     icon: message.sender.avatar || null,
   };
 
+  console.debug(`[sendPushNotification] Notification data for ${participant._id}:`, notificationData);
+
   try {
     await sendGroupNotification(
       participant._id,
@@ -1082,32 +1191,51 @@ async function sendPushNotification(participant, senderName, content, attachment
       message.sender.avatar,
       attachments.length > 0
     );
+    console.debug(`[sendPushNotification] Successfully sent notification to ${participant._id}`);
   } catch (error) {
-    console.error(`Failed to send notification to user ${participant._id}:`, error);
+    console.error(`[sendPushNotification] Failed to send notification to ${participant._id}:`, {
+      error: error.message,
+      stack: error.stack,
+      notificationData
+    });
+    throw error;
   }
 }
 
 // Generate notification text for attachments
 function getAttachmentNotificationText(senderName, attachments) {
-  const firstAttachment = attachments[0];
-  if (!firstAttachment) return `${senderName} sent a file`;
+  console.debug('[getAttachmentNotificationText] Generating text for attachments:', attachments);
 
-  switch (firstAttachment.fileType) {
-    case 'image':
-      return `${senderName} sent a photo`;
-    case 'video':
-      return `${senderName} sent a video`;
-    case 'audio':
-      return `${senderName} sent an audio message`;
-    default:
-      return `${senderName} sent a file`;
+  const firstAttachment = attachments[0];
+  if (!firstAttachment) {
+    console.debug('[getAttachmentNotificationText] No attachments found');
+    return `${senderName} sent a file`;
   }
+
+  const result = (() => {
+    switch (firstAttachment.fileType) {
+      case 'image':
+        return `${senderName} sent a photo`;
+      case 'video':
+        return `${senderName} sent a video`;
+      case 'audio':
+        return `${senderName} sent an audio message`;
+      default:
+        return `${senderName} sent a file`;
+    }
+  })();
+
+  console.debug('[getAttachmentNotificationText] Generated text:', result);
+  return result;
 }
 
 // Check if notification should be skipped
 function shouldSkipNotification(participant, content) {
+  console.debug(`[shouldSkipNotification] Checking for participant ${participant._id}`);
+
   // Check if participant has muted notifications
   if (participant.notificationSettings?.mutedChats?.includes(chatId)) {
+    console.debug(`[shouldSkipNotification] Participant ${participant._id} has chat muted`);
     return true;
   }
 
@@ -1119,12 +1247,14 @@ function shouldSkipNotification(participant, content) {
     // Check if current time is within DND hours
     if (hours >= participant.notificationSettings.dndStartHour &&
       hours < participant.notificationSettings.dndEndHour) {
+      console.debug(`[shouldSkipNotification] Participant ${participant._id} has DND enabled`);
       return true;
     }
   }
 
+  console.debug(`[shouldSkipNotification] No skip conditions met for ${participant._id}`);
   return false;
-}
+}c
 /**
  * @route GET /api/v1/chats/group
  * @description Get all group chats (joined and not joined) with unread counts and pagination
