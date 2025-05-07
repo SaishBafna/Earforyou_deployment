@@ -748,7 +748,6 @@ const getTotalUnreadCount = async (userId) => {
  * @route POST /api/v1/chats/group/:chatId/messages
  * @description Send a message to a group chat
  */
-
 const sendGroupMessage = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { content, replyTo } = req.body;
@@ -780,7 +779,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
           session,
           populate: {
             path: 'participants',
-            select: '_id username name deviceToken isOnline notificationSettings lastSeen',
+            select: '_id username name deviceToken isOnline notificationSettings lastSeen socketId',
           }
         }
       ),
@@ -886,7 +885,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     session.endSession();
   }
 });
-
 
 // Process file attachments
 async function processAttachments(attachments, req) {
@@ -1052,23 +1050,23 @@ async function deliverMessageRealTime({
         return acc;
       }
 
-      if (!participant.deviceToken && !participant.isOnline) {
-        console.debug(`[deliverMessageRealTime] Skipping participant ${participant._id} (no device token and offline)`);
-        return acc;
-      }
-
-      if (shouldSkipNotification(participant, content)) {
+      // Check if participant should receive notifications
+      if (shouldSkipNotification(participant, groupChat._id)) {
         console.debug(`[deliverMessageRealTime] Skipping notifications for participant ${participant._id} (notification settings)`);
         return acc;
       }
 
-      if (participant.isOnline) {
-        console.debug(`[deliverMessageRealTime] Participant ${participant._id} is online`);
+      // Check online status and socketId
+      if (participant.isOnline && participant.socketId) {
+        console.debug(`[deliverMessageRealTime] Participant ${participant._id} is online with socketId ${participant.socketId}`);
         acc.onlineParticipants.push(participant);
-      } else {
-        console.debug(`[deliverMessageRealTime] Participant ${participant._id} is offline (will receive notification)`);
+      } else if (participant.deviceToken) {
+        console.debug(`[deliverMessageRealTime] Participant ${participant._id} is offline with device token`);
         acc.participantsToNotify.push(participant);
+      } else {
+        console.debug(`[deliverMessageRealTime] Skipping participant ${participant._id} (no device token and offline)`);
       }
+
       return acc;
     },
     { participantsToNotify: [], onlineParticipants: [] }
@@ -1102,10 +1100,10 @@ async function deliverMessageRealTime({
 
       // Send socket events to online users
       ...onlineParticipants.map(participant => {
-        console.debug(`[deliverMessageRealTime] Sending socket event to ${participant._id}`);
+        console.debug(`[deliverMessageRealTime] Sending socket event to ${participant._id} via socketId ${participant.socketId}`);
         return emitSocketEventWithRetry(
           req,
-          participant._id.toString(),
+          participant.socketId,
           ChatEventEnum.MESSAGE_RECEIVED_EVENT,
           socketData
         )
@@ -1126,24 +1124,24 @@ async function deliverMessageRealTime({
 }
 
 // Socket event with retry logic
-async function emitSocketEventWithRetry(req, userId, event, data, retries = 3) {
-  console.debug(`[emitSocketEventWithRetry] Attempting to send socket event to ${userId} (${retries} retries)`);
+async function emitSocketEventWithRetry(req, socketId, event, data, retries = 3) {
+  console.debug(`[emitSocketEventWithRetry] Attempting to send socket event to socketId ${socketId} (${retries} retries)`);
 
   for (let i = 0; i < retries; i++) {
     try {
-      console.debug(`[emitSocketEventWithRetry] Attempt ${i + 1} for user ${userId}`);
-      await emitSocketEvent(req, userId, event, data);
-      console.debug(`[emitSocketEventWithRetry] Success on attempt ${i + 1} for user ${userId}`);
+      console.debug(`[emitSocketEventWithRetry] Attempt ${i + 1} for socketId ${socketId}`);
+      await emitSocketEvent(req, socketId, event, data);
+      console.debug(`[emitSocketEventWithRetry] Success on attempt ${i + 1} for socketId ${socketId}`);
       return;
     } catch (error) {
-      console.error(`[emitSocketEventWithRetry] Attempt ${i + 1} failed for user ${userId}:`, {
+      console.error(`[emitSocketEventWithRetry] Attempt ${i + 1} failed for socketId ${socketId}:`, {
         error: error.message,
         attempt: i + 1,
         totalAttempts: retries
       });
 
       if (i === retries - 1) {
-        console.error(`[emitSocketEventWithRetry] All attempts failed for user ${userId}`);
+        console.error(`[emitSocketEventWithRetry] All attempts failed for socketId ${socketId}`);
         throw error;
       }
 
@@ -1230,7 +1228,7 @@ function getAttachmentNotificationText(senderName, attachments) {
 }
 
 // Check if notification should be skipped
-function shouldSkipNotification(participant, content) {
+function shouldSkipNotification(participant, chatId) {
   console.debug(`[shouldSkipNotification] Checking for participant ${participant._id}`);
 
   // Check if participant has muted notifications
@@ -1255,6 +1253,8 @@ function shouldSkipNotification(participant, content) {
   console.debug(`[shouldSkipNotification] No skip conditions met for ${participant._id}`);
   return false;
 }
+
+
 /**
  * @route GET /api/v1/chats/group
  * @description Get all group chats (joined and not joined) with unread counts and pagination
