@@ -1603,7 +1603,7 @@ const createGroupChat = asyncHandler(async (req, res) => {
  */
 const updateGroupChatDetails = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
-  const { name, description } = req.body;
+  const { name, description, avatar } = req.body;
 
   if (!name?.trim() && !description?.trim()) {
     throw new ApiError(400, "At least one field to update is required");
