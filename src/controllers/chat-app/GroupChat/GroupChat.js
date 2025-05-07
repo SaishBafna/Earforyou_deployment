@@ -971,17 +971,25 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 });
 
 
-
 const sendFirebaseNotification = async (tokens, notificationData) => {
-  if (!tokens || tokens.length === 0) return;
+  if (!Array.isArray(tokens) || tokens.length === 0) {
+    console.warn('No valid tokens provided for notification.');
+    return;
+  }
+
+  const cleanedTokens = tokens.filter(token => typeof token === 'string' && token.trim() !== '');
+  if (cleanedTokens.length === 0) {
+    console.warn('All tokens are empty or invalid strings.');
+    return;
+  }
 
   const message = {
     notification: {
-      title: notificationData.title,
-      body: notificationData.body
+      title: notificationData.title || '',
+      body: notificationData.body || ''
     },
-    data: notificationData.data,
-    tokens: tokens.filter(t => t), // Remove any empty tokens
+    data: notificationData.data || {},
+    tokens: cleanedTokens,
     android: {
       priority: 'high'
     },
@@ -997,22 +1005,24 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
 
   try {
     const response = await admin.messaging().sendMulticast(message);
-    // Handle failures (remove invalid tokens, etc.)
+
     if (response.failureCount > 0) {
       const failedTokens = [];
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
-          failedTokens.push(tokens[idx]);
+          failedTokens.push(cleanedTokens[idx]);
         }
       });
-      console.log('Failed to send to tokens:', failedTokens);
+      console.warn('Some tokens failed:', failedTokens);
     }
+
     return response;
   } catch (error) {
     console.error('Error sending Firebase notification:', error);
     throw error;
   }
 };
+
 /**
  * @route GET /api/v1/chats/group
  * @description Get all group chats (joined and not joined) with unread counts and pagination
