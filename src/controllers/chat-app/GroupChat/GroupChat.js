@@ -970,6 +970,67 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, populatedMessage, "Message sent successfully"));
 });
 
+
+
+const sendFirebaseNotification = async (tokens, notificationData) => {
+  if (!tokens || tokens.length === 0) return;
+
+  const message = {
+    notification: {
+      title: notificationData.title,
+      body: notificationData.body
+    },
+    data: notificationData.data,
+    tokens: tokens.filter(t => t), // Remove any empty tokens
+    android: {
+      priority: 'high'
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1
+        }
+      }
+    }
+  };
+
+  try {
+    const response = await admin.messaging().sendMulticast(message);
+    // Handle failures (remove invalid tokens, etc.)
+    if (response.failureCount > 0) {
+      const failedTokens = [];
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          failedTokens.push(tokens[idx]);
+        }
+      });
+      console.log('Failed to send to tokens:', failedTokens);
+    }
+    return response;
+  } catch (error) {
+    console.error('Error sending Firebase notification:', error);
+    throw error;
+  }
+};
+
+// Helper function to delete all messages and attachments for a chat
+const deleteCascadeChatMessages = async (chatId) => {
+  const messages = await GroupChatMessage.find({ chat: chatId })
+    .select("attachments")
+    .lean();
+
+  const fileDeletions = messages.flatMap((message) =>
+    message.attachments
+      .filter((attachment) => attachment.localPath)
+      .map((attachment) => removeLocalFile(attachment.localPath))
+  );
+
+  await Promise.all([
+    ...fileDeletions,
+    GroupChatMessage.deleteMany({ chat: chatId }),
+  ]);
+};
 /**
  * @route GET /api/v1/chats/group
  * @description Get all group chats (joined and not joined) with unread counts and pagination
