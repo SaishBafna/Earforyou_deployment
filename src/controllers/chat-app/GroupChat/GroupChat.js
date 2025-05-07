@@ -9,7 +9,7 @@ import { ApiError } from "../../../utils/ApiError.js";
 import { ApiResponse } from "../../../utils/ApiResponse.js";
 import { asyncHandler } from "../../../utils/asyncHandler.js";
 import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
-import admin from "../../../config/firebaseConfig.js"
+import { admin } from "../../../config/firebaseConfig.js"
 
 
 
@@ -1010,8 +1010,8 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
   };
 
   try {
-    const response = await admin.messaging().sendMulticast(message);
-
+    const response = await admin.messaging().sendEachForMulticast(message);
+    console.log('Firebase notification response:', response);
     if (response.failureCount > 0) {
       const failedTokens = [];
       response.responses.forEach((resp, idx) => {
