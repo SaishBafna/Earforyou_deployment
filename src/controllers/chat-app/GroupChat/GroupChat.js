@@ -1601,17 +1601,67 @@ const createGroupChat = asyncHandler(async (req, res) => {
  * @route PUT /api/v1/chats/group/:chatId
  * @description Update group chat details (name, avatar)
  */
+// const updateGroupChatDetails = asyncHandler(async (req, res) => {
+//   const { chatId } = req.params;
+//   const { name, description, avatar } = req.body;
+
+//   if (!name?.trim() && !description?.trim()) {
+//     throw new ApiError(400, "At least one field to update is required");
+//   }
+
+//   const updateFields = {};
+//   if (name?.trim()) updateFields.name = name.trim();
+//   if (description?.trim()) updateFields.description = description.trim();
+//   updateFields.lastActivity = new Date();
+
+//   const updatedGroupChat = await GroupChat.findOneAndUpdate(
+//     { _id: chatId, isGroupChat: true, admins: req.user._id },
+//     { $set: updateFields },
+//     { new: true, lean: true }
+//   );
+
+//   if (!updatedGroupChat) {
+//     throw new ApiError(404, "Group chat not found or you're not an admin");
+//   }
+
+//   // Notify all participants
+//   const notificationEvents = updatedGroupChat.participants.map(pId =>
+//     emitSocketEvent(
+//       req,
+//       pId.toString(),
+//       ChatEventEnum.UPDATE_GROUP_EVENT,
+//       updatedGroupChat
+//     )
+//   );
+
+//   await Promise.all(notificationEvents);
+
+//   await sendGroupNotifications(req, {
+//     chatId,
+//     participants: updatedGroupChat.participants.map(p => p._id),
+//     eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
+//     data: updatedGroupChat
+//   });
+
+//   return res
+//     .status(200)
+//     .json(new ApiResponse(200, updatedGroupChat, "Group updated successfully"));
+// });
+
+
 const updateGroupChatDetails = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { name, description, avatar } = req.body;
 
-  if (!name?.trim() && !description?.trim()) {
+  // Check if at least one field is provided for update
+  if (!name?.trim() && !description?.trim() && !avatar?.trim()) {
     throw new ApiError(400, "At least one field to update is required");
   }
 
   const updateFields = {};
   if (name?.trim()) updateFields.name = name.trim();
   if (description?.trim()) updateFields.description = description.trim();
+  if (avatar?.trim()) updateFields.avatar = avatar.trim();
   updateFields.lastActivity = new Date();
 
   const updatedGroupChat = await GroupChat.findOneAndUpdate(
@@ -1647,7 +1697,6 @@ const updateGroupChatDetails = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, updatedGroupChat, "Group updated successfully"));
 });
-
 /**
  * @route PUT /api/v1/chats/group/:chatId/add
  * @description Add participants to a group chat
