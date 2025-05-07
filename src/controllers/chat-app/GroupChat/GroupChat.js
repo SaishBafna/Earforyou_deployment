@@ -936,14 +936,17 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
   const notificationPromises = groupChat.participants
     .filter(participant =>
       participant._id.toString() !== req.user._id.toString() &&
-      participant.deviceToken
+      participant.deviceToken &&
+      typeof participant.deviceToken === 'string' &&
+      participant.deviceToken.trim() !== ''
     )
 
+
     .map(async (participant) => {
-      console.log(`Sending notification to user ${participant.deviceToken}`); 
+      console.log(`Sending notification to user ${participant.deviceToken}`);
       try {
         await sendFirebaseNotification(
-          participant.deviceToken,
+          [participant.deviceToken], // Pass as array
           notificationData
         );
       } catch (error) {
