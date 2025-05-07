@@ -938,7 +938,9 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
       participant._id.toString() !== req.user._id.toString() &&
       participant.deviceToken
     )
+
     .map(async (participant) => {
+      console.log(`Sending notification to user ${participant.deviceToken}`); 
       try {
         await sendFirebaseNotification(
           participant.deviceToken,
@@ -972,6 +974,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
 
 
 const sendFirebaseNotification = async (tokens, notificationData) => {
+  console.log('Sending notification to tokens:', tokens);
   if (!Array.isArray(tokens) || tokens.length === 0) {
     console.warn('No valid tokens provided for notification.');
     return;
