@@ -1013,24 +1013,6 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
     throw error;
   }
 };
-
-// Helper function to delete all messages and attachments for a chat
-const deleteCascadeChatMessages = async (chatId) => {
-  const messages = await GroupChatMessage.find({ chat: chatId })
-    .select("attachments")
-    .lean();
-
-  const fileDeletions = messages.flatMap((message) =>
-    message.attachments
-      .filter((attachment) => attachment.localPath)
-      .map((attachment) => removeLocalFile(attachment.localPath))
-  );
-
-  await Promise.all([
-    ...fileDeletions,
-    GroupChatMessage.deleteMany({ chat: chatId }),
-  ]);
-};
 /**
  * @route GET /api/v1/chats/group
  * @description Get all group chats (joined and not joined) with unread counts and pagination
