@@ -9,7 +9,7 @@ import { ApiError } from "../../../utils/ApiError.js";
 import { ApiResponse } from "../../../utils/ApiResponse.js";
 import { asyncHandler } from "../../../utils/asyncHandler.js";
 import { getLocalPath, getStaticFilePath, removeLocalFile } from "../../../utils/helpers.js";
-import  admin  from "../../../config/firebaseConfig.js"
+import admin from "../../../config/firebaseConfig.js"
 
 
 
@@ -925,6 +925,7 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     body: notificationMessage,
     data: {
       chatId: chatId.toString(),
+      name: groupChat.name || `Group Chat`,
       messageId: message._id.toString(),
       type: 'group_message',
       click_action: 'FLUTTER_NOTIFICATION_CLICK'
@@ -994,7 +995,11 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
       title: notificationData.title || '',
       body: notificationData.body || ''
     },
-    data: notificationData.data || {},
+    data: {
+      ...notificationData.data,
+      screen: 'Group_Chat',
+
+    },
     tokens: cleanedTokens,
     android: {
       priority: 'high'
@@ -1141,6 +1146,7 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
         $project: {
           name: 1,
           avatar: 1,
+          description: 1,
           participants: 1,
           admins: 1,
           createdBy: 1,
