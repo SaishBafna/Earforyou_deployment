@@ -1254,7 +1254,7 @@ function shouldSkipNotification(participant, content) {
 
   console.debug(`[shouldSkipNotification] No skip conditions met for ${participant._id}`);
   return false;
-}c
+}
 /**
  * @route GET /api/v1/chats/group
  * @description Get all group chats (joined and not joined) with unread counts and pagination
