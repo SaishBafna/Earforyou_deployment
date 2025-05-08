@@ -1376,7 +1376,6 @@ const getAllGroups = asyncHandler(async (req, res) => {
  * @route GET /api/v1/chats/group
  * @description Get all group chats for the current user with unread counts and pagination
  */
-
 const getAllGroupChats = asyncHandler(async (req, res) => {
   const { search, page = 1, limit = 20 } = req.query;
 
@@ -1398,7 +1397,7 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
     GroupChat.aggregate([
       { $match: matchStage },
       ...chatCommonAggregation(req.user._id),
-      { $sort: { sortField: -1 } },
+      { $sort: { updatedAt: -1 } }, // Changed from sortField to updatedAt
       { $skip: skip },
       { $limit: limitNum },
       {
@@ -1414,6 +1413,7 @@ const getAllGroupChats = asyncHandler(async (req, res) => {
           lastReadMessage: 1,
           createdAt: 1,
           lastActivity: 1,
+          updatedAt: 1, // Make sure updatedAt is included if you want it in the response
         },
       },
     ]),
