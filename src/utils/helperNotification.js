@@ -54,12 +54,12 @@ export const sendPushNotification = async (userId, title, message, type, metadat
             data: {
                 type: String(type),
                 ...stringifiedMetadata,
-                screen: 'Notification',
+                screen: 'Dashboard',
                 imageUrl: stringifiedMetadata.senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png'
             },
             token: user.deviceToken,
             data: {
-                screen: screen || 'Notification',
+                screen: screen || 'Dashboard',
                 senderId: senderId || '',
                 senderName: sender?.username || 'Someone',
                 senderAvatar: sender?.avatarUrl,
