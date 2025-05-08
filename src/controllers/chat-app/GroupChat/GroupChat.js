@@ -1942,6 +1942,146 @@ const updateGroupChatDetails = asyncHandler(async (req, res) => {
  * @route PUT /api/v1/chats/group/:chatId/add
  * @description Add participants to a group chat
  */
+// const addParticipantsToGroup = asyncHandler(async (req, res) => {
+//   const { chatId } = req.params;
+//   const { participants } = req.body;
+
+//   if (!Array.isArray(participants) || participants.length === 0) {
+//     throw new ApiError(400, "Participants array is required");
+//   }
+
+//   // Get group chat and validate admin status
+//   const groupChat = await GroupChat.findOne({
+//     _id: chatId,
+//     isGroupChat: true,
+//     admins: req.user._id
+//   }).lean();
+
+//   if (!groupChat) {
+//     throw new ApiError(404, "Group chat not found or you're not an admin");
+//   }
+
+//   // Filter out existing participants
+//   const newParticipants = participants
+//     .map(id => new mongoose.Types.ObjectId(id))
+//     .filter(p => !groupChat.participants.some(existing => existing.equals(p)));
+
+//   if (newParticipants.length === 0) {
+//     throw new ApiError(400, "All users are already in the group");
+//   }
+
+//   // Validate users exist
+//   const usersCount = await User.countDocuments({ _id: { $in: newParticipants } });
+//   if (usersCount !== newParticipants.length) {
+//     throw new ApiError(404, "One or more users not found");
+//   }
+
+//   // Calculate unread counts for new participants
+//   const unreadCounts = await GroupChatMessage.aggregate([
+//     {
+//       $match: {
+//         chat: new mongoose.Types.ObjectId(chatId),
+//         sender: { $nin: newParticipants }
+//       }
+//     },
+//     {
+//       $group: {
+//         _id: null,
+//         count: { $sum: 1 }
+//       }
+//     }
+//   ]);
+
+//   const totalUnread = unreadCounts[0]?.count || 0;
+
+//   // Prepare updates
+//   const updates = {
+//     $addToSet: { participants: { $each: newParticipants } },
+//     $push: {
+//       unreadCounts: {
+//         $each: newParticipants.map(user => ({ user, count: totalUnread }))
+//       }
+//     },
+//     $set: { lastActivity: new Date() }
+//   };
+
+//   const updatedGroupChat = await GroupChat.findByIdAndUpdate(
+//     chatId,
+//     updates,
+//     { new: true, lean: true }
+//   );
+
+
+//   // Get sender info for notifications
+//   const sender = await User.findById(req.user._id)
+//     .select("username name avatar")
+//     .lean();
+
+//   const senderName = sender.name || sender.username;
+//   const notificationMessage = content
+//     ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
+//     : `${senderName} sent an attachment`;
+
+//   // Prepare notification data
+//   const notificationData = {
+//     title: groupChat.name || `Group Chat`,
+//     body: notificationMessage,
+//     data: {
+//       chatId: chatId.toString(),
+//       name: groupChat.name || `Group Chat`,
+//       messageId: message._id.toString(),
+//       type: 'group_message',
+//       click_action: 'FLUTTER_NOTIFICATION_CLICK'
+//     },
+//     icon: sender.avatar || null
+//   };
+
+//   // Send notifications to all participants except sender
+//   const notificationPromises = groupChat.participants
+//     .filter(participant =>
+//       participant._id.toString() !== req.user._id.toString() &&
+//       participant.deviceToken &&
+//       typeof participant.deviceToken === 'string' &&
+//       participant.deviceToken.trim() !== ''
+//     )
+//     .map(async (participant) => {
+//       console.log(`Sending notification to user ${participant._id}`);
+//       try {
+//         await sendFirebaseNotification(
+//           [participant.deviceToken], // Pass as array
+//           notificationData
+//         );
+//       } catch (error) {
+//         console.error(`Failed to send notification to user ${participant._id}:`, error);
+//       }
+//     });
+//   // Notify existing participants and new members
+//   const notificationEvents = [
+//     ...groupChat.participants.map(pId =>
+//       emitSocketEvent(
+//         req,
+//         pId.toString(),
+//         ChatEventEnum.UPDATE_GROUP_EVENT,
+//         updatedGroupChat
+//       )
+//     ),
+//     ...newParticipants.map(pId =>
+//       emitSocketEvent(
+//         req,
+//         pId.toString(),
+//         ChatEventEnum.NEW_GROUP_CHAT_EVENT,
+//         updatedGroupChat
+//       )
+//     )
+//   ];
+
+//   await Promise.all(notificationEvents);
+
+//   return res
+//     .status(200)
+//     .json(new ApiResponse(200, updatedGroupChat, "Participants added successfully"));
+// });
+
 const addParticipantsToGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { participants } = req.body;
@@ -2011,7 +2151,51 @@ const addParticipantsToGroup = asyncHandler(async (req, res) => {
     { new: true, lean: true }
   );
 
-  // Notify existing participants and new members
+  // Get sender info for notifications
+  const sender = await User.findById(req.user._id)
+    .select("username name avatar")
+    .lean();
+
+  const senderName = sender.name || sender.username;
+  const notificationMessage = `You've been added to "${groupChat.name}" by ${senderName}`;
+
+  // Get device tokens for new participants
+  const newUsers = await User.find({
+    _id: { $in: newParticipants },
+    deviceToken: { $exists: true, $ne: null }
+  }).select('deviceToken');
+
+  // Prepare notification data
+  const notificationData = {
+    title: `Added to ${groupChat.name}`,
+    body: notificationMessage,
+    data: {
+      chatId: chatId.toString(),
+      groupName: groupChat.name,
+      type: 'group_added',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK'
+    },
+    icon: sender.avatar || null
+  };
+
+  // Send notifications to new participants
+  const notificationPromises = newUsers
+    .filter(user => user.deviceToken && typeof user.deviceToken === 'string')
+    .map(async (user) => {
+      console.log(`Sending notification to user ${user._id}`);
+      try {
+        await sendFirebaseNotification(
+          [user.deviceToken.trim()], // Ensure token is clean and in array
+          notificationData
+        );
+      } catch (error) {
+        console.error(`Failed to send notification to user ${user._id}:`, error);
+      }
+    });
+
+  await Promise.all(notificationPromises);
+
+  // Notify existing participants and new members via sockets
   const notificationEvents = [
     ...groupChat.participants.map(pId =>
       emitSocketEvent(
@@ -2037,11 +2221,106 @@ const addParticipantsToGroup = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, updatedGroupChat, "Participants added successfully"));
 });
-
 /**
  * @route PUT /api/v1/chats/group/:chatId/remove
  * @description Remove participant from group chat
  */
+// const removeParticipantFromGroup = asyncHandler(async (req, res) => {
+//   const { chatId } = req.params;
+//   const { participantId } = req.body;
+
+//   if (!participantId) {
+//     throw new ApiError(400, "Participant ID is required");
+//   }
+
+//   // Validate participant ID format
+//   let participantObjectId;
+//   try {
+//     participantObjectId = new mongoose.Types.ObjectId(participantId);
+//   } catch (err) {
+//     throw new ApiError(400, "Invalid participant ID format");
+//   }
+
+//   // Get group chat and validate admin status
+//   const groupChat = await GroupChat.findOne({
+//     _id: chatId,
+//     isGroupChat: true,
+//     admins: req.user._id
+//   }).lean();
+
+//   if (!groupChat) {
+//     throw new ApiError(404, "Group chat not found or you're not an admin");
+//   }
+
+//   // Check if participant is in the group
+//   if (!groupChat.participants.some(p => p.equals(participantObjectId))) {
+//     throw new ApiError(400, "User is not in this group");
+//   }
+
+//   if (participantObjectId.equals(req.user._id)) {
+//     throw new ApiError(400, "Use leave group endpoint instead");
+//   }
+
+//   // Remove participant
+//   const updatedGroupChat = await GroupChat.findByIdAndUpdate(
+//     chatId,
+//     {
+//       $pull: {
+//         participants: participantObjectId,
+//         admins: participantObjectId,
+//         unreadCounts: { user: participantObjectId }
+//       },
+//       $set: { lastActivity: new Date() }
+//     },
+//     { new: true, lean: true }
+//   );
+
+//   // Notify participants and removed user
+//   await Promise.all([
+//     ...updatedGroupChat.participants.map(pId =>
+//       emitSocketEvent(
+//         req,
+//         pId.toString(),
+//         ChatEventEnum.UPDATE_GROUP_EVENT,
+//         updatedGroupChat
+//       )
+//     ),
+//     emitSocketEvent(
+//       req,
+//       participantId,
+//       ChatEventEnum.REMOVED_FROM_GROUP_EVENT,
+//       {
+//         chatId,
+//         removedBy: req.user._id,
+//       }
+//     )
+//   ]);
+
+
+//   // Notify remaining participants
+//   await sendGroupNotifications(req, {
+//     chatId,
+//     participants: updatedGroupChat.participants.map(p => p._id),
+//     eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
+//     data: updatedGroupChat
+//   });
+
+//   await sendGroupNotifications(req, {
+//     chatId,
+//     participants: [participantObjectId],
+//     eventType: ChatEventEnum.REMOVED_FROM_GROUP_EVENT,
+//     data: {
+//       chatId,
+//       removedBy: req.user._id,
+//       groupName: groupChat.name
+//     }
+//   });
+
+//   return res
+//     .status(200)
+//     .json(new ApiResponse(200, updatedGroupChat, "Participant removed successfully"));
+// });
+
 const removeParticipantFromGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { participantId } = req.body;
@@ -2092,7 +2371,78 @@ const removeParticipantFromGroup = asyncHandler(async (req, res) => {
     { new: true, lean: true }
   );
 
-  // Notify participants and removed user
+  // Get admin/sender info for notifications
+  const adminUser = await User.findById(req.user._id)
+    .select("username name avatar")
+    .lean();
+  const adminName = adminUser.name || adminUser.username;
+
+  // Get removed user info
+  const removedUser = await User.findById(participantId)
+    .select("username name deviceToken")
+    .lean();
+  const removedUserName = removedUser.name || removedUser.username;
+
+  // 1. Notification to removed user
+  if (removedUser.deviceToken) {
+    const removedUserNotification = {
+      title: `Removed from ${groupChat.name}`,
+      body: `You were removed by ${adminName}`,
+      data: {
+        chatId: chatId.toString(),
+        groupName: groupChat.name,
+        type: 'removed_from_group',
+        removedBy: req.user._id.toString(),
+        click_action: 'FLUTTER_NOTIFICATION_CLICK'
+      },
+      icon: adminUser.avatar || null
+    };
+
+    try {
+      await sendFirebaseNotification(
+        [removedUser.deviceToken],
+        removedUserNotification
+      );
+    } catch (error) {
+      console.error('Failed to send removal notification:', error);
+    }
+  }
+
+  // 2. Notification to remaining group members
+  const remainingMembers = await User.find({
+    _id: { $in: updatedGroupChat.participants },
+    deviceToken: { $exists: true, $ne: null }
+  }).select('deviceToken');
+
+  const groupNotification = {
+    title: `${groupChat.name} updated`,
+    body: `${removedUserName} was removed by ${adminName}`,
+    data: {
+      chatId: chatId.toString(),
+      groupName: groupChat.name,
+      type: 'group_updated',
+      updatedBy: req.user._id.toString(),
+      click_action: 'FLUTTER_NOTIFICATION_CLICK'
+    },
+    icon: adminUser.avatar || null
+  };
+
+  const notificationPromises = remainingMembers
+    .filter(member => member.deviceToken)
+    .map(async (member) => {
+      try {
+        await sendFirebaseNotification(
+          [member.deviceToken],
+          groupNotification
+        );
+      } catch (error) {
+        console.error(`Failed to send notification to user ${member._id}:`, error);
+      }
+    });
+
+  await Promise.all(notificationPromises);
+
+  // Socket notifications
   await Promise.all([
     ...updatedGroupChat.participants.map(pId =>
       emitSocketEvent(
@@ -2109,35 +2459,15 @@ const removeParticipantFromGroup = asyncHandler(async (req, res) => {
       {
         chatId,
         removedBy: req.user._id,
+        groupName: groupChat.name
       }
     )
   ]);
-
-
-  // Notify remaining participants
-  await sendGroupNotifications(req, {
-    chatId,
-    participants: updatedGroupChat.participants.map(p => p._id),
-    eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
-    data: updatedGroupChat
-  });
-
-  await sendGroupNotifications(req, {
-    chatId,
-    participants: [participantObjectId],
-    eventType: ChatEventEnum.REMOVED_FROM_GROUP_EVENT,
-    data: {
-      chatId,
-      removedBy: req.user._id,
-      groupName: groupChat.name
-    }
-  });
 
   return res
     .status(200)
     .json(new ApiResponse(200, updatedGroupChat, "Participant removed successfully"));
 });
-
 /**
  * @route PUT /api/v1/chats/group/:chatId/leave
  * @description Leave a group chat
