@@ -430,7 +430,7 @@ export const toggleLikePost = async (req, res) => {
           title: `${req.user.username} liked your post`,
           message: `${req.user.username} liked your post`,
           postId,
-          screen:"Express_room"
+          screen:"Details_express"
         });
       }
     }

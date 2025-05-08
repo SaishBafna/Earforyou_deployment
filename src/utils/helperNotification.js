@@ -60,6 +60,11 @@ export const sendPushNotification = async (userId, title, message, type, metadat
             token: user.deviceToken,
             data: {
                 screen: screen || 'Notification',
+                senderId: senderId || '',
+                senderName: sender?.username || 'Someone',
+                senderAvatar: sender?.avatarUrl,
+                commentId: commentId || '',
+                notificationId: notification._id.toString()
             }
         };
 
@@ -119,7 +124,6 @@ export const notifyUser = async (options) => {
                 senderId: senderId || '',
                 senderName: sender?.username || 'Someone',
                 senderAvatar: sender?.avatarUrl,
-                postId: postId || '',
                 commentId: commentId || '',
                 notificationId: notification._id.toString()
             },

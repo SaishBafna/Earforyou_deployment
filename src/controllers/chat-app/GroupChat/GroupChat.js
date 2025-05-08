@@ -689,6 +689,8 @@ const getTotalUnreadCount = async (userId) => {
  * @route GET /api/v1/chats/group/:chatId/messages
  * @description Get all messages for a group chat with pagination
  */
+
+
 // const getAllGroupMessages = asyncHandler(async (req, res) => {
 //   const { chatId } = req.params;
 //   let { page = 1, limit = 20 } = req.query;
@@ -1038,6 +1040,7 @@ const sendFirebaseNotification = async (tokens, notificationData) => {
  * @route GET /api/v1/chats/group
  * @description Get all group chats (joined and not joined) with unread counts and pagination
  */
+
 const getAllGroups = asyncHandler(async (req, res) => {
   const { search, page = 1, limit = 20 } = req.query;
 
@@ -1420,6 +1423,7 @@ const getAllGroupMessages = asyncHandler(async (req, res) => {
  * @route GET /api/v1/chats/group/:chatId
  * @description Get group chat details with paginated messages
  */
+
 const getGroupChatDetails = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   let { page = 1, limit = 20 } = req.query;
