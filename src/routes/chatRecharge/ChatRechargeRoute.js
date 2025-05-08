@@ -7,6 +7,6 @@ router.post("/createChatPremium", createChatPremium);
 router.get("/getAllChatPremiumPlans", getAllChatPremiumPlans); // Get all chat premium plans
 router.post("/validateChatPayment", validateChatPayment); // Validate chat payment
 
-router.post("/getPremiumUserDetails/:id", getPremiumUserDetails); // Validate chat payment
+router.get("/getPremiumUserDetails/:id", getPremiumUserDetails); // Validate chat payment
 
 export default router;

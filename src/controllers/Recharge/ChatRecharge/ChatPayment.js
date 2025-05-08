@@ -487,7 +487,7 @@ export const getPremiumUserDetails = async (req, res) => {
         const { id } = req.params;
 
         // Get the premium user data with necessary population
-        const premiumUser = await ChatUserPremium.findById(id)
+        const premiumUser = await ChatUserPremium.find({ user: id })
             .populate('user', 'username email') // Only get name and email from user
             .populate('plan', 'name chatsAllowed validityDays price') // Get relevant plan info
             .lean(); // Convert to plain JS object
