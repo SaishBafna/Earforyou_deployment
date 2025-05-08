@@ -26,6 +26,7 @@ export const createThreadNotification = async (data) => {
  * @param {string} message - Notification body
  * @param {string} type - Notification type
  * @param {Object} metadata - Additional metadata
+ * @param {string} screen - Screen to open when notification is tapped
  */
 export const sendPushNotification = async (userId, title, message, type, metadata = {}, screen) => {
     try {
@@ -54,18 +55,11 @@ export const sendPushNotification = async (userId, title, message, type, metadat
             data: {
                 type: String(type),
                 ...stringifiedMetadata,
-                screen: 'Dashboard',
-                imageUrl: stringifiedMetadata.senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png'
-            },
-            token: user.deviceToken,
-            data: {
                 screen: screen || 'Dashboard',
-                senderId: senderId || '',
-                senderName: sender?.username || 'Someone',
-                senderAvatar: sender?.avatarUrl,
-                commentId: commentId || '',
-                notificationId: notification._id.toString()
-            }
+                imageUrl: stringifiedMetadata.senderAvatar || 'https://investogram.ukvalley.com/avatars/default.png',
+                click_action: 'FLUTTER_NOTIFICATION_CLICK'
+            },
+            token: user.deviceToken
         };
 
         await admin.messaging().send(payload);
@@ -86,11 +80,23 @@ export const sendPushNotification = async (userId, title, message, type, metadat
  * @param {string} options.message - Notification body
  * @param {string} [options.postId] - Related post ID (optional)
  * @param {string} [options.commentId] - Related comment ID (optional)
+ * @param {string} [options.screen] - Screen to open when notification is tapped
+ * @param {Object} [options.additionalData] - Additional metadata to include
  * @returns {Promise<Object>} The created notification
  */
 export const notifyUser = async (options) => {
     try {
-        const { recipientId, senderId, type, title, message, postId, commentId, screen } = options;
+        const { 
+            recipientId, 
+            senderId, 
+            type, 
+            title, 
+            message, 
+            postId, 
+            commentId, 
+            screen,
+            additionalData = {} 
+        } = options;
 
         // Get sender info if available
         let sender = null;
@@ -112,7 +118,19 @@ export const notifyUser = async (options) => {
             comment: commentId,
             read: false,
             createdAt: new Date(),
+            ...additionalData
         });
+
+        // Prepare metadata for push notification
+        const metadata = {
+            senderId: senderId || '',
+            senderName: sender?.username || 'Someone',
+            senderAvatar: sender?.avatarUrl,
+            commentId: commentId || '',
+            postId: postId || '',
+            notificationId: notification._id.toString(),
+            ...additionalData
+        };
 
         // Send push notification
         await sendPushNotification(
@@ -120,15 +138,8 @@ export const notifyUser = async (options) => {
             title,
             message,
             type,
-            {
-                senderId: senderId || '',
-                senderName: sender?.username || 'Someone',
-                senderAvatar: sender?.avatarUrl,
-                commentId: commentId || '',
-                notificationId: notification._id.toString()
-            },
+            metadata,
             screen
-
         );
 
         return notification;
