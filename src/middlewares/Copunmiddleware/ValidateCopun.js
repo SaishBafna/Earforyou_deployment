@@ -1,11 +1,14 @@
-import { Coupon,CouponUsage } from '../../models/CouponSystem/couponModel.js';
+import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 
-export const validateCoupon = async (req, res, next) => {
+export const validateCoupon = async (req, res) => {
     const { couponCode, userId } = req.query;
 
-    // If no coupon code provided, just proceed
+    // If no coupon code provided, return success (coupon is optional)
     if (!couponCode) {
-        return next();
+        return res.status(200).json({
+            success: true,
+            message: 'Coupon code is not required'
+        });
     }
 
     try {
@@ -22,11 +25,19 @@ export const validateCoupon = async (req, res, next) => {
             });
         }
 
-        // Check if coupon is active and not expired
-        if (!coupon.isActive || coupon.isExpired) {
+        // Check if coupon is active
+        if (!coupon.isActive) {
             return res.status(400).json({
                 success: false,
-                message: coupon.isExpired ? 'Coupon has expired' : 'Coupon is not active'
+                message: 'Coupon is not active'
+            });
+        }
+
+        // Check if coupon has expired
+        if (coupon.isExpired || (coupon.validUntil && new Date(coupon.validUntil) < new Date())) {
+            return res.status(400).json({
+                success: false,
+                message: 'Coupon has expired'
             });
         }
 
@@ -38,39 +49,51 @@ export const validateCoupon = async (req, res, next) => {
             });
         }
 
-        // Check if user has already used this coupon (for non-reusable coupons)
-        if (!coupon.isReusable) {
-            const existingUsage = await CouponUsage.findOne({
-                coupon: coupon._id,
-                user: userId
-            });
-            
-            if (existingUsage) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'You have already used this coupon'
+        // Check user-specific limits if userId is provided
+        if (userId) {
+            // Check if user has already used this coupon (for non-reusable coupons)
+            if (!coupon.isReusable) {
+                const existingUsage = await CouponUsage.findOne({
+                    coupon: coupon._id,
+                    user: userId
                 });
+
+                if (existingUsage) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'You have already used this coupon'
+                    });
+                }
+            }
+
+            // Check max uses per user
+            if (coupon.maxUsesPerUser) {
+                const userUsageCount = await CouponUsage.countDocuments({
+                    coupon: coupon._id,
+                    user: userId
+                });
+
+                if (userUsageCount >= coupon.maxUsesPerUser) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'You have reached the maximum usage limit for this coupon'
+                    });
+                }
             }
         }
 
-        // Check max uses per user
-        if (coupon.maxUsesPerUser) {
-            const userUsageCount = await CouponUsage.countDocuments({
-                coupon: coupon._id,
-                user: userId
-            });
-            
-            if (userUsageCount >= coupon.maxUsesPerUser) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'You have reached the maximum usage limit for this coupon'
-                });
+        // If all checks passed, return coupon details
+        return res.status(200).json({
+            success: true,
+            message: 'Coupon is valid',
+            coupon: {
+                code: coupon.code,
+                discountType: coupon.discountType,
+                discountValue: coupon.discountValue,
+                minOrderAmount: coupon.minOrderAmount,
+                validUntil: coupon.validUntil
             }
-        }
-
-        // Attach valid coupon to request for later use
-        req.validCoupon = coupon;
-        next();
+        });
 
     } catch (error) {
         console.error('Coupon validation error:', error);
