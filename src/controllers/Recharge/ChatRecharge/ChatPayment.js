@@ -485,62 +485,71 @@ export const getPremiumUserDetails = async (req, res) => {
     try {
         const { userId } = req.params; // Get userId from URL params
 
-        // Find premium details for the specific user
-        const premiumUser = await ChatUserPremium.findOne({ user: userId })
-            .sort({ createdAt: -1 }) // Get the latest record if multiple exist
+        // Find ALL premium details for the specific user, sorted by newest first
+        const premiumRecords = await ChatUserPremium.find({ user: userId })
+            .sort({ createdAt: -1 }) // Get the latest records first
             .populate('user', 'username email')
             .populate('plan', 'name chatsAllowed validityDays price')
             .lean();
 
-        if (!premiumUser) {
+        if (!premiumRecords || premiumRecords.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: 'Premium subscription not found for this user'
+                message: 'No premium subscriptions found for this user'
             });
         }
 
-        // Calculate usage stats
-        const totalChatsAllowed = premiumUser.plan?.chatsAllowed || 0;
-        const remainingChats = premiumUser.remainingChats || 0;
-        const usedChats = premiumUser.usedChats?.length || 0;
+        // Filter active subscriptions and calculate total remaining chats
+        const activeSubscriptions = premiumRecords.filter(record => record.isActive);
+        const totalRemainingChats = activeSubscriptions.reduce(
+            (sum, record) => sum + (record.remainingChats || 0), 0
+        );
+
+        // Get the most recent subscription (active or inactive) for detailed info
+        const latestSubscription = premiumRecords[0];
+
+        // Calculate usage stats based on latest subscription
+        const totalChatsAllowed = latestSubscription.plan?.chatsAllowed || 0;
+        const usedChats = latestSubscription.usedChats?.length || 0;
 
         // Format the response
         const response = {
-            id: premiumUser._id,
+            id: latestSubscription._id,
             userInfo: {
-                name: premiumUser.user?.username || 'N/A',
-                email: premiumUser.user?.email || 'N/A'
+                name: latestSubscription.user?.username || 'N/A',
+                email: latestSubscription.user?.email || 'N/A'
             },
             planInfo: {
-                name: premiumUser.plan?.name || 'N/A',
+                name: latestSubscription.plan?.name || 'N/A',
                 details: {
                     chatsAllowed: totalChatsAllowed,
-                    validityDays: premiumUser.plan?.validityDays || 0,
-                    price: premiumUser.plan?.price || 0
+                    validityDays: latestSubscription.plan?.validityDays || 0,
+                    price: latestSubscription.plan?.price || 0
                 }
             },
             usageStats: {
                 totalChatsAllowed,
-                remainingChats,
+                remainingChats: totalRemainingChats, // This now includes sum of all active subscriptions
                 usedChats,
                 usagePercentage: totalChatsAllowed > 0
                     ? Math.round((usedChats / totalChatsAllowed) * 100)
                     : 0
             },
             dates: {
-                purchaseDate: premiumUser.purchaseDate?.toLocaleDateString?.() || 'N/A',
-                expiryDate: premiumUser.expiryDate?.toLocaleDateString?.() || 'N/A',
-                createdAt: premiumUser.createdAt?.toISOString() || 'N/A'
+                purchaseDate: latestSubscription.purchaseDate?.toLocaleDateString?.() || 'N/A',
+                expiryDate: latestSubscription.expiryDate?.toLocaleDateString?.() || 'N/A',
+                createdAt: latestSubscription.createdAt?.toISOString() || 'N/A'
             },
             paymentInfo: {
-                status: premiumUser.payment?.status || 'N/A',
-                amount: premiumUser.payment?.amount || 0,
-                currency: premiumUser.payment?.currency || 'N/A',
-                date: premiumUser.payment?.completedAt?.toLocaleDateString?.() || 'N/A',
-                method: premiumUser.payment?.method || 'N/A',
-                transactionId: premiumUser.payment?.merchantTransactionId || 'N/A'
+                status: latestSubscription.payment?.status || 'N/A',
+                amount: latestSubscription.payment?.amount || 0,
+                currency: latestSubscription.payment?.currency || 'N/A',
+                date: latestSubscription.payment?.completedAt?.toLocaleDateString?.() || 'N/A',
+                method: latestSubscription.payment?.method || 'N/A',
+                transactionId: latestSubscription.payment?.merchantTransactionId || 'N/A'
             },
-            isActive: premiumUser.isActive || false
+            isActive: latestSubscription.isActive || false,
+            activeSubscriptionsCount: activeSubscriptions.length // Additional info about active subscriptions
         };
 
         res.json({
