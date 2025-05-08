@@ -252,10 +252,11 @@ const chatCommonAggregation = (userId) => [
         {
           $project: {
             username: 1,
-            avatar: 1,
+            avatarUrl: 1,
             email: 1,
-            isOnline: 1,
-            lastSeen: 1
+            online: 1,
+            lastSeen: 1,
+            avatar: 1
           }
         }
       ],
@@ -278,9 +279,10 @@ const chatCommonAggregation = (userId) => [
               {
                 $project: {
                   username: 1,
-                  avatar: 1,
+                  avatarUrl: 1,
                   email: 1,
-                  name: 1
+                  name: 1,
+                  avatar: 1
                 }
               }
             ],
@@ -312,9 +314,10 @@ const chatCommonAggregation = (userId) => [
         {
           $project: {
             username: 1,
+            avatarUrl: 1,
             avatar: 1,
             email: 1,
-            isOnline: 1
+            online: 1
           }
         }
       ],
@@ -330,7 +333,8 @@ const chatCommonAggregation = (userId) => [
         {
           $project: {
             username: 1,
-            avatar: 1,
+            avatarUrl: 1,
+            avatar:1,
             email: 1,
             createdAt: 1
           }
@@ -410,6 +414,7 @@ const chatCommonAggregation = (userId) => [
     $project: {
       name: 1,
       avatar: 1,
+      avatarUrl: 1,
       description: 1,
       participants: 1,
       admins: 1,
