@@ -199,8 +199,10 @@ import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 
 export const validatePayment = async (req, res) => {
   const { merchantTransactionId, userId, planId, couponCode } = req.query;
-  const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
-
+  let coupon = null;
+  if (couponCode) {
+    coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+  }
   if (!merchantTransactionId || !userId || !planId) {
     return res.status(400).send("Invalid transaction ID, user ID, or plan ID");
   }
@@ -379,7 +381,7 @@ export const validatePayment = async (req, res) => {
             await wallet.save();
 
 
-            if (couponDetails && coupon) {
+            if (coupon) {
               try {
                 await CouponUsage.create({
                   coupon: coupon._id,
@@ -399,7 +401,7 @@ export const validatePayment = async (req, res) => {
               `New balance: ₹${wallet.balance}. ` +
               `You have been credited with ${finalTalkTime} minutes of talk time`;
 
-            if (couponDetails) {
+            if (coupon) {
               notificationMessage += ` (including ${bonusTalkTime} bonus minutes from coupon ${couponDetails.code})`;
             }
 

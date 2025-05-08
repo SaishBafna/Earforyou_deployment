@@ -88,8 +88,10 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 
 export const validateChatPayment = asyncHandler(async (req, res) => {
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
-    const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
-
+    let coupon = null;
+    if (couponCode) {
+        coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+    }
     // Validate required parameters
     if (!merchantTransactionId || !userId || !planId) {
         throw new ApiError(400, "Missing required parameters");
@@ -242,11 +244,13 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
             'Payment Successful',
             message
         );
-        await CouponUsage.create({
-            coupon: coupon._id,
-            user: userId,
-            discountApplied: discountAmount
-        });
+        if (coupon) {
+            await CouponUsage.create({
+                coupon: coupon._id,
+                user: userId,
+                discountApplied: discountAmount
+            });
+        }
     } else if (state === 'FAILED') {
         await sendNotification(
             userId,

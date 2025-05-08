@@ -228,9 +228,12 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 export const validatePayment = async (req, res) => {
     let transaction;
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
-    const coupon = await Coupon.findOne({
-        code: couponCode.toUpperCase()
-    });
+    let coupon = null;
+    if (couponCode) {
+        coupon = await Coupon.findOne({
+            code: couponCode.toUpperCase()
+        });
+    }
     try {
         console.log("Payment validation initiated", {
             merchantTransactionId,
@@ -283,7 +286,7 @@ export const validatePayment = async (req, res) => {
         if (coupon) {
             try {
                 console.log("Processing coupon code", { couponCode });
-                
+
 
                 if (!coupon) {
                     throw new Error("Coupon not found");
@@ -397,11 +400,14 @@ export const validatePayment = async (req, res) => {
                         endDate: { $gt: now }
                     }).sort({ endDate: -1 });
 
-                    await CouponUsage.create({
-                        coupon: coupon._id,
-                        user: userId,
-                        discountApplied: coupon.discountType === 'free_days' ? extendedDays : 0
-                    });
+                    if (coupon) {
+                        await CouponUsage.create({
+                            coupon: coupon._id,
+                            user: userId,
+                            discountApplied: coupon.discountType === 'free_days' ? extendedDays : 0
+                        });
+
+                    }
 
                     if (activePlan) {
                         // Queue new plan to start after current plan ends
