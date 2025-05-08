@@ -480,54 +480,74 @@ export const getPaginatedPremiumUsers = async (req, res) => {
 };
 
 
-
-// @desc    Get details of a particular premium user
+// @desc    Get premium details of a specific user
 export const getPremiumUserDetails = async (req, res) => {
     try {
-        const { id } = req.params;
+        const { userId } = req.params; // Get userId from URL params
 
-        // Get the premium user data with necessary population
-        const premiumUser = await ChatUserPremium.find({ user: id })
-            .populate('user', 'username email') // Only get name and email from user
-            .populate('plan', 'name chatsAllowed validityDays price') // Get relevant plan info
-            .lean(); // Convert to plain JS object
+        // Find premium details for the specific user
+        const premiumUser = await ChatUserPremium.findOne({ user: userId })
+            .sort({ createdAt: -1 }) // Get the latest record if multiple exist
+            .populate('user', 'username email')
+            .populate('plan', 'name chatsAllowed validityDays price')
+            .lean();
 
         if (!premiumUser) {
             return res.status(404).json({
                 success: false,
-                message: 'Premium user not found'
+                message: 'Premium subscription not found for this user'
             });
         }
 
-        // Format the data for display
-        const formattedData = {
+        // Calculate usage stats
+        const totalChatsAllowed = premiumUser.plan?.chatsAllowed || 0;
+        const remainingChats = premiumUser.remainingChats || 0;
+        const usedChats = premiumUser.usedChats?.length || 0;
+
+        // Format the response
+        const response = {
             id: premiumUser._id,
-            userName: premiumUser.user?.username || 'N/A',
-            userEmail: premiumUser.user?.email || 'N/A',
-            planName: premiumUser.plan?.name || 'N/A',
-            planDetails: {
-                chatsAllowed: premiumUser.plan?.chatsAllowed || 0,
-                validityDays: premiumUser.plan?.validityDays || 0,
-                price: premiumUser.plan?.price || 0
+            userInfo: {
+                name: premiumUser.user?.username || 'N/A',
+                email: premiumUser.user?.email || 'N/A'
             },
-            purchaseDate: premiumUser.purchaseDate.toLocaleDateString(),
-            expiryDate: premiumUser.expiryDate.toLocaleDateString(),
-            remainingChats: premiumUser.remainingChats,
-            usedChats: premiumUser.usedChats.length,
-            chatHistory: premiumUser.usedChats, // You might want to format this further
-            isActive: premiumUser.isActive,
-            paymentStatus: premiumUser.payment.status,
-            paymentAmount: premiumUser.payment.amount,
-            paymentCurrency: premiumUser.payment.currency,
-            paymentDate: premiumUser.payment.date?.toLocaleDateString() || 'N/A',
-            paymentMethod: premiumUser.payment.method || 'N/A',
-            paymentTransactionId: premiumUser.payment.transactionId || 'N/A'
+            planInfo: {
+                name: premiumUser.plan?.name || 'N/A',
+                details: {
+                    chatsAllowed: totalChatsAllowed,
+                    validityDays: premiumUser.plan?.validityDays || 0,
+                    price: premiumUser.plan?.price || 0
+                }
+            },
+            usageStats: {
+                totalChatsAllowed,
+                remainingChats,
+                usedChats,
+                usagePercentage: totalChatsAllowed > 0
+                    ? Math.round((usedChats / totalChatsAllowed) * 100)
+                    : 0
+            },
+            dates: {
+                purchaseDate: premiumUser.purchaseDate?.toLocaleDateString?.() || 'N/A',
+                expiryDate: premiumUser.expiryDate?.toLocaleDateString?.() || 'N/A',
+                createdAt: premiumUser.createdAt?.toISOString() || 'N/A'
+            },
+            paymentInfo: {
+                status: premiumUser.payment?.status || 'N/A',
+                amount: premiumUser.payment?.amount || 0,
+                currency: premiumUser.payment?.currency || 'N/A',
+                date: premiumUser.payment?.completedAt?.toLocaleDateString?.() || 'N/A',
+                method: premiumUser.payment?.method || 'N/A',
+                transactionId: premiumUser.payment?.merchantTransactionId || 'N/A'
+            },
+            isActive: premiumUser.isActive || false
         };
 
         res.json({
             success: true,
-            data: formattedData
+            data: response
         });
+
     } catch (error) {
         res.status(500).json({
             success: false,
