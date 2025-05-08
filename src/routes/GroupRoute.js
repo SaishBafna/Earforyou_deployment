@@ -23,7 +23,7 @@ import {
     revokeGroupInviteLink,
     getAllGroups,
 } from "../controllers/chat-app/GroupChat/GroupChat.js";
-
+import { checkChatAccess } from "../middlewares/auth/ChaeckChatUse.js";
 
 
 const router = express.Router();
@@ -33,7 +33,7 @@ const router = express.Router();
 // Group Chat Routes
 router.route("/group")
     .get(protect, getAllGroupChats)                // Get all group chats for current user
-    .post(protect, createGroupChat);
+    .post(protect, checkChatAccess, createGroupChat);
 // Create new group chat
 router.route("/getAllGroups")
     .get(protect, getAllGroups)                // Get all group chats for current user
