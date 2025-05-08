@@ -88,6 +88,7 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 
 export const validateChatPayment = asyncHandler(async (req, res) => {
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
+    const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
 
     // Validate required parameters
     if (!merchantTransactionId || !userId || !planId) {
@@ -134,9 +135,8 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
     let finalAmount = amount / 100; // Convert paisa to rupees
 
     // Process coupon if provided
-    if (couponCode) {
+    if (coupon) {
         try {
-            const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
 
             if (!coupon) {
                 throw new ApiError(404, "Coupon not found");
@@ -185,11 +185,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
             }
 
             // Record coupon usage
-            await CouponUsage.create({
-                coupon: coupon._id,
-                user: userId,
-                discountApplied: discountAmount
-            });
+
 
             // Update coupon usage count
             coupon.currentUses += 1;
@@ -231,6 +227,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
 
     // Send notification based on payment state
     if (state === 'COMPLETED') {
+
         let message = `Your payment of ₹${paymentRecord.finalAmount} for premium chat features was successful.`;
         if (couponApplied) {
             message += ` (Coupon ${couponApplied} applied, saved ₹${discountAmount})`;
@@ -245,6 +242,11 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
             'Payment Successful',
             message
         );
+        await CouponUsage.create({
+            coupon: coupon._id,
+            user: userId,
+            discountApplied: discountAmount
+        });
     } else if (state === 'FAILED') {
         await sendNotification(
             userId,

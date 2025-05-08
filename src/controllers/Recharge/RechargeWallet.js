@@ -199,6 +199,7 @@ import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 
 export const validatePayment = async (req, res) => {
   const { merchantTransactionId, userId, planId, couponCode } = req.query;
+  const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
 
   if (!merchantTransactionId || !userId || !planId) {
     return res.status(400).send("Invalid transaction ID, user ID, or plan ID");
@@ -243,10 +244,9 @@ export const validatePayment = async (req, res) => {
     let finalTalkTime = talkTime;
 
     // Process coupon if provided
-    if (couponCode) {
+    if (coupon) {
       try {
         console.log("Processing coupon code:", couponCode);
-        const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
 
         if (!coupon) {
           throw new Error("Coupon not found");
@@ -294,11 +294,7 @@ export const validatePayment = async (req, res) => {
         }
 
         // Record coupon usage
-        await CouponUsage.create({
-          coupon: coupon._id,
-          user: userId,
-          discountApplied: bonusTalkTime
-        });
+
 
         // Update coupon usage count
         coupon.currentUses += 1;
@@ -371,6 +367,7 @@ export const validatePayment = async (req, res) => {
     switch (state) {
       case 'COMPLETED':
         if (code === 'PAYMENT_SUCCESS') {
+
           // Only add balance if this is a new completion
           if (!existingTransaction || existingTransaction.state !== 'COMPLETED') {
             const newBalance = wallet.balance + finalTalkTime;
@@ -380,6 +377,23 @@ export const validatePayment = async (req, res) => {
             // Add plan to wallet
             wallet.plan.push({ planId });
             await wallet.save();
+
+
+            if (couponDetails && coupon) {
+              try {
+                await CouponUsage.create({
+                  coupon: coupon._id,
+                  user: userId,
+                  discountApplied: bonusTalkTime,
+                  transactionId: merchantTransactionId,
+                  planId: planId,
+                  appliedAt: new Date()
+                });
+              } catch (couponUsageError) {
+                console.error("Failed to create coupon usage record:", couponUsageError);
+                // Don't fail the whole transaction if coupon usage recording fails
+              }
+            }
 
             let notificationMessage = `Your wallet has been credited with ₹${transactionRecord.amount}. ` +
               `New balance: ₹${wallet.balance}. ` +
@@ -396,6 +410,9 @@ export const validatePayment = async (req, res) => {
               "Payment Successful",
               notificationMessage
             );
+
+
+
           }
 
           return res.status(200).send({
@@ -409,6 +426,8 @@ export const validatePayment = async (req, res) => {
               bonusTalkTime: bonusTalkTime
             }
           });
+
+
         }
         break;
 

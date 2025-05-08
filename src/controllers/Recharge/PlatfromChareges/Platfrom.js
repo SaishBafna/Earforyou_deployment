@@ -228,7 +228,9 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 export const validatePayment = async (req, res) => {
     let transaction;
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
-
+    const coupon = await Coupon.findOne({
+        code: couponCode.toUpperCase()
+    });
     try {
         console.log("Payment validation initiated", {
             merchantTransactionId,
@@ -278,12 +280,10 @@ export const validatePayment = async (req, res) => {
         let extendedDays = 0;
 
         // Process coupon if provided
-        if (couponCode) {
+        if (coupon) {
             try {
                 console.log("Processing coupon code", { couponCode });
-                const coupon = await Coupon.findOne({
-                    code: couponCode.toUpperCase()
-                });
+                
 
                 if (!coupon) {
                     throw new Error("Coupon not found");
@@ -317,11 +317,7 @@ export const validatePayment = async (req, res) => {
                 }
 
                 // Record coupon usage
-                await CouponUsage.create({
-                    coupon: coupon._id,
-                    user: userId,
-                    discountApplied: coupon.discountType === 'free_days' ? extendedDays : 0
-                });
+
 
                 // Update coupon usage count
                 coupon.currentUses += 1;
@@ -400,6 +396,12 @@ export const validatePayment = async (req, res) => {
                         status: 'active',
                         endDate: { $gt: now }
                     }).sort({ endDate: -1 });
+
+                    await CouponUsage.create({
+                        coupon: coupon._id,
+                        user: userId,
+                        discountApplied: coupon.discountType === 'free_days' ? extendedDays : 0
+                    });
 
                     if (activePlan) {
                         // Queue new plan to start after current plan ends
