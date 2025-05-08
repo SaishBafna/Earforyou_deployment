@@ -437,7 +437,7 @@ export const getPaginatedPremiumUsers = async (req, res) => {
 
         // Get the paginated data with necessary population
         const premiumUsers = await ChatUserPremium.find()
-            .populate('user', 'name email') // Only get name and email from user
+            .populate('user', 'username email') // Only get name and email from user
             .populate('plan', 'name chatsAllowed validityDays price') // Get relevant plan info
             .sort({ createdAt: -1 }) // Newest first
             .skip(skip)
@@ -447,7 +447,7 @@ export const getPaginatedPremiumUsers = async (req, res) => {
         // Format the data for display
         const formattedData = premiumUsers.map(user => ({
             id: user._id,
-            userName: user.user?.name || 'N/A',
+            userName: user.user?.username || 'N/A',
             userEmail: user.user?.email || 'N/A',
             planName: user.plan?.name || 'N/A',
             purchaseDate: user.purchaseDate.toLocaleDateString(),
@@ -479,3 +479,60 @@ export const getPaginatedPremiumUsers = async (req, res) => {
     }
 };
 
+
+
+// @desc    Get details of a particular premium user
+export const getPremiumUserDetails = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Get the premium user data with necessary population
+        const premiumUser = await ChatUserPremium.findById(id)
+            .populate('user', 'username email') // Only get name and email from user
+            .populate('plan', 'name chatsAllowed validityDays price') // Get relevant plan info
+            .lean(); // Convert to plain JS object
+
+        if (!premiumUser) {
+            return res.status(404).json({
+                success: false,
+                message: 'Premium user not found'
+            });
+        }
+
+        // Format the data for display
+        const formattedData = {
+            id: premiumUser._id,
+            userName: premiumUser.user?.username || 'N/A',
+            userEmail: premiumUser.user?.email || 'N/A',
+            planName: premiumUser.plan?.name || 'N/A',
+            planDetails: {
+                chatsAllowed: premiumUser.plan?.chatsAllowed || 0,
+                validityDays: premiumUser.plan?.validityDays || 0,
+                price: premiumUser.plan?.price || 0
+            },
+            purchaseDate: premiumUser.purchaseDate.toLocaleDateString(),
+            expiryDate: premiumUser.expiryDate.toLocaleDateString(),
+            remainingChats: premiumUser.remainingChats,
+            usedChats: premiumUser.usedChats.length,
+            chatHistory: premiumUser.usedChats, // You might want to format this further
+            isActive: premiumUser.isActive,
+            paymentStatus: premiumUser.payment.status,
+            paymentAmount: premiumUser.payment.amount,
+            paymentCurrency: premiumUser.payment.currency,
+            paymentDate: premiumUser.payment.date?.toLocaleDateString() || 'N/A',
+            paymentMethod: premiumUser.payment.method || 'N/A',
+            paymentTransactionId: premiumUser.payment.transactionId || 'N/A'
+        };
+
+        res.json({
+            success: true,
+            data: formattedData
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch premium user details',
+            error: error.message
+        });
+    }
+};

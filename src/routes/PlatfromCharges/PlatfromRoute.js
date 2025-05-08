@@ -1,7 +1,7 @@
 // routes/plans.js
 import express from 'express';
-import { createPlan, getAllPlans, validatePayment,getUserPlatformCharge } from "../../controllers/Recharge/PlatfromChareges/Platfrom.js";
-
+import { createPlan, getAllPlans, validatePayment, getUserPlatformCharge } from "../../controllers/Recharge/PlatfromChareges/Platfrom.js";
+// import { validateCoupon } from '../../middlewares/Copunmiddleware/ValidateCopun.js';
 // Create a new router instance
 const router = express.Router();
 
