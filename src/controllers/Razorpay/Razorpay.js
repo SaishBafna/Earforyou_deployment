@@ -1,64 +1,117 @@
-import Razorpay from "razorpay";
-import crypto from "crypto";
 import { ChatUserPremium } from "../../models/Subscriptionchat/ChatUserPremium.js";
 import ChatPremium from "../../models/Subscriptionchat/ChatPremium.js";
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+
+// Initialize Razorpay instance with error handling
+let instance;
+try {
+    instance = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+} catch (error) {
+    console.error('Razorpay initialization failed:', error);
+    throw new Error('Payment gateway initialization failed');
+}
 
 export const paymentService = {
     /**
      * Creates a Razorpay order for subscription purchase
      */
     async createOrder(userId, planId) {
-        const plan = await ChatPremium.findById(planId);
-        if (!plan?.isActive) throw new Error("Invalid or inactive plan");
-
-        const order = await instance.orders.create({
-            amount: plan.price * 100,
-            currency: "INR",
-            receipt: `sub_${userId}_${Date.now()}`,
-            notes: { userId, planId }
-        });
-
-        return {
-            id: order.id,
-            amount: order.amount / 100,
-            currency: order.currency,
-            key: process.env.RAZORPAY_KEY_ID,
-            plan: {
-                name: plan.name,
-                chats: plan.chatsAllowed,
-                validity: plan.validityDays
+        try {
+            if (!userId || !planId) {
+                throw new Error("User ID and Plan ID are required");
             }
-        };
+
+            const plan = await ChatPremium.findById(planId);
+            if (!plan) throw new Error("Invalid or inactive plan");
+            if (plan.price <= 0) throw new Error("Invalid plan price");
+
+            // Generate a shorter receipt ID (max 40 chars)
+            const receiptId = `sub_${userId.toString().slice(-12)}_${Date.now().toString().slice(-6)}`;
+
+            const order = await instance.orders.create({
+                amount: Math.round(plan.price * 100), // Convert to paise
+                currency: "INR",
+                receipt: receiptId, // Now guaranteed to be ≤ 40 chars
+                notes: {
+                    userId: userId.toString(),
+                    planId: planId.toString()
+                }
+            });
+
+            if (!order || !order.id) {
+                throw new Error("Failed to create order with Razorpay");
+            }
+
+            return {
+                id: order.id,
+                amount: order.amount / 100, // Convert back to rupees
+                currency: order.currency,
+                key: process.env.RAZORPAY_KEY_ID,
+                plan: {
+                    name: plan.name,
+                    chats: plan.chatsAllowed,
+                    validity: plan.validityDays
+                }
+            };
+        } catch (error) {
+            console.error('Error in createOrder:', error);
+            throw new Error(`Order creation failed: ${error.message}`);
+        }
     },
 
     /**
      * Verifies payment and activates subscription
      */
     async verifyAndActivate(userId, planId, paymentData) {
-        this.validatePayment(paymentData);
+        try {
+            if (!paymentData || !paymentData.razorpay_order_id || !paymentData.razorpay_payment_id || !paymentData.razorpay_signature) {
+                throw new Error("Invalid payment data provided");
+            }
 
-        const plan = await ChatPremium.findById(planId);
-        if (!plan) throw new Error("Plan not found");
+            this.validatePayment(paymentData);
 
-        const paymentDetails = await this.processPayment(paymentData, plan.price);
-        return this.createSubscription(userId, planId, paymentDetails);
+            const plan = await ChatPremium.findById(planId);
+            if (!plan) throw new Error("Plan not found");
+
+            const paymentDetails = await this.processPayment(paymentData, plan.price);
+            return await this.createSubscription(userId, planId, paymentDetails);
+        } catch (error) {
+            console.error('Error in verifyAndActivate:', error);
+            throw error;
+        }
     },
 
     /**
      * Handles Razorpay webhook events
      */
     async handleWebhook(req) {
-        this.verifyWebhookSignature(req);
+        try {
+            this.verifyWebhookSignature(req);
 
-        const { event, payload } = req.body;
-        const handlers = {
-            'payment.captured': this.handlePaymentSuccess,
-            'payment.failed': this.handlePaymentFailure,
-            'order.paid': this.handlePaymentSuccess
-        };
+            const { event, payload } = req.body;
+            if (!event || !payload) {
+                throw new Error("Invalid webhook payload");
+            }
 
-        if (handlers[event]) {
-            await handlers[event].call(this, payload.payment?.entity);
+            const handlers = {
+                'payment.captured': this.handlePaymentSuccess,
+                'payment.failed': this.handlePaymentFailure,
+                'subscription.charged': this.handlePaymentSuccess,
+                'order.paid': this.handlePaymentSuccess
+            };
+
+            if (handlers[event]) {
+                await handlers[event].call(this, payload.payment?.entity || payload.subscription?.entity);
+            } else {
+                console.log(`Unhandled webhook event: ${event}`);
+            }
+        } catch (error) {
+            console.error('Webhook processing error:', error);
+            throw error;
         }
     },
 
@@ -68,13 +121,18 @@ export const paymentService = {
      * Validates payment signature
      */
     validatePayment({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) {
-        const expectedSignature = crypto
-            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-            .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-            .digest('hex');
+        try {
+            const expectedSignature = crypto
+                .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+                .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+                .digest('hex');
 
-        if (expectedSignature !== razorpay_signature) {
-            throw new Error("Payment verification failed: Invalid signature");
+            if (expectedSignature !== razorpay_signature) {
+                throw new Error("Payment verification failed: Invalid signature");
+            }
+        } catch (error) {
+            console.error('Payment validation error:', error);
+            throw new Error("Payment validation failed");
         }
     },
 
@@ -85,9 +143,13 @@ export const paymentService = {
         try {
             const payment = await instance.payments.capture(
                 paymentData.razorpay_payment_id,
-                amount * 100,
+                Math.round(amount * 100), // Convert to paise
                 "INR"
             );
+
+            if (!payment || payment.error) {
+                throw new Error(payment?.error?.description || "Payment capture failed");
+            }
 
             return {
                 status: "success",
@@ -99,13 +161,14 @@ export const paymentService = {
                 completedAt: new Date()
             };
         } catch (error) {
+            console.error('Payment processing error:', error);
             await this.recordFailedPayment(
                 paymentData.razorpay_order_id,
                 paymentData.razorpay_payment_id,
                 amount,
                 error.message
             );
-            throw error;
+            throw new Error(`Payment processing failed: ${error.message}`);
         }
     },
 
@@ -113,44 +176,69 @@ export const paymentService = {
      * Creates subscription record
      */
     async createSubscription(userId, planId, paymentDetails) {
-        const plan = await ChatPremium.findById(planId);
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + plan.validityDays);
-
-        return ChatUserPremium.create({
-            user: userId,
-            plan: planId,
-            expiryDate,
-            remainingChats: plan.chatsAllowed,
-            isActive: paymentDetails.status === "success",
-            payment: {
-                gateway: "RazorPay",
-                currency: "INR",
-                ...paymentDetails
+        try {
+            const plan = await ChatPremium.findById(planId);
+            if (!plan) {
+                throw new Error("Plan not found");
             }
-        });
+
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + plan.validityDays);
+
+            const subscription = await ChatUserPremium.create({
+                user: userId,
+                plan: planId,
+                expiryDate,
+                remainingChats: plan.chatsAllowed,
+                isActive: paymentDetails.status === "success",
+                payment: {
+                    gateway: "RazorPay",
+                    currency: "INR",
+                    ...paymentDetails
+                }
+            });
+
+            if (!subscription) {
+                throw new Error("Failed to create subscription record");
+            }
+
+            return subscription;
+        } catch (error) {
+            console.error('Subscription creation error:', error);
+            throw new Error(`Failed to create subscription: ${error.message}`);
+        }
     },
 
     /**
      * Handles successful payment from webhook
      */
     async handlePaymentSuccess(payment) {
-        const subscription = await ChatUserPremium.findOneAndUpdate(
-            { "payment.transactionId": payment.order_id },
-            {
-                $set: {
-                    "payment.status": "success",
-                    "payment.paymentId": payment.id,
-                    "payment.gatewayResponse": payment,
-                    "payment.completedAt": new Date(),
-                    isActive: true
-                }
-            },
-            { new: true }
-        );
+        try {
+            if (!payment || !payment.order_id) {
+                throw new Error("Invalid payment data in webhook");
+            }
 
-        if (!subscription) {
-            console.warn("Subscription not found for successful payment:", payment.order_id);
+            const subscription = await ChatUserPremium.findOneAndUpdate(
+                { "payment.transactionId": payment.order_id },
+                {
+                    $set: {
+                        "payment.status": "success",
+                        "payment.paymentId": payment.id,
+                        "payment.gatewayResponse": payment,
+                        "payment.completedAt": new Date(),
+                        isActive: true
+                    }
+                },
+                { new: true }
+            );
+
+            if (!subscription) {
+                console.warn("Subscription not found for successful payment:", payment.order_id);
+                // Optionally create a new subscription if not found
+            }
+        } catch (error) {
+            console.error('Error in handlePaymentSuccess:', error);
+            throw error;
         }
     },
 
@@ -158,53 +246,78 @@ export const paymentService = {
      * Handles failed payment from webhook
      */
     async handlePaymentFailure(payment) {
-        await ChatUserPremium.findOneAndUpdate(
-            { "payment.transactionId": payment.order_id },
-            {
-                $set: {
-                    "payment.status": "failed",
-                    "payment.paymentId": payment.id,
-                    "payment.gatewayResponse": payment,
-                    "payment.completedAt": new Date(),
-                    isActive: false
-                }
+        try {
+            if (!payment || !payment.order_id) {
+                throw new Error("Invalid payment data in webhook");
             }
-        );
+
+            await ChatUserPremium.findOneAndUpdate(
+                { "payment.transactionId": payment.order_id },
+                {
+                    $set: {
+                        "payment.status": "failed",
+                        "payment.paymentId": payment.id,
+                        "payment.gatewayResponse": payment,
+                        "payment.completedAt": new Date(),
+                        isActive: false
+                    }
+                }
+            );
+        } catch (error) {
+            console.error('Error in handlePaymentFailure:', error);
+            throw error;
+        }
     },
 
     /**
      * Records failed payment attempt
      */
     async recordFailedPayment(orderId, paymentId, amount, error) {
-        await ChatUserPremium.create({
-            payment: {
-                gateway: "RazorPay",
-                transactionId: orderId,
-                paymentId,
-                amount,
-                currency: "INR",
-                status: "failed",
-                gatewayResponse: { error },
-                completedAt: new Date()
-            },
-            isActive: false
-        });
+        try {
+            await ChatUserPremium.create({
+                payment: {
+                    gateway: "RazorPay",
+                    transactionId: orderId,
+                    paymentId,
+                    amount,
+                    currency: "INR",
+                    status: "failed",
+                    gatewayResponse: { error },
+                    completedAt: new Date()
+                },
+                isActive: false
+            });
+        } catch (error) {
+            console.error('Failed to record failed payment:', error);
+        }
     },
 
     /**
      * Verifies webhook signature
      */
     verifyWebhookSignature(req) {
-        const signature = req.headers["x-razorpay-signature"];
-        const body = JSON.stringify(req.body);
+        try {
+            const signature = req.headers["x-razorpay-signature"];
+            if (!signature) {
+                throw new Error("Missing webhook signature");
+            }
 
-        const expectedSignature = crypto
-            .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
-            .update(body)
-            .digest('hex');
+            const body = req.rawBody || JSON.stringify(req.body);
+            if (!body) {
+                throw new Error("Missing webhook body");
+            }
 
-        if (signature !== expectedSignature) {
-            throw new Error("Invalid webhook signature");
+            const expectedSignature = crypto
+                .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+                .update(body)
+                .digest('hex');
+
+            if (signature !== expectedSignature) {
+                throw new Error("Invalid webhook signature");
+            }
+        } catch (error) {
+            console.error('Webhook verification error:', error);
+            throw error;
         }
     }
 };

@@ -3,36 +3,7 @@ import { paymentService } from '../../controllers/Razorpay/Razorpay.js';
 import { protect } from '../../middlewares/auth/authMiddleware.js'
 const router = express.Router();
 
-/**
- * @swagger
- * /payments/create-order:
- *   post:
- *     summary: Create Razorpay order
- *     tags: [Payments]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               planId:
- *                 type: string
- *                 example: "507f1f77bcf86cd799439011"
- *     responses:
- *       200:
- *         description: Order created successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/RazorpayOrder'
- *       400:
- *         description: Invalid request
- *       401:
- *         description: Unauthorized
- */
+
 router.post('/create-order', protect, async (req, res) => {
     try {
         const { planId } = req.body;
@@ -55,45 +26,6 @@ router.post('/create-order', protect, async (req, res) => {
     }
 });
 
-/**
- * @swagger
- * /payments/verify:
- *   post:
- *     summary: Verify and activate subscription
- *     tags: [Payments]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               planId:
- *                 type: string
- *                 example: "507f1f77bcf86cd799439011"
- *               payment:
- *                 type: object
- *                 properties:
- *                   razorpay_payment_id:
- *                     type: string
- *                   razorpay_order_id:
- *                     type: string
- *                   razorpay_signature:
- *                     type: string
- *     responses:
- *       200:
- *         description: Subscription activated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Subscription'
- *       400:
- *         description: Payment verification failed
- *       401:
- *         description: Unauthorized
- */
 router.post('/verify', protect, async (req, res) => {
     try {
         const { planId, payment } = req.body;
@@ -124,20 +56,6 @@ router.post('/verify', protect, async (req, res) => {
     }
 });
 
-/**
- * @swagger
- * /payments/webhook:
- *   post:
- *     summary: Handle Razorpay webhook events
- *     tags: [Payments]
- *     responses:
- *       200:
- *         description: Webhook processed successfully
- *       400:
- *         description: Invalid webhook signature
- *       500:
- *         description: Internal server error
- */
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     try {
         await paymentService.handleWebhook(req);

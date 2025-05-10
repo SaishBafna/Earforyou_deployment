@@ -168,6 +168,8 @@ app.use("/api/v1/thread", ThreadRoute);
 
 app.use("/api/v1", Mood);
 
+app.use("/api/v1", Razor);
+
 
 app.use("/api/v1", PlatformRoute);
 
