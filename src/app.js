@@ -124,6 +124,7 @@ import Chatrecharge from "./routes/chatRecharge/ChatRechargeRoute.js"
 import Coupon from "./routes/CouponRoutes/couponRoutes.js"
 import Meditation from "./routes/MeditationRoute/MeditationRoute.js"
 import './controllers/Recharge/ChatRecharge/chatjob.js'
+import Razor from './routes/RazorPayRoute/RazorpayRoute.js'
 
 app.get("/", (req, res) => {
   try {
