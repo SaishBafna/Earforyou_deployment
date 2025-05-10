@@ -396,17 +396,26 @@ export const paymentService = {
                 throw new Error("Missing webhook signature");
             }
 
-            const body = req.body.toString(); // Get raw body
-            if (!body) {
+            if (!req.rawBody) {
                 throw new Error("Missing webhook body");
             }
 
+            const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+            if (!webhookSecret) {
+                throw new Error("Webhook secret not configured");
+            }
+
             const expectedSignature = crypto
-                .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
-                .update(body)
+                .createHmac('sha256', webhookSecret)
+                .update(req.rawBody)
                 .digest('hex');
 
             if (signature !== expectedSignature) {
+                console.error('Signature verification failed', {
+                    received: signature,
+                    expected: expectedSignature,
+                    body: req.rawBody.toString('utf8').slice(0, 100) + '...'
+                });
                 throw new Error("Invalid webhook signature");
             }
         } catch (error) {

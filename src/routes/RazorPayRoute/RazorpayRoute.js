@@ -4,6 +4,13 @@ import { protect } from '../../middlewares/auth/authMiddleware.js';
 
 const router = express.Router();
 
+// Middleware to store raw body for webhook verification
+const rawBodySaver = (req, res, buf, encoding) => {
+    if (buf && buf.length) {
+        req.rawBody = buf.toString(encoding || 'utf8');
+    }
+};
+
 router.post('/create-order', protect, async (req, res) => {
     try {
         const { planId } = req.body;
@@ -69,36 +76,39 @@ router.post('/verify', protect, async (req, res) => {
     }
 });
 
-router.post('/razorwebhook', express.raw({ type: 'application/json' }), async (req, res) => {
-    try {
-        // Verify the webhook signature first
-        paymentService.verifyWebhookSignature(req);
+router.post('/razorwebhook',
+    express.raw({
+        type: 'application/json',
+        verify: rawBodySaver
+    }),
+    async (req, res) => {
+        try {
+            // Verify the webhook signature first
+            paymentService.verifyWebhookSignature(req);
 
-        // Parse the raw body after verification
-        const webhookBody = req.body.toString();
-        console.log("webhookBody",webhookBody)
-        req.body = JSON.parse(webhookBody);
-        
+            // Parse the JSON body for processing
+            req.body = JSON.parse(req.rawBody);
 
-        await paymentService.handleWebhook(req);
-        res.sendStatus(200);
-    } catch (error) {
-        console.error('Webhook processing error:', error);
+            await paymentService.handleWebhook(req);
+            res.sendStatus(200);
+        } catch (error) {
+            console.error('Webhook processing error:', error);
 
-        if (error.message.includes('Invalid webhook') ||
-            error.message.includes('Missing webhook') ||
-            error.message.includes('signature')) {
-            return res.status(400).json({
+            if (error.message.includes('Invalid webhook') ||
+                error.message.includes('Missing webhook') ||
+                error.message.includes('signature')) {
+                return res.status(400).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+
+            res.status(500).json({
                 success: false,
-                error: error.message
+                error: 'Internal server error'
             });
         }
-
-        res.status(500).json({
-            success: false,
-            error: 'Internal server error'
-        });
     }
-});
+);
 
 export default router;
