@@ -1,17 +1,38 @@
 import mongoose from "mongoose";
 
-const PaymentStateSchema = new mongoose.Schema({
-  merchantTransactionId: { type: String, required: true, unique: true },
-  amount: { type: Number, required: true }, // in rupees
-  currency: { type: String, default: "INR" },
-  status: { 
+const PaymentDetailsSchema = new mongoose.Schema({
+  gateway: {
     type: String,
-    enum: ["PENDING", "COMPLETED", "FAILED", "REFUNDED", "EXPIRED"],
+    enum: ['PhonePe', 'RazorPay', 'Admin', 'Internal'],
     required: true
   },
-  gatewayResponse: { type: mongoose.Schema.Types.Mixed }, // Raw response from payment gateway
-  initiatedAt: { type: Date, default: Date.now },
-  completedAt: { type: Date }
+  transactionId: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  orderId: String,
+  paymentId: String,
+  signature: String,
+  amount: {
+    type: Number,
+    required: true
+  },
+  currency: {
+    type: String,
+    default: "INR"
+  },
+  status: { 
+    type: String,
+    enum: ["created", "pending", "success", "failed", "refunded"],
+    required: true
+  },
+  gatewayResponse: mongoose.Schema.Types.Mixed,
+  initiatedAt: {
+    type: Date,
+    default: Date.now
+  },
+  completedAt: Date
 }, { _id: false });
 
 const ChatUserPremiumSchema = new mongoose.Schema({
@@ -54,25 +75,22 @@ const ChatUserPremiumSchema = new mongoose.Schema({
     default: true
   },
   payment: {
-    type: PaymentStateSchema,
+    type: PaymentDetailsSchema,
     required: true
   }
 }, { timestamps: true });
 
-// Indexes for better performance
 ChatUserPremiumSchema.index({ user: 1, isActive: 1 });
 ChatUserPremiumSchema.index({ expiryDate: 1 });
-ChatUserPremiumSchema.index({ "payment.merchantTransactionId": 1 }, { unique: true });
+ChatUserPremiumSchema.index({ "payment.transactionId": 1 }, { unique: true });
 
-// Pre-save hook to handle subscription activation
 ChatUserPremiumSchema.pre('save', function(next) {
-  if (this.isModified('payment.status') && this.payment.status === 'COMPLETED') {
+  if (this.isModified('payment.status') && this.payment.status === 'success') {
     this.isActive = true;
   }
   next();
 });
 
-// Static method to create subscription after successful payment
 ChatUserPremiumSchema.statics.createFromPayment = async function(
   userId,
   planId,
@@ -91,10 +109,9 @@ ChatUserPremiumSchema.statics.createFromPayment = async function(
     plan: planId,
     expiryDate,
     remainingChats: plan.chatsAllowed,
-    isActive: paymentData.status === 'COMPLETED',
+    isActive: paymentData.status === 'success',
     payment: paymentData
   });
 };
 
 export const ChatUserPremium = mongoose.model("ChatUserPremium", ChatUserPremiumSchema);
-
