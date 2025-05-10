@@ -1,7 +1,7 @@
 import Razorpay from "razorpay";
 import crypto from "crypto";
-import { ChatUserPremium } from "../../models/Subscriptionchat/ChatUserPremium";
-import ChatPremium from "../../models/Subscriptionchat/ChatPremium";
+import { ChatUserPremium } from "../../models/Subscriptionchat/ChatUserPremium.js";
+import ChatPremium from "../../models/Subscriptionchat/ChatPremium.js";
 
 export const paymentService = {
     /**
