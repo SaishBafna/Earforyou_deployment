@@ -1,27 +1,33 @@
 import express from 'express';
 import { paymentService } from '../../controllers/Razorpay/Razorpay.js';
-import { protect } from '../../middlewares/auth/authMiddleware.js'
-const router = express.Router();
+import { protect } from '../../middlewares/auth/authMiddleware.js';
 
+const router = express.Router();
 
 router.post('/create-order', protect, async (req, res) => {
     try {
         const { planId } = req.body;
 
         if (!planId) {
-            return res.status(400).json({ error: "Plan ID is required" });
+            return res.status(400).json({ 
+                success: false,
+                error: "Plan ID is required" 
+            });
         }
 
         const order = await paymentService.createOrder(req.user._id, planId);
+        
         res.status(201).json({
             success: true,
             data: order
         });
     } catch (error) {
         console.error('Create order error:', error);
-        res.status(400).json({
+        
+        res.status(500).json({
             success: false,
-            error: error.message || "Failed to create order"
+            error: error.message || "Failed to create order",
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
@@ -31,7 +37,10 @@ router.post('/verify', protect, async (req, res) => {
         const { planId, payment } = req.body;
 
         if (!planId || !payment) {
-            return res.status(400).json({ error: "Plan ID and payment data are required" });
+            return res.status(400).json({ 
+                success: false,
+                error: "Plan ID and payment data are required" 
+            });
         }
 
         const subscription = await paymentService.verifyAndActivate(
@@ -51,23 +60,34 @@ router.post('/verify', protect, async (req, res) => {
 
         res.status(statusCode).json({
             success: false,
-            error: error.message || "Payment verification failed"
+            error: error.message || "Payment verification failed",
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
 
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+router.post('/razorwebhook', express.raw({ type: 'application/json' }), async (req, res) => {
     try {
+        // Store the raw body for signature verification
+        req.rawBody = req.body.toString();
+        req.body = JSON.parse(req.rawBody);
+
         await paymentService.handleWebhook(req);
         res.sendStatus(200);
     } catch (error) {
         console.error('Webhook processing error:', error);
 
-        if (error.message.includes('Invalid webhook')) {
-            return res.status(400).send(error.message);
+        if (error.message.includes('Invalid webhook') || error.message.includes('Missing webhook')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
         }
 
-        res.status(500).send('Internal server error');
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
     }
 });
 
