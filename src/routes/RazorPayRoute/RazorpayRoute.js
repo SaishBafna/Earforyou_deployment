@@ -1,6 +1,6 @@
 import express from 'express';
 import { paymentService } from '../../controllers/Razorpay/Razorpay.js';
-import protect from '../../middlewares/auth/authMiddleware.js'
+import { protect } from '../../middlewares/auth/authMiddleware.js'
 const router = express.Router();
 
 /**
