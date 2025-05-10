@@ -35,7 +35,7 @@ export const paymentService = {
             const order = await instance.orders.create({
                 amount: Math.round(plan.price * 100), // Convert to paise
                 currency: "INR",
-                receipt: receiptId, // Now guaranteed to be ≤ 40 chars
+                receipt: receiptId,
                 notes: {
                     userId: userId.toString(),
                     planId: planId.toString()
@@ -77,7 +77,31 @@ export const paymentService = {
             const plan = await ChatPremium.findById(planId);
             if (!plan) throw new Error("Plan not found");
 
-            const paymentDetails = await this.processPayment(paymentData, plan.price);
+            let paymentDetails;
+            try {
+                paymentDetails = await this.processPayment(paymentData, plan.price);
+            } catch (error) {
+                if (error.message.includes('already been captured')) {
+                    // If payment was already captured, verify and create subscription
+                    const payment = await instance.payments.fetch(paymentData.razorpay_payment_id);
+                    if (payment.status === 'captured') {
+                        paymentDetails = {
+                            status: "success",
+                            transactionId: paymentData.razorpay_order_id,
+                            paymentId: paymentData.razorpay_payment_id,
+                            signature: paymentData.razorpay_signature,
+                            amount: plan.price,
+                            gatewayResponse: payment,
+                            completedAt: new Date()
+                        };
+                    } else {
+                        throw error;
+                    }
+                } else {
+                    throw error;
+                }
+            }
+
             return await this.createSubscription(userId, planId, paymentDetails);
         } catch (error) {
             console.error('Error in verifyAndActivate:', error);
@@ -90,8 +114,6 @@ export const paymentService = {
      */
     async handleWebhook(req) {
         try {
-            this.verifyWebhookSignature(req);
-
             const { event, payload } = req.body;
             if (!event || !payload) {
                 throw new Error("Invalid webhook payload");
@@ -185,7 +207,7 @@ export const paymentService = {
             const expiryDate = new Date();
             expiryDate.setDate(expiryDate.getDate() + plan.validityDays);
 
-            const subscription = await ChatUserPremium.create({
+            const subscriptionData = {
                 user: userId,
                 plan: planId,
                 expiryDate,
@@ -196,7 +218,9 @@ export const paymentService = {
                     currency: "INR",
                     ...paymentDetails
                 }
-            });
+            };
+
+            const subscription = await ChatUserPremium.create(subscriptionData);
 
             if (!subscription) {
                 throw new Error("Failed to create subscription record");
@@ -218,24 +242,59 @@ export const paymentService = {
                 throw new Error("Invalid payment data in webhook");
             }
 
-            const subscription = await ChatUserPremium.findOneAndUpdate(
-                { "payment.transactionId": payment.order_id },
-                {
-                    $set: {
-                        "payment.status": "success",
-                        "payment.paymentId": payment.id,
-                        "payment.gatewayResponse": payment,
-                        "payment.completedAt": new Date(),
-                        isActive: true
-                    }
-                },
-                { new: true }
-            );
+            // Check if subscription already exists
+            const existingSub = await ChatUserPremium.findOne({
+                "payment.transactionId": payment.order_id
+            });
 
-            if (!subscription) {
-                console.warn("Subscription not found for successful payment:", payment.order_id);
-                // Optionally create a new subscription if not found
+            if (existingSub) {
+                // Update existing subscription
+                return await ChatUserPremium.findOneAndUpdate(
+                    { "payment.transactionId": payment.order_id },
+                    {
+                        $set: {
+                            "payment.status": "success",
+                            "payment.paymentId": payment.id,
+                            "payment.gatewayResponse": payment,
+                            "payment.completedAt": new Date(),
+                            isActive: true
+                        }
+                    },
+                    { new: true }
+                );
             }
+
+            // Create new subscription if not exists
+            const order = await instance.orders.fetch(payment.order_id);
+            if (!order.notes || !order.notes.userId || !order.notes.planId) {
+                throw new Error("Missing user or plan information in order notes");
+            }
+
+            const plan = await ChatPremium.findById(order.notes.planId);
+            if (!plan) {
+                throw new Error("Plan not found");
+            }
+
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + plan.validityDays);
+
+            return await ChatUserPremium.create({
+                user: order.notes.userId,
+                plan: order.notes.planId,
+                expiryDate,
+                remainingChats: plan.chatsAllowed,
+                isActive: true,
+                payment: {
+                    gateway: "RazorPay",
+                    transactionId: payment.order_id,
+                    paymentId: payment.id,
+                    amount: payment.amount / 100,
+                    currency: payment.currency,
+                    status: "success",
+                    gatewayResponse: payment,
+                    completedAt: new Date()
+                }
+            });
         } catch (error) {
             console.error('Error in handlePaymentSuccess:', error);
             throw error;
@@ -261,7 +320,8 @@ export const paymentService = {
                         "payment.completedAt": new Date(),
                         isActive: false
                     }
-                }
+                },
+                { upsert: true, new: true }
             );
         } catch (error) {
             console.error('Error in handlePaymentFailure:', error);
@@ -274,7 +334,25 @@ export const paymentService = {
      */
     async recordFailedPayment(orderId, paymentId, amount, error) {
         try {
+            const order = await instance.orders.fetch(orderId);
+            if (!order.notes || !order.notes.userId || !order.notes.planId) {
+                throw new Error("Missing user or plan information in order notes");
+            }
+
+            const plan = await ChatPremium.findById(order.notes.planId);
+            if (!plan) {
+                throw new Error("Plan not found");
+            }
+
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + plan.validityDays);
+
             await ChatUserPremium.create({
+                user: order.notes.userId,
+                plan: order.notes.planId,
+                expiryDate,
+                remainingChats: plan.chatsAllowed,
+                isActive: false,
                 payment: {
                     gateway: "RazorPay",
                     transactionId: orderId,
@@ -284,11 +362,27 @@ export const paymentService = {
                     status: "failed",
                     gatewayResponse: { error },
                     completedAt: new Date()
-                },
-                isActive: false
+                }
             });
         } catch (error) {
             console.error('Failed to record failed payment:', error);
+            // Fallback to minimal record if full creation fails
+            try {
+                await ChatUserPremium.create({
+                    payment: {
+                        gateway: "RazorPay",
+                        transactionId: orderId,
+                        paymentId,
+                        amount,
+                        currency: "INR",
+                        status: "failed",
+                        gatewayResponse: { error },
+                        completedAt: new Date()
+                    }
+                });
+            } catch (fallbackError) {
+                console.error('Fallback failed payment recording also failed:', fallbackError);
+            }
         }
     },
 
@@ -302,7 +396,7 @@ export const paymentService = {
                 throw new Error("Missing webhook signature");
             }
 
-            const body = req.rawBody || JSON.stringify(req.body);
+            const body = req.body.toString(); // Get raw body
             if (!body) {
                 throw new Error("Missing webhook body");
             }

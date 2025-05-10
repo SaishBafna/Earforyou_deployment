@@ -9,22 +9,23 @@ router.post('/create-order', protect, async (req, res) => {
         const { planId } = req.body;
 
         if (!planId) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                error: "Plan ID is required" 
+                error: "Plan ID is required"
             });
         }
 
         const order = await paymentService.createOrder(req.user._id, planId);
-        
+
         res.status(201).json({
             success: true,
             data: order
         });
     } catch (error) {
         console.error('Create order error:', error);
-        
-        res.status(500).json({
+
+        const statusCode = error.message.includes('Invalid') ? 400 : 500;
+        res.status(statusCode).json({
             success: false,
             error: error.message || "Failed to create order",
             details: process.env.NODE_ENV === 'development' ? error.stack : undefined
@@ -37,9 +38,9 @@ router.post('/verify', protect, async (req, res) => {
         const { planId, payment } = req.body;
 
         if (!planId || !payment) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 success: false,
-                error: "Plan ID and payment data are required" 
+                error: "Plan ID and payment data are required"
             });
         }
 
@@ -56,7 +57,9 @@ router.post('/verify', protect, async (req, res) => {
     } catch (error) {
         console.error('Payment verification error:', error);
 
-        const statusCode = error.message.includes('verification') ? 400 : 500;
+        const statusCode = error.message.includes('verification') ||
+            error.message.includes('Invalid') ||
+            error.message.includes('already been captured') ? 400 : 500;
 
         res.status(statusCode).json({
             success: false,
@@ -68,16 +71,21 @@ router.post('/verify', protect, async (req, res) => {
 
 router.post('/razorwebhook', express.raw({ type: 'application/json' }), async (req, res) => {
     try {
-        // Store the raw body for signature verification
-        req.rawBody = req.body.toString();
-        req.body = JSON.parse(req.rawBody);
+        // Verify the webhook signature first
+        paymentService.verifyWebhookSignature(req);
+
+        // Parse the raw body after verification
+        const webhookBody = req.body.toString();
+        req.body = JSON.parse(webhookBody);
 
         await paymentService.handleWebhook(req);
         res.sendStatus(200);
     } catch (error) {
         console.error('Webhook processing error:', error);
 
-        if (error.message.includes('Invalid webhook') || error.message.includes('Missing webhook')) {
+        if (error.message.includes('Invalid webhook') ||
+            error.message.includes('Missing webhook') ||
+            error.message.includes('signature')) {
             return res.status(400).json({
                 success: false,
                 error: error.message
