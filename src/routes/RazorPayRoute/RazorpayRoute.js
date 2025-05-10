@@ -76,7 +76,9 @@ router.post('/razorwebhook', express.raw({ type: 'application/json' }), async (r
 
         // Parse the raw body after verification
         const webhookBody = req.body.toString();
+        console.log("webhookBody",webhookBody)
         req.body = JSON.parse(webhookBody);
+        
 
         await paymentService.handleWebhook(req);
         res.sendStatus(200);
