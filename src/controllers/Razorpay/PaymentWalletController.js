@@ -5,17 +5,18 @@ export const paymentController = {
      */
     async createOrder(req, res) {
         try {
-            const { userId, planId, couponCode } = req.body;
-            
+            const { planId, couponCode } = req.body;
+            const userId = req.user._id;
+
             if (!userId || !planId) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: "User ID and Plan ID are required" 
+                return res.status(400).json({
+                    success: false,
+                    message: "User ID and Plan ID are required"
                 });
             }
 
             const order = await paymentService.createOrder(userId, planId, couponCode);
-            
+
             return res.status(200).json({
                 success: true,
                 message: "Order created successfully",
@@ -37,18 +38,18 @@ export const paymentController = {
         try {
             const { userId, planId, couponCode } = req.body;
             const paymentData = req.body.paymentData;
-            
+
             if (!userId || !planId || !paymentData) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: "User ID, Plan ID and payment data are required" 
+                return res.status(400).json({
+                    success: false,
+                    message: "User ID, Plan ID and payment data are required"
                 });
             }
 
             const result = await paymentService.verifyAndActivate(
-                userId, 
-                planId, 
-                paymentData, 
+                userId,
+                planId,
+                paymentData,
                 couponCode
             );
 
@@ -68,7 +69,7 @@ export const paymentController = {
             });
         } catch (error) {
             console.error('Error in verifyPayment controller:', error);
-            
+
             // Try to send error notification if we have userId
             if (req.body.userId) {
                 try {
@@ -81,7 +82,7 @@ export const paymentController = {
                     console.error('Failed to send error notification:', notificationError);
                 }
             }
-            
+
             return res.status(500).json({
                 success: false,
                 message: error.message || "Failed to verify payment"

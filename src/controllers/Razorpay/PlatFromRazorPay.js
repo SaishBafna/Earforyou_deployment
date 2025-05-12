@@ -2,10 +2,11 @@
 import { createRazorpayOrder, verifyRazorpayPayment } from './utils/RazorpayUtils.js';
 import PlatformCharges from '../../models/Wallet/PlatfromCharges/Platfrom.js';
 import MyPlan from '../../models/Wallet/PlatfromCharges/myPlanSchema.js';
-import { CouponUsage,Coupon } from '../../models/CouponSystem/couponModel.js';
+import { CouponUsage, Coupon } from '../../models/CouponSystem/couponModel.js';
+import User from '../../models/Users.js';
 export const createOrder = async (req, res) => {
-    const { userId, planId, couponCode } = req.body;
-
+    const { planId, couponCode } = req.body;
+    const userId = req.user._id;
     try {
         // Validate input parameters
         if (!userId || !planId) {
