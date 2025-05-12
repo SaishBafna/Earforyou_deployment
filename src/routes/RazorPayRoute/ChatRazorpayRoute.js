@@ -7,37 +7,75 @@ import { ApiResponse } from '../../utils/ApiResponse.js';
 const router = express.Router();
 
 // Middleware to store raw body for webhook verification
-const rawBodySaver = function (req, res, buf, encoding) {
+const rawBodyMiddleware = (req, res, buf, encoding) => {
     if (buf && buf.length) {
-        req.body = buf.toString(encoding || 'utf8');
+        req.rawBody = buf; // Store raw buffer for signature verification
     }
 };
 
-// Apply the raw body middleware specifically for the webhook route
-const webhookRawBodyParser = express.raw({
-    type: 'application/json',
-    verify: rawBodySaver
-});
+// Apply raw body middleware for webhook route
+router.post(
+    '/razorwebhook',
+    express.raw({ type: 'application/json', verify: rawBodyMiddleware }),
+    async (req, res) => {
+        try {
+            // Log request details for debugging
+            console.log('Webhook headers:', req.headers);
+            console.log('Webhook raw body:', req.rawBody.toString('utf8'));
+
+            // Verify we have the raw body
+            if (!req.rawBody) {
+                throw new ApiError(400, 'Missing or invalid webhook body');
+            }
+
+            // Verify webhook signature
+            await paymentService.verifyWebhookSignature(req);
+
+            // Parse the JSON body for processing
+            let parsedBody;
+            try {
+                parsedBody = JSON.parse(req.rawBody.toString('utf8'));
+            } catch (parseError) {
+                console.error('JSON parse error:', parseError);
+                throw new ApiError(400, 'Invalid JSON in webhook body');
+            }
+
+            // Attach parsed body to request for further processing
+            req.body = parsedBody;
+
+            await paymentService.handleWebhook(req);
+            res.status(200).json(
+                new ApiResponse(200, null, 'Webhook processed successfully')
+            );
+        } catch (error) {
+            console.error('Webhook processing error:', error);
+            res.status(error.statusCode || 500).json({
+                success: false,
+                error: error.message || 'Webhook processing failed',
+            });
+        }
+    }
+);
 
 router.post('/create-order', protect, async (req, res) => {
     try {
         const { planId, couponCode } = req.body;
 
         if (!planId) {
-            throw new ApiError(400, "Plan ID is required");
+            throw new ApiError(400, 'Plan ID is required');
         }
 
         const order = await paymentService.createOrder(req.user._id, planId, couponCode);
 
         res.status(201).json(
-            new ApiResponse(201, order, "Order created successfully")
+            new ApiResponse(201, order, 'Order created successfully')
         );
     } catch (error) {
         console.error('Create order error:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            error: error.message || "Failed to create order",
-            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            error: error.message || 'Failed to create order',
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
         });
     }
 });
@@ -47,7 +85,7 @@ router.post('/verify', protect, async (req, res) => {
         const { planId, payment, couponCode } = req.body;
 
         if (!planId || !payment) {
-            throw new ApiError(400, "Plan ID and payment data are required");
+            throw new ApiError(400, 'Plan ID and payment data are required');
         }
 
         const subscription = await paymentService.verifyAndActivate(
@@ -58,49 +96,14 @@ router.post('/verify', protect, async (req, res) => {
         );
 
         res.status(200).json(
-            new ApiResponse(200, subscription, "Payment verified and subscription activated")
+            new ApiResponse(200, subscription, 'Payment verified and subscription activated')
         );
     } catch (error) {
         console.error('Payment verification error:', error);
         res.status(error.statusCode || 500).json({
             success: false,
-            error: error.message || "Payment verification failed",
-            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        });
-    }
-});
-
-router.post('/razorwebhook', async (req, res) => {
-    try {
-        // Log request details for debugging
-        console.log('Webhook headers:', req.headers);
-        console.log('Webhook raw body:', req.body);
-
-        // Verify we have the raw body
-        if (!req.body) {
-            throw new ApiError(400, "Missing or invalid webhook body");
-        }
-
-        // Verify webhook signature first
-        paymentService.verifyWebhookSignature(req);
-
-        // Parse the JSON body for processing
-        try {
-            req.body = req.body;
-        } catch (parseError) {
-            console.error('JSON parse error:', parseError);
-            throw new ApiError(400, "Invalid JSON in webhook body");
-        }
-
-        await paymentService.handleWebhook(req);
-        res.status(200).json(
-            new ApiResponse(200, null, "Webhook processed successfully")
-        );
-    } catch (error) {
-        console.error('Webhook processing error:', error);
-        res.status(error.statusCode || 500).json({
-            success: false,
-            error: error.message || "Webhook processing failed"
+            error: error.message || 'Payment verification failed',
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
         });
     }
 });
