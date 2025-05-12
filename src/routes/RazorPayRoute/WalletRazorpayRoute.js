@@ -1,5 +1,5 @@
 import express from 'express';
-import { paymentService } from '../../controllers/Razorpay/Wallet';
+import { paymentService } from '../../controllers/Razorpay/Wallet.js';
 import { protect } from '../../middlewares/auth/authMiddleware.js';
 const router = express.Router();
 
@@ -80,7 +80,7 @@ const router = express.Router();
  *       500:
  *         description: Internal server error
  */
-router.post('/create-order', protect, async (req, res) => {
+router.post('/wallet/create-order', protect, async (req, res) => {
   try {
     const { planId, couponCode } = req.body;
     const userId = req.user._id; // From auth middleware
@@ -89,8 +89,8 @@ router.post('/create-order', protect, async (req, res) => {
     res.json(order);
   } catch (error) {
     console.error('Error in create-order:', error);
-    res.status(error.statusCode || 500).json({ 
-      error: error.message || 'Failed to create order' 
+    res.status(error.statusCode || 500).json({
+      error: error.message || 'Failed to create order'
     });
   }
 });
@@ -152,23 +152,23 @@ router.post('/create-order', protect, async (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.post('/verify', protect, async (req, res) => {
+router.post('/wallet/verify', protect, async (req, res) => {
   try {
     const { planId, paymentData, couponCode } = req.body;
     const userId = req.user._id;
 
     const result = await paymentService.verifyAndActivate(
-      userId, 
-      planId, 
-      paymentData, 
+      userId,
+      planId,
+      paymentData,
       couponCode
     );
 
     res.json(result);
   } catch (error) {
     console.error('Error in payment verification:', error);
-    res.status(error.statusCode || 500).json({ 
-      error: error.message || 'Payment verification failed' 
+    res.status(error.statusCode || 500).json({
+      error: error.message || 'Payment verification failed'
     });
   }
 });
@@ -193,14 +193,14 @@ router.post('/verify', protect, async (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+router.post('/wallet/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   try {
     await paymentService.handleWebhook(req);
     res.status(200).json({ status: 'success' });
   } catch (error) {
     console.error('Error in webhook handler:', error);
-    res.status(error.statusCode || 500).json({ 
-      error: error.message || 'Webhook processing failed' 
+    res.status(error.statusCode || 500).json({
+      error: error.message || 'Webhook processing failed'
     });
   }
 });

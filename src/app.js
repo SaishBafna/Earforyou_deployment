@@ -125,6 +125,8 @@ import Coupon from "./routes/CouponRoutes/couponRoutes.js"
 import Meditation from "./routes/MeditationRoute/MeditationRoute.js"
 import './controllers/Recharge/ChatRecharge/chatjob.js'
 import Razor from './routes/RazorPayRoute/ChatRazorpayRoute.js'
+import RazorWallet from './routes/RazorPayRoute/WalletRazorpayRoute.js'
+import RazorPaltFrom from './routes/RazorPayRoute/PlatfromRazorpayroute.js'
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");

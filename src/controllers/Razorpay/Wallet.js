@@ -1,8 +1,8 @@
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
-import Wallet from '../../models/Wallet/Wallet';
-import SubscriptionPlan from '../../models/Subscription/Subscription';
-import { Coupon, CouponUsage } from '../../models/Coupon/Coupon';
+import Wallet from '../../models/Wallet/Wallet.js';
+import SubscriptionPlan from '../../models/Subscription/Subscription.js';
+import { Coupon, CouponUsage } from '../../models/Coupon/Coupon.js';
 
 // Initialize Razorpay instance with error handling
 let instance;
