@@ -9,7 +9,7 @@ const router = express.Router();
 // Middleware to store raw body for webhook verification
 const rawBodyMiddleware = (req, res, buf, encoding) => {
     if (buf && buf.length) {
-        req.body = buf; // Store raw buffer for signature verification
+        req.rawBody = buf; // Store raw buffer for signature verification
     }
 };
 
@@ -21,10 +21,10 @@ router.post(
         try {
             // Log request details for debugging
             console.log('Webhook headers:', req.headers);
-            console.log('Webhook raw body:', req.body.toString('utf8'));
+            console.log('Webhook raw body:', req.rawBody.toString('utf8'));
 
             // Verify we have the raw body
-            if (!req.body) {
+            if (!req.rawBody) {
                 throw new ApiError(400, 'Missing or invalid webhook body');
             }
 
@@ -34,7 +34,7 @@ router.post(
             // Parse the JSON body for processing
             let parsedBody;
             try {
-                parsedBody = JSON.parse(req.body.toString('utf8'));
+                parsedBody = JSON.parse(req.rawBody.toString('utf8'));
             } catch (parseError) {
                 console.error('JSON parse error:', parseError);
                 throw new ApiError(400, 'Invalid JSON in webhook body');
