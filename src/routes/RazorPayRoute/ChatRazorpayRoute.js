@@ -74,10 +74,10 @@ router.post('/razorwebhook', webhookRawBodyParser, async (req, res) => {
     try {
         // Log request details for debugging
         console.log('Webhook headers:', req.headers);
-        console.log('Webhook raw body:', req.rawBody);
+        console.log('Webhook raw body:', req.body);
 
         // Verify we have the raw body
-        if (!req.rawBody) {
+        if (!req.body) {
             throw new ApiError(400, "Missing or invalid webhook body");
         }
 
@@ -86,7 +86,7 @@ router.post('/razorwebhook', webhookRawBodyParser, async (req, res) => {
 
         // Parse the JSON body for processing
         try {
-            req.body = JSON.parse(req.rawBody);
+            req.body = JSON.parse(req.body);
         } catch (parseError) {
             console.error('JSON parse error:', parseError);
             throw new ApiError(400, "Invalid JSON in webhook body");
