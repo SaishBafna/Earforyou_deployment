@@ -301,40 +301,65 @@ export const paymentService = {
      * @param {number} amount - Amount to capture
      * @returns {Promise<Object>} Payment details
      */
-    async processPayment(paymentData, amount) {
-        try {
-            const payment = await instance.payments.capture(
-                paymentData.razorpay_payment_id,
-                Math.round(amount * 100), // Convert to paise
-                'INR'
-            );
+   async processPayment(paymentData, amount) {
+    try {
+        // First, fetch the payment details to check its status
+        const payment = await instance.payments.fetch(paymentData.razorpay_payment_id);
 
-            if (!payment || payment.error) {
-                const errorDescription = payment?.error?.description || 'Payment capture failed';
-                throw new ApiError(400, errorDescription);
-            }
+        if (!payment) {
+            throw new ApiError(400, 'Payment not found');
+        }
 
+        // Check if payment is already captured
+        if (payment.status === 'captured') {
             return {
                 status: 'success',
                 transactionId: paymentData.razorpay_order_id,
                 paymentId: payment.id,
                 signature: paymentData.razorpay_signature,
-                amount,
+                amount: payment.amount / 100, // Convert back from paise
                 gatewayResponse: payment,
-                completedAt: new Date(),
+                completedAt: new Date(payment.created_at * 1000),
+                alreadyCaptured: true
             };
-        } catch (error) {
-            console.error('Payment processing error:', error);
-            const errorMessage = error.message || 'Unknown payment processing error';
-            await this.recordFailedPayment(
-                paymentData.razorpay_order_id,
-                paymentData.razorpay_payment_id,
-                amount,
-                errorMessage
-            );
-            throw new ApiError(400, `Payment processing failed: ${errorMessage}`);
         }
-    },
+
+        // If not captured, proceed with capture
+        if (payment.status === 'authorized') {
+            const capturedPayment = await instance.payments.capture(
+                paymentData.razorpay_payment_id,
+                Math.round(amount * 100), // Convert to paise
+                'INR'
+            );
+
+            return {
+                status: 'success',
+                transactionId: paymentData.razorpay_order_id,
+                paymentId: capturedPayment.id,
+                signature: paymentData.razorpay_signature,
+                amount,
+                gatewayResponse: capturedPayment,
+                completedAt: new Date()
+            };
+        }
+
+        // Handle other statuses (failed, etc.)
+        throw new ApiError(400, `Payment is in invalid state: ${payment.status}`);
+
+    } catch (error) {
+        console.error('Payment processing error:', error);
+        
+        const errorMessage = error.message || 'Unknown payment processing error';
+        await this.recordFailedPayment(
+            paymentData.razorpay_order_id,
+            paymentData.razorpay_payment_id,
+            amount,
+            errorMessage
+        );
+        
+        throw new ApiError(400, `Payment processing failed: ${errorMessage}`);
+    }
+}
 
     /**
      * Creates subscription record
