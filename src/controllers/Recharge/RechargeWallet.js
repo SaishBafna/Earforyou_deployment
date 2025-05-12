@@ -13,14 +13,19 @@ import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 
 
 
-// export const validatePayment = async (req, res) => {
-//   const { merchantTransactionId, userId, planId } = req.query;
 
+// export const validatePayment = async (req, res) => {
+//   const { merchantTransactionId, userId, planId, couponCode } = req.query;
+//   let coupon = null;
+//   if (couponCode) {
+//     coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+//   }
 //   if (!merchantTransactionId || !userId || !planId) {
 //     return res.status(400).send("Invalid transaction ID, user ID, or plan ID");
 //   }
 
 //   try {
+//     // Verify payment status with PhonePe
 //     const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
 //     const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
 //     const sha256Hash = sha256(stringToHash);
@@ -52,6 +57,87 @@ import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 
 //     const { price, talkTime } = plan;
 
+//     // Initialize coupon variables
+//     let couponDetails = null;
+//     let bonusTalkTime = 0;
+//     let finalTalkTime = talkTime;
+
+//     // Process coupon if provided
+//     if (coupon) {
+//       try {
+//         console.log("Processing coupon code:", couponCode);
+
+//         if (!coupon) {
+//           throw new Error("Coupon not found");
+//         }
+
+//         // Validate coupon
+//         if (!coupon.isUsable) {
+//           throw new Error("Coupon is not usable (expired, inactive, or max uses reached)");
+//         }
+
+//         // Check if user has already used this coupon
+//         if (!coupon.isReusable) {
+//           const existingUsage = await CouponUsage.findOne({
+//             coupon: coupon._id,
+//             user: userId
+//           });
+
+//           if (existingUsage) {
+//             throw new Error("You have already used this coupon");
+//           }
+//         }
+
+//         // Check minimum order amount if applicable
+//         if (coupon.minimumOrderAmount && price < coupon.minimumOrderAmount) {
+//           throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
+//         }
+
+//         // Apply coupon discount based on type
+//         if (coupon.discountType === 'percentage') {
+//           bonusTalkTime = Math.floor(talkTime * (coupon.discountValue / 100));
+//           finalTalkTime = talkTime + bonusTalkTime;
+//           console.log(`Applied ${coupon.discountValue}% coupon, added ${bonusTalkTime} bonus minutes`);
+//         } else if (coupon.discountType === 'fixed') {
+//           // For fixed amount coupons, convert the discount to equivalent talk time
+//           const talkTimePerRupee = talkTime / price;
+//           bonusTalkTime = Math.floor(coupon.discountValue * talkTimePerRupee);
+//           finalTalkTime = talkTime + bonusTalkTime;
+//           console.log(`Applied fixed coupon worth ₹${coupon.discountValue}, added ${bonusTalkTime} bonus minutes`);
+//         } else if (coupon.discountType === 'free_days') {
+//           // For free days, we'll add extra days' worth of talk time
+//           const dailyTalkTime = talkTime / 30; // Assuming 30-day plan
+//           bonusTalkTime = Math.floor(coupon.discountValue * dailyTalkTime);
+//           finalTalkTime = talkTime + bonusTalkTime;
+//           console.log(`Added ${coupon.discountValue} free days, which equals ${bonusTalkTime} bonus minutes`);
+//         }
+
+//         // Record coupon usage
+
+
+//         // Update coupon usage count
+//         coupon.currentUses += 1;
+//         await coupon.save();
+
+//         couponDetails = {
+//           code: coupon.code,
+//           discountType: coupon.discountType,
+//           discountValue: coupon.discountValue,
+//           bonusTalkTime: bonusTalkTime
+//         };
+
+//       } catch (couponError) {
+//         console.log("Coupon processing error:", couponError.message);
+//         // Continue without coupon but inform the user
+//         await sendNotification(
+//           userId,
+//           'Coupon Not Applied',
+//           `Coupon could not be applied: ${couponError.message}. Payment processed without coupon.`
+//         );
+//       }
+//     }
+
+//     // Find or create wallet
 //     let wallet = await Wallet.findOne({ userId });
 //     if (!wallet) {
 //       wallet = await Wallet.create({
@@ -74,7 +160,8 @@ import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 //       rechargeMethod: "PhonePe",
 //       rechargeDate: new Date(),
 //       transactionId: merchantTransactionId,
-//       planId: planId
+//       planId: planId,
+//       couponDetails: couponDetails || undefined
 //     };
 
 //     // Check if this transaction already exists in wallet
@@ -99,20 +186,52 @@ import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 //     switch (state) {
 //       case 'COMPLETED':
 //         if (code === 'PAYMENT_SUCCESS') {
+
 //           // Only add balance if this is a new completion
 //           if (!existingTransaction || existingTransaction.state !== 'COMPLETED') {
-//             const newBalance = wallet.balance + talkTime;
+//             const newBalance = wallet.balance + finalTalkTime;
 //             wallet.balance = newBalance;
-//             wallet.talkTime = (wallet.talkTime || 0) + talkTime;
+//             wallet.talkTime = (wallet.talkTime || 0) + finalTalkTime;
+
+//             // Add plan to wallet
+//             wallet.plan.push({ planId });
 //             await wallet.save();
+
+
+//             if (coupon) {
+//               try {
+//                 await CouponUsage.create({
+//                   coupon: coupon._id,
+//                   user: userId,
+//                   discountApplied: bonusTalkTime,
+//                   transactionId: merchantTransactionId,
+//                   planId: planId,
+//                   appliedAt: new Date()
+//                 });
+//               } catch (couponUsageError) {
+//                 console.error("Failed to create coupon usage record:", couponUsageError);
+//                 // Don't fail the whole transaction if coupon usage recording fails
+//               }
+//             }
+
+//             let notificationMessage = `Your wallet has been credited with ₹${transactionRecord.amount}. ` +
+//               `New balance: ₹${wallet.balance}. ` +
+//               `You have been credited with ${finalTalkTime} minutes of talk time`;
+
+//             if (coupon) {
+//               notificationMessage += ` (including ${bonusTalkTime} bonus minutes from coupon ${couponDetails.code})`;
+//             }
+
+//             notificationMessage += `.`;
 
 //             await sendNotification(
 //               userId,
 //               "Payment Successful",
-//               `Your wallet has been credited with ₹${transactionRecord.amount}. ` +
-//               `New balance: ₹${wallet.balance}. ` +
-//               `You have been credited with ${talkTime} minutes of talk time.`
+//               notificationMessage
 //             );
+
+
+
 //           }
 
 //           return res.status(200).send({
@@ -121,14 +240,18 @@ import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 //             data: {
 //               balance: wallet.balance,
 //               talkTime: wallet.talkTime,
-//               transaction: transactionRecord
+//               transaction: transactionRecord,
+//               couponApplied: couponDetails,
+//               bonusTalkTime: bonusTalkTime
 //             }
 //           });
+
+
 //         }
 //         break;
 
 //       case 'PENDING':
-//         const screen = "dashboard"
+//         const screen = "dashboard";
 //         await sendNotification(
 //           userId,
 //           "Payment Pending",
@@ -196,13 +319,14 @@ import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 // };
 
 
-
 export const validatePayment = async (req, res) => {
   const { merchantTransactionId, userId, planId, couponCode } = req.query;
   let coupon = null;
+
   if (couponCode) {
     coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
   }
+
   if (!merchantTransactionId || !userId || !planId) {
     return res.status(400).send("Invalid transaction ID, user ID, or plan ID");
   }
@@ -230,7 +354,7 @@ export const validatePayment = async (req, res) => {
     }
 
     const { code, data } = response.data;
-    const { state, amount } = data;
+    const { state, amount, paymentInstrument } = data;
 
     // Fetch the subscription plan
     const plan = await SubscriptionPlan.findById(planId);
@@ -295,9 +419,6 @@ export const validatePayment = async (req, res) => {
           console.log(`Added ${coupon.discountValue} free days, which equals ${bonusTalkTime} bonus minutes`);
         }
 
-        // Record coupon usage
-
-
         // Update coupon usage count
         coupon.currentUses += 1;
         await coupon.save();
@@ -326,7 +447,6 @@ export const validatePayment = async (req, res) => {
       wallet = await Wallet.create({
         userId,
         balance: 0,
-        talkTime: 0,
         currency: 'inr',
         recharges: [],
         deductions: [],
@@ -335,51 +455,58 @@ export const validatePayment = async (req, res) => {
       });
     }
 
-    const transactionRecord = {
-      amount: amount ? amount / 100 : 0,
-      merchantTransactionId,
-      state: state || 'PENDING',
-      responseCode: code,
-      rechargeMethod: "PhonePe",
-      rechargeDate: new Date(),
+    // Prepare payment details according to the schema
+    const paymentDetails = {
+      gateway: 'PhonePe',
       transactionId: merchantTransactionId,
-      planId: planId,
-      couponDetails: couponDetails || undefined
+      orderId: data.merchantId, // PhonePe's merchant ID
+      paymentId: paymentInstrument?.utr || merchantTransactionId,
+      amount: amount ? amount / 100 : 0,
+      currency: 'INR',
+      status: state.toLowerCase() === 'completed' ? 'success' : state.toLowerCase(),
+      gatewayResponse: data,
+      initiatedAt: new Date(data.requestTimestamp || Date.now()),
+      completedAt: state.toLowerCase() === 'completed' ? new Date() : undefined
     };
 
     // Check if this transaction already exists in wallet
-    const existingTransaction = wallet.recharges.find(
-      t => t.merchantTransactionId === merchantTransactionId
+    const existingTransactionIndex = wallet.recharges.findIndex(
+      t => t.payment?.transactionId === merchantTransactionId
     );
 
-    if (existingTransaction) {
+    if (existingTransactionIndex !== -1) {
       // Update existing transaction if state changed
-      if (existingTransaction.state !== state) {
-        existingTransaction.state = state;
-        existingTransaction.responseCode = code;
-        await wallet.save();
-      }
+      wallet.recharges[existingTransactionIndex].payment = paymentDetails;
+      wallet.recharges[existingTransactionIndex].amount = paymentDetails.amount;
+      wallet.recharges[existingTransactionIndex].rechargeDate = paymentDetails.initiatedAt;
     } else {
       // Add new transaction record
-      wallet.recharges.push(transactionRecord);
-      await wallet.save();
+      wallet.recharges.push({
+        amount: paymentDetails.amount,
+        payment: paymentDetails,
+        rechargeDate: paymentDetails.initiatedAt
+      });
     }
 
     // Handle different payment states
     switch (state) {
       case 'COMPLETED':
         if (code === 'PAYMENT_SUCCESS') {
-
           // Only add balance if this is a new completion
-          if (!existingTransaction || existingTransaction.state !== 'COMPLETED') {
-            const newBalance = wallet.balance + finalTalkTime;
-            wallet.balance = newBalance;
-            wallet.talkTime = (wallet.talkTime || 0) + finalTalkTime;
+          if (existingTransactionIndex === -1 ||
+            wallet.recharges[existingTransactionIndex].payment.status !== 'success') {
 
-            // Add plan to wallet
-            wallet.plan.push({ planId });
+            // Update wallet balance (assuming amount is in INR)
+            wallet.balance += paymentDetails.amount;
+            wallet.lastUpdated = new Date();
+
+            // Add plan to wallet if not already present
+            const planExists = wallet.plan.some(p => p.planId && p.planId.toString() === planId.toString());
+            if (!planExists) {
+              wallet.plan.push({ planId });
+            }
+
             await wallet.save();
-
 
             if (coupon) {
               try {
@@ -393,19 +520,15 @@ export const validatePayment = async (req, res) => {
                 });
               } catch (couponUsageError) {
                 console.error("Failed to create coupon usage record:", couponUsageError);
-                // Don't fail the whole transaction if coupon usage recording fails
               }
             }
 
-            let notificationMessage = `Your wallet has been credited with ₹${transactionRecord.amount}. ` +
-              `New balance: ₹${wallet.balance}. ` +
-              `You have been credited with ${finalTalkTime} minutes of talk time`;
+            let notificationMessage = `Your wallet has been credited with ₹${paymentDetails.amount}. ` +
+              `New balance: ₹${wallet.balance}.`;
 
             if (coupon) {
-              notificationMessage += ` (including ${bonusTalkTime} bonus minutes from coupon ${couponDetails.code})`;
+              notificationMessage += ` You received ${finalTalkTime} minutes (including ${bonusTalkTime} bonus minutes from coupon ${couponDetails.code})`;
             }
-
-            notificationMessage += `.`;
 
             await sendNotification(
               userId,
@@ -413,53 +536,48 @@ export const validatePayment = async (req, res) => {
               notificationMessage
             );
 
-
-
+            return res.status(200).send({
+              success: true,
+              message: "Payment validated and wallet updated",
+              data: {
+                balance: wallet.balance,
+                transaction: paymentDetails,
+                couponApplied: couponDetails,
+                bonusTalkTime: bonusTalkTime
+              }
+            });
           }
-
-          return res.status(200).send({
-            success: true,
-            message: "Payment validated and wallet updated",
-            data: {
-              balance: wallet.balance,
-              talkTime: wallet.talkTime,
-              transaction: transactionRecord,
-              couponApplied: couponDetails,
-              bonusTalkTime: bonusTalkTime
-            }
-          });
-
-
         }
         break;
 
       case 'PENDING':
-        const screen = "dashboard";
         await sendNotification(
           userId,
           "Payment Pending",
-          `Your payment of ₹${transactionRecord.amount} is pending. ` +
+          `Your payment of ₹${paymentDetails.amount} is pending. ` +
           `Transaction ID: ${merchantTransactionId}.`,
-          screen
+          "dashboard"
         );
+        await wallet.save();
         return res.status(200).send({
           success: true,
           message: "Payment is pending",
-          data: { transaction: transactionRecord }
+          data: { transaction: paymentDetails }
         });
 
       case 'FAILED':
         await sendNotification(
           userId,
           "Payment Failed",
-          `Your payment of ₹${transactionRecord.amount} failed. ` +
+          `Your payment of ₹${paymentDetails.amount} failed. ` +
           `Transaction ID: ${merchantTransactionId}.`,
           "Wallet_detail"
         );
+        await wallet.save();
         return res.status(400).send({
           success: false,
           message: "Payment failed",
-          data: { transaction: transactionRecord }
+          data: { transaction: paymentDetails }
         });
 
       default:
@@ -470,17 +588,17 @@ export const validatePayment = async (req, res) => {
           `Transaction ID: ${merchantTransactionId}. ` +
           `Please contact support.`
         );
+        await wallet.save();
         return res.status(400).send({
           success: false,
           message: "Unknown payment status",
-          data: { transaction: transactionRecord }
+          data: { transaction: paymentDetails }
         });
     }
 
   } catch (error) {
     console.error("Error in payment validation:", error);
 
-    // Try to send a notification about the error
     try {
       await sendNotification(
         userId,
@@ -500,8 +618,6 @@ export const validatePayment = async (req, res) => {
     });
   }
 };
-
-
 
 export const getRechargeHistory = async (req, res) => {
   try {
