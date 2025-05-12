@@ -714,7 +714,7 @@ export const paymentService = {
 
             const expectedSignature = crypto
                 .createHmac('sha256', webhookSecret)
-                .update(rawBody)
+                .update(body)
                 .digest('hex');
 
             if (signature !== expectedSignature) {
