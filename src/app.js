@@ -171,6 +171,9 @@ app.use("/api/v1", Mood);
 
 app.use("/api/v1", Razor);
 
+app.use("/api/v1", RazorWallet);
+app.use("/api/v1", RazorPaltFrom);
+
 
 app.use("/api/v1", PlatformRoute);
 
