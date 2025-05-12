@@ -16,7 +16,6 @@ import { removeLocalFile } from "../../../src/utils/helpers.js";
  * @route POST /api/v1/messages/:messageId/read
  */
 
-
 const markMessageAsRead = asyncHandler(async (req, res) => {
   const { messageId } = req.params;
 
