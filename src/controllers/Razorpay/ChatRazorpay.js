@@ -253,7 +253,6 @@ export const paymentService = {
                     throw new ApiError(400, "Invalid coupon type");
             }
 
-            // Update coupon usage count (we'll finalize this after successful payment)
             return {
                 coupon,
                 finalAmount,
@@ -263,7 +262,6 @@ export const paymentService = {
         } catch (error) {
             console.error('Coupon processing error:', error);
             if (error instanceof ApiError) {
-                // Send notification to user about coupon error
                 await sendNotification(
                     userId,
                     'Coupon Error',
@@ -354,32 +352,31 @@ export const paymentService = {
             const expiryDate = new Date();
             expiryDate.setDate(expiryDate.getDate() + plan.validityDays + extendedDays);
 
-            // Create payment record
+            // Create payment record according to schema
             const paymentRecord = {
                 gateway: "RazorPay",
                 transactionId: paymentDetails.transactionId,
+                orderId: paymentDetails.transactionId, // Using transactionId as orderId if not provided
                 paymentId: paymentDetails.paymentId,
+                signature: paymentDetails.signature,
                 amount: paymentDetails.amount,
-                originalAmount: paymentDetails.originalAmount || paymentDetails.amount,
                 currency: "INR",
                 status: paymentDetails.status,
                 gatewayResponse: paymentDetails.gatewayResponse,
+                initiatedAt: paymentDetails.initiatedAt || new Date(),
                 completedAt: paymentDetails.completedAt
             };
 
-            // Add coupon details if applicable
-            if (paymentDetails.couponCode) {
-                paymentRecord.couponCode = paymentDetails.couponCode;
-                paymentRecord.discountAmount = paymentDetails.discountAmount || 0;
-            }
-
             // Create subscription using schema method
-            const subscription = await ChatUserPremium.createFromPayment(
-                userId,
-                planId,
-                paymentRecord,
-                expiryDate
-            );
+            const subscription = await ChatUserPremium.create({
+                user: userId,
+                plan: planId,
+                expiryDate,
+                remainingChats: plan.chatsAllowed,
+                usedChats: [],
+                isActive: paymentDetails.status === 'success',
+                payment: paymentRecord
+            });
 
             if (!subscription) {
                 throw new ApiError(500, "Failed to create subscription record");
@@ -458,6 +455,7 @@ export const paymentService = {
                         $set: {
                             "payment.status": "success",
                             "payment.paymentId": payment.id,
+                            "payment.signature": payment.signature || existingSub.payment.signature,
                             "payment.gatewayResponse": payment,
                             "payment.completedAt": new Date(),
                             isActive: true
@@ -494,32 +492,31 @@ export const paymentService = {
             const expiryDate = new Date();
             expiryDate.setDate(expiryDate.getDate() + plan.validityDays + (extendedDays || 0));
 
-            // Create payment record
+            // Create payment record according to schema
             const paymentRecord = {
                 gateway: "RazorPay",
                 transactionId: payment.order_id,
+                orderId: payment.order_id,
                 paymentId: payment.id,
+                signature: payment.signature || '',
                 amount: payment.amount / 100,
-                originalAmount: originalAmount || payment.amount / 100,
                 currency: payment.currency,
                 status: "success",
                 gatewayResponse: payment,
+                initiatedAt: new Date(payment.created_at * 1000),
                 completedAt: new Date()
             };
 
-            // Add coupon details if applicable
-            if (couponCode) {
-                paymentRecord.couponCode = couponCode;
-                paymentRecord.discountAmount = discountAmount || 0;
-            }
-
             // Create subscription
-            const subscription = await ChatUserPremium.createFromPayment(
-                userId,
-                planId,
-                paymentRecord,
-                expiryDate
-            );
+            const subscription = await ChatUserPremium.create({
+                user: userId,
+                plan: planId,
+                expiryDate,
+                remainingChats: plan.chatsAllowed,
+                usedChats: [],
+                isActive: true,
+                payment: paymentRecord
+            });
 
             // Record coupon usage if applicable
             if (couponCode) {
@@ -577,17 +574,28 @@ export const paymentService = {
                 throw new ApiError(400, "Missing user information in order notes");
             }
 
-            const { userId } = order.notes;
+            const { userId, planId } = order.notes;
+
+            const plan = await ChatPremium.findById(planId);
+            if (!plan) {
+                throw new ApiError(404, "Plan not found");
+            }
 
             await ChatUserPremium.findOneAndUpdate(
                 { "payment.transactionId": payment.order_id },
                 {
                     $set: {
+                        user: userId,
+                        plan: planId,
+                        expiryDate: new Date(new Date().getTime() + plan.validityDays * 24 * 60 * 60 * 1000),
+                        remainingChats: plan.chatsAllowed,
+                        usedChats: [],
+                        isActive: false,
                         "payment.status": "failed",
                         "payment.paymentId": payment.id,
+                        "payment.signature": payment.signature || '',
                         "payment.gatewayResponse": payment,
-                        "payment.completedAt": new Date(),
-                        isActive: false
+                        "payment.completedAt": new Date()
                     }
                 },
                 { upsert: true, new: true }
@@ -635,15 +643,18 @@ export const paymentService = {
                 plan: planId,
                 expiryDate,
                 remainingChats: plan.chatsAllowed,
+                usedChats: [],
                 isActive: false,
                 payment: {
                     gateway: "RazorPay",
                     transactionId: orderId,
-                    paymentId,
-                    amount,
+                    orderId: orderId,
+                    paymentId: paymentId,
+                    amount: amount,
                     currency: "INR",
                     status: "failed",
                     gatewayResponse: { error },
+                    initiatedAt: new Date(),
                     completedAt: new Date()
                 }
             });
@@ -662,11 +673,13 @@ export const paymentService = {
                     payment: {
                         gateway: "RazorPay",
                         transactionId: orderId,
-                        paymentId,
-                        amount,
+                        orderId: orderId,
+                        paymentId: paymentId,
+                        amount: amount,
                         currency: "INR",
                         status: "failed",
                         gatewayResponse: { error },
+                        initiatedAt: new Date(),
                         completedAt: new Date()
                     }
                 });
@@ -718,11 +731,7 @@ export const paymentService = {
     }
 };
 
-
-
-
 async function sendNotification(userId, title, message, screen) {
-
     // Assuming you have the FCM device token stored in your database
     const user = await User.findById(userId);
     const deviceToken = user.deviceToken;
@@ -740,7 +749,6 @@ async function sendNotification(userId, title, message, screen) {
         data: {
             screen: screen, // This will be used in the client app to navigate
         },
-
         token: deviceToken,
     };
 
