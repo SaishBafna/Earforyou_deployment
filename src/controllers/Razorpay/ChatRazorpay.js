@@ -701,7 +701,7 @@ export const paymentService = {
             }
 
             // For Express, you need to use raw body for verification
-            const rawBody = req.rawBody || JSON.stringify(req.body);
+            const rawBody = req.rawBody || req.body;
             if (!rawBody) {
                 throw new ApiError(400, "Missing webhook body");
             }

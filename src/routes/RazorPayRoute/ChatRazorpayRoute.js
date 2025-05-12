@@ -86,7 +86,7 @@ router.post('/razorwebhook', webhookRawBodyParser, async (req, res) => {
 
         // Parse the JSON body for processing
         try {
-            req.body = JSON.parse(req.body);
+            req.body = req.body;
         } catch (parseError) {
             console.error('JSON parse error:', parseError);
             throw new ApiError(400, "Invalid JSON in webhook body");
