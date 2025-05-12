@@ -70,7 +70,7 @@ router.post('/verify', protect, async (req, res) => {
     }
 });
 
-router.post('/razorwebhook', webhookRawBodyParser, async (req, res) => {
+router.post('/razorwebhook', async (req, res) => {
     try {
         // Log request details for debugging
         console.log('Webhook headers:', req.headers);

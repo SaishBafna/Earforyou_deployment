@@ -703,18 +703,20 @@ export const paymentService = {
 
             // For Express, you need to use raw body for verification
             const rawBody = req.rawBody || req.body;
+            console.log("rawBody",rawBody);
             if (!rawBody) {
                 throw new ApiError(400, "Missing webhook body");
             }
 
             const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
             if (!webhookSecret) {
                 throw new ApiError(500, "Webhook secret not configured");
             }
 
             const expectedSignature = crypto
                 .createHmac('sha256', webhookSecret)
-                .update(body)
+                .update(rawBody)
                 .digest('hex');
 
             if (signature !== expectedSignature) {
