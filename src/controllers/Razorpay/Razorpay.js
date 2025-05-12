@@ -393,7 +393,7 @@ export const paymentService = {
         try {
             const signature = req.headers["x-razorpay-signature"];
             if (!signature) {
-                throw new Error("Missing webhook signature");
+                throw new Error("Missing Razorpay signature header");
             }
 
             if (!req.rawBody) {

@@ -5,17 +5,11 @@ import { protect } from '../../middlewares/auth/authMiddleware.js';
 const router = express.Router();
 
 // Middleware to store raw body for webhook verification
-const rawBodySaver = function (req, res, buf, encoding) {
+const rawBodySaver = (req, res, buf, encoding) => {
     if (buf && buf.length) {
         req.rawBody = buf.toString(encoding || 'utf8');
     }
 };
-
-// Apply the raw body middleware specifically for the webhook route
-const webhookRawBodyParser = express.raw({
-    type: 'application/json',
-    verify: rawBodySaver
-});
 
 router.post('/create-order', protect, async (req, res) => {
     try {
@@ -83,23 +77,17 @@ router.post('/verify', protect, async (req, res) => {
 });
 
 router.post('/razorwebhook',
-    webhookRawBodyParser,
+    express.raw({
+        type: 'application/json',
+        verify: rawBodySaver
+    }),
     async (req, res) => {
         try {
-            // Verify we have the raw body
-            if (!req.rawBody) {
-                throw new Error('Missing webhook body');
-            }
-
             // Verify the webhook signature first
             paymentService.verifyWebhookSignature(req);
 
             // Parse the JSON body for processing
-            try {
-                req.body = JSON.parse(req.rawBody);
-            } catch (parseError) {
-                throw new Error('Invalid JSON in webhook body');
-            }
+            req.body = JSON.parse(req.rawBody);
 
             await paymentService.handleWebhook(req);
             res.sendStatus(200);
@@ -108,8 +96,7 @@ router.post('/razorwebhook',
 
             if (error.message.includes('Invalid webhook') ||
                 error.message.includes('Missing webhook') ||
-                error.message.includes('signature') ||
-                error.message.includes('JSON')) {
+                error.message.includes('signature')) {
                 return res.status(400).json({
                     success: false,
                     error: error.message
