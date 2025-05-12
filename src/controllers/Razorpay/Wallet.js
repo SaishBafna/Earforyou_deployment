@@ -1,3 +1,4 @@
+import User from '../../models/Users.js';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import Wallet from '../../models/Wallet/Wallet.js';
@@ -303,26 +304,50 @@ export const paymentService = {
      */
     async processPayment(paymentData, amount) {
         try {
-            const payment = await instance.payments.capture(
+            // Step 1: Fetch the payment details from Razorpay
+            const fetchedPayment = await instance.payments.fetch(paymentData.razorpay_payment_id);
+
+            if (!fetchedPayment) {
+                throw new ApiError(400, 'Payment not found');
+            }
+
+            // Step 2: Check if payment is already captured
+            if (fetchedPayment.status === 'captured') {
+                return {
+                    status: "success",
+                    transactionId: paymentData.razorpay_order_id,
+                    paymentId: fetchedPayment.id,
+                    signature: paymentData.razorpay_signature,
+                    amount,
+                    gatewayResponse: fetchedPayment,
+                    completedAt: new Date()
+                };
+            }
+
+            // Step 3: Capture the payment if not already captured
+            const capturedPayment = await instance.payments.capture(
                 paymentData.razorpay_payment_id,
                 Math.round(amount * 100), // Convert to paise
                 "INR"
             );
 
-            if (!payment || payment.error) {
-                throw new Error(payment?.error?.description || "Payment capture failed");
+            if (!capturedPayment || capturedPayment.error) {
+                throw new Error(capturedPayment?.error?.description || "Payment capture failed");
             }
 
+            // Step 4: Return success response
             return {
                 status: "success",
                 transactionId: paymentData.razorpay_order_id,
-                paymentId: payment.id,
+                paymentId: capturedPayment.id,
                 signature: paymentData.razorpay_signature,
                 amount,
-                gatewayResponse: payment,
+                gatewayResponse: capturedPayment,
                 completedAt: new Date()
             };
+
         } catch (error) {
+            // Step 5: Handle and log error
             console.error('Payment processing error:', error);
             await this.recordFailedPayment(
                 paymentData.razorpay_order_id,
@@ -668,3 +693,36 @@ export const paymentService = {
         }
     }
 };
+
+
+
+
+
+async function sendNotification(userId, title, message, screen) {
+    // Assuming you have the FCM device token stored in your database
+    const user = await User.findById(userId);
+    const deviceToken = user.deviceToken;
+
+    if (!deviceToken) {
+        console.error("No device token found for user:", userId);
+        return;
+    }
+
+    const payload = {
+        notification: {
+            title: title,
+            body: message,
+        },
+        data: {
+            screen: screen, // This will be used in the client app to navigate
+        },
+        token: deviceToken,
+    };
+
+    try {
+        const response = await admin.messaging().send(payload);
+        console.log("Notification sent successfully:", response);
+    } catch (error) {
+        console.error("Error sending notification:", error);
+    }
+}
