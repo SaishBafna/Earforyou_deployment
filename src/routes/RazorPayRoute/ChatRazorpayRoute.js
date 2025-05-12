@@ -9,27 +9,15 @@ const router = express.Router();
 // Middleware to store raw body for webhook verification
 const rawBodySaver = function (req, res, buf, encoding) {
     if (buf && buf.length) {
-        req.rawBody = buf.toString(encoding || 'utf8');
+        req.body = buf.toString(encoding || 'utf8');
     }
 };
 
 // Apply the raw body middleware specifically for the webhook route
-const webhookRawBodyParser = (req, res, next) => {
-    let data = '';
-    req.setEncoding('utf8');
-    req.on('data', (chunk) => {
-        data += chunk;
-    });
-    req.on('end', () => {
-        req.rawBody = data; // Store raw body for verification
-        try {
-            req.body = JSON.parse(data); // Parse JSON for processing
-            next();
-        } catch (e) {
-            next(new ApiError(400, "Invalid JSON"));
-        }
-    });
-};
+const webhookRawBodyParser = express.raw({
+    type: 'application/json',
+    verify: rawBodySaver
+});
 
 router.post('/create-order', protect, async (req, res) => {
     try {
@@ -96,9 +84,13 @@ router.post('/razorwebhook', webhookRawBodyParser, async (req, res) => {
         // Verify webhook signature first
         paymentService.verifyWebhookSignature(req);
 
-        // The body is already parsed (as seen in your logs), no need to parse again
-        // If you need the raw body for signature verification, ensure webhookRawBodyParser preserves it
-        // req.body is already the parsed object
+        // Parse the JSON body for processing
+        try {
+            req.body = JSON.parse(req.body);
+        } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+            throw new ApiError(400, "Invalid JSON in webhook body");
+        }
 
         await paymentService.handleWebhook(req);
         res.status(200).json(
