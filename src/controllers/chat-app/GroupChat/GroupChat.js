@@ -2673,7 +2673,7 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     body: `${user.username} has requested to join ${groupChat.name}`,
     data: {
       chatId: chatId,
-      userId: req.user._id.toString(),
+      userId: req.user._id,
       username: user.username,
       type: "JOIN_REQUEST",
       groupName: groupChat.name
@@ -2806,7 +2806,7 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       body: `${user.username} has joined ${groupChat.name}`,
       data: {
         chatId: chatId,
-        userId: userId.toString(),
+        userId: userId,
         username: user.username,
         type: "NEW_MEMBER",
         groupName: groupChat.name
