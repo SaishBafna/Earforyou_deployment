@@ -162,7 +162,7 @@ export const verifyPayment = async (req, res) => {
         // Find transaction by either transactionId or orderId
         let transaction;
         if (transactionId) {
-            transaction = await PlatformCharges.findById(transactionId);
+            transaction = await PlatformCharges.findOne({ 'payment.transactionId': transactionId });
         } else {
             transaction = await PlatformCharges.findOne({ 'payment.orderId': orderId });
         }
