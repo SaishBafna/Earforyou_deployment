@@ -67,15 +67,7 @@ export const paymentService = {
                         }
 
                         // Apply coupon discount based on type
-                        if (coupon.discountType === 'percentage') {
-                            const discountAmount = (plan.price * coupon.discountValue) / 100;
-                            finalAmount = plan.price - discountAmount;
-                            console.log(`Applied ${coupon.discountValue}% coupon, discount: ₹${discountAmount}`);
-                        } else if (coupon.discountType === 'fixed') {
-                            finalAmount = plan.price - coupon.discountValue;
-                            if (finalAmount < 0) finalAmount = 0;
-                            console.log(`Applied fixed coupon worth ₹${coupon.discountValue}`);
-                        }
+
 
                         couponDetails = {
                             code: coupon.code,
