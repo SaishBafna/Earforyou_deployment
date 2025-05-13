@@ -1,4 +1,3 @@
-// controllers/payment/razorpayController.js
 import { createRazorpayOrder, verifyRazorpayPayment } from './utils/RazorpayUtils.js';
 import PlatformCharges from '../../models/Wallet/PlatfromCharges/Platfrom.js';
 import MyPlan from '../../models/Wallet/PlatfromCharges/myPlanSchema.js';
@@ -7,16 +6,18 @@ import User from '../../models/Users.js';
 import admin from 'firebase-admin';
 import crypto from 'crypto';
 
+
+
 export const createOrder = async (req, res) => {
     const { planId, couponCode } = req.body;
     const userId = req.user._id;
 
     try {
-        // Validate input parameters
+        // Validate input
         if (!userId || !planId) {
             return res.status(400).json({
                 success: false,
-                message: 'Missing userId or planId'
+                message: 'Missing required fields: userId and planId are required'
             });
         }
 
@@ -25,59 +26,62 @@ export const createOrder = async (req, res) => {
         if (!planDetails) {
             return res.status(404).json({
                 success: false,
-                message: 'Plan details not found'
+                message: 'Plan not found'
             });
         }
 
-        // Process coupon if provided
-        let coupon = null;
-        let validityDays = planDetails.validityDays;
+        // Process coupon
         let couponDetails = null;
+        let validityDays = planDetails.validityDays;
         let extendedDays = 0;
 
         if (couponCode) {
-            coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+            const coupon = await Coupon.findOne({ 
+                code: couponCode.toUpperCase(),
+                isActive: true
+            });
 
             if (coupon) {
-                try {
-                    if (!coupon.isUsable) {
-                        throw new Error("Coupon is not usable");
-                    }
-
-                    if (!coupon.isReusable) {
-                        const existingUsage = await CouponUsage.findOne({
-                            coupon: coupon._id,
-                            user: userId
-                        });
-                        if (existingUsage) {
-                            return res.status(400).json({
-                                success: false,
-                                message: "You have already used this coupon"
-                            });
-                        }
-                    }
-
-                    if (coupon.minimumOrderAmount && planDetails.price < coupon.minimumOrderAmount) {
-                        throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required`);
-                    }
-
-                    if (coupon.discountType === 'free_days') {
-                        extendedDays = coupon.discountValue;
-                        validityDays += extendedDays;
-                    }
-
-                    couponDetails = {
-                        code: coupon.code,
-                        discountType: coupon.discountType,
-                        discountValue: coupon.discountValue,
-                        extendedDays: extendedDays
-                    };
-                } catch (couponError) {
+                // Validate coupon
+                if (!coupon.isUsable) {
                     return res.status(400).json({
                         success: false,
-                        message: `Coupon error: ${couponError.message}`
+                        message: 'This coupon is not currently usable'
                     });
                 }
+
+                if (!coupon.isReusable) {
+                    const existingUsage = await CouponUsage.findOne({
+                        coupon: coupon._id,
+                        user: userId
+                    });
+                    if (existingUsage) {
+                        return res.status(400).json({
+                            success: false,
+                            message: 'You have already used this coupon'
+                        });
+                    }
+                }
+
+                if (coupon.minimumOrderAmount && planDetails.price < coupon.minimumOrderAmount) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`
+                    });
+                }
+
+                // Apply coupon benefits
+                if (coupon.discountType === 'free_days') {
+                    extendedDays = coupon.discountValue;
+                    validityDays += extendedDays;
+                }
+
+                couponDetails = {
+                    code: coupon.code,
+                    discountType: coupon.discountType,
+                    discountValue: coupon.discountValue,
+                    extendedDays: extendedDays
+                };
             }
         }
 
@@ -98,11 +102,11 @@ export const createOrder = async (req, res) => {
             notes
         );
 
-        // Create a pending transaction record
+        // Create transaction record
         const transaction = await PlatformCharges.create({
             userId,
             planId,
-            planName: planDetails.planName || "Platform Charges",
+            planName: planDetails.planName,
             status: 'pending',
             payment: {
                 gateway: 'RazorPay',
@@ -110,8 +114,10 @@ export const createOrder = async (req, res) => {
                 amount: planDetails.price,
                 currency: 'INR',
                 status: 'created',
-                gatewayResponse: order
-            }
+                gatewayResponse: order,
+                initiatedAt: new Date()
+            },
+            couponDetails
         });
 
         return res.status(200).json({
@@ -124,14 +130,15 @@ export const createOrder = async (req, res) => {
                 receipt: order.receipt,
                 key: process.env.RAZORPAY_KEY_ID
             },
-            transactionId: transaction._id
+            transactionId: transaction._id,
+            couponApplied: !!couponDetails
         });
 
     } catch (error) {
-        console.error('Error creating Razorpay order:', error);
+        console.error('Error in createOrder:', error);
         return res.status(500).json({
             success: false,
-            message: 'Error creating payment order',
+            message: 'Internal server error',
             error: error.message
         });
     }
@@ -141,11 +148,11 @@ export const verifyPayment = async (req, res) => {
     const { orderId, paymentId, signature, transactionId } = req.body;
 
     try {
-        // Validate input parameters
+        // Validate input
         if (!orderId || !paymentId || !signature || !transactionId) {
             return res.status(400).json({
                 success: false,
-                message: 'Missing required parameters'
+                message: 'Missing required parameters: orderId, paymentId, signature, and transactionId are required'
             });
         }
 
@@ -153,7 +160,7 @@ export const verifyPayment = async (req, res) => {
         const verification = await verifyRazorpayPayment(orderId, paymentId, signature);
         const payment = verification.payment;
 
-        // Get the existing transaction
+        // Get transaction
         const transaction = await PlatformCharges.findById(transactionId);
         if (!transaction) {
             return res.status(404).json({
@@ -167,18 +174,21 @@ export const verifyPayment = async (req, res) => {
             return res.status(200).json({
                 success: true,
                 message: 'Payment already verified',
-                transactionId: transaction._id,
-                status: transaction.status
+                transactionId: transaction._id
             });
         }
 
         // Update payment details
         transaction.payment = {
-            ...transaction.payment,
+            gateway: 'RazorPay',
+            orderId,
             paymentId,
             signature,
+            amount: payment.amount / 100, // Convert from paise to rupees
+            currency: payment.currency,
             status: payment.status === 'captured' ? 'success' : 'failed',
             gatewayResponse: payment,
+            initiatedAt: transaction.payment.initiatedAt,
             completedAt: new Date()
         };
 
@@ -199,20 +209,22 @@ export const verifyPayment = async (req, res) => {
 
             // Process coupon if used
             const couponCode = transaction.payment.gatewayResponse.notes?.couponCode;
-            if (couponCode) {
+            if (couponCode && transaction.couponDetails?.code) {
                 const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
                 if (coupon) {
                     await CouponUsage.create({
                         coupon: coupon._id,
                         user: transaction.userId,
-                        discountApplied: coupon.discountType === 'free_days' ?
-                            (transaction.payment.gatewayResponse.notes?.extendedDays || 0) : 0
+                        transaction: transaction._id,
+                        discountApplied: coupon.discountType === 'free_days' ? 
+                            (transaction.payment.gatewayResponse.notes?.extendedDays || 0) : 0,
+                        appliedAt: new Date()
                     });
                 }
             }
 
+            // Handle plan activation or queuing
             if (activePlan) {
-                // Queue new plan to start after current plan ends
                 status = 'queued';
                 startDate = new Date(activePlan.endDate);
                 endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
@@ -221,38 +233,40 @@ export const verifyPayment = async (req, res) => {
                     transaction.userId,
                     'Plan Queued Successfully',
                     `Your ${validityDays}-day plan will activate on ${startDate.toLocaleDateString()}`,
-                    'dashboard'
+                    'subscriptions'
                 );
             } else {
-                // Activate immediately
                 await sendNotification(
                     transaction.userId,
                     'Plan Activated',
                     `Your ${validityDays}-day plan is now active!`,
-                    'dashboard'
+                    'subscriptions'
                 );
             }
 
             transaction.startDate = startDate;
             transaction.endDate = endDate;
             transaction.status = status;
+        } else {
+            transaction.status = 'failed';
         }
 
         await transaction.save();
 
         return res.status(200).json({
-            success: true,
-            message: `Payment verification ${payment.status === 'captured' ? 'successful' : 'failed'}`,
+            success: payment.status === 'captured',
+            message: payment.status === 'captured' 
+                ? 'Payment verified successfully' 
+                : 'Payment verification failed',
             transactionId: transaction._id,
-            status: transaction.status,
-            paymentStatus: transaction.payment.status
+            status: transaction.status
         });
 
     } catch (error) {
-        console.error('Error verifying Razorpay payment:', error);
+        console.error('Error in verifyPayment:', error);
         return res.status(500).json({
             success: false,
-            message: 'Error verifying payment',
+            message: 'Internal server error',
             error: error.message
         });
     }
@@ -272,41 +286,57 @@ export const handleWebhook = async (req, res) => {
 
         if (generatedSignature !== razorpaySignature) {
             console.error('Webhook signature verification failed');
-            return res.status(400).json({ status: 'error', message: 'Invalid signature' });
+            return res.status(401).json({ status: 'error', message: 'Invalid signature' });
         }
 
         const event = req.body.event;
         const payment = req.body.payload.payment?.entity;
         const order = req.body.payload.order?.entity;
 
-        console.log(`Received Razorpay webhook event: ${event}`);
+        console.log(`Processing Razorpay webhook event: ${event}`);
 
-        // Handle payment captured event
+        // Handle only payment captured events
         if (event === 'payment.captured') {
-            const orderId = payment.order_id;
+            if (!payment || !order) {
+                return res.status(400).json({ 
+                    status: 'error', 
+                    message: 'Missing payment or order data' 
+                });
+            }
 
             // Find transaction by orderId
             const transaction = await PlatformCharges.findOne({
-                'payment.orderId': orderId
+                'payment.orderId': payment.order_id
             });
 
             if (!transaction) {
-                console.error(`Transaction not found for orderId: ${orderId}`);
-                return res.status(404).json({ status: 'error', message: 'Transaction not found' });
+                console.error(`Transaction not found for order: ${payment.order_id}`);
+                return res.status(404).json({ 
+                    status: 'error', 
+                    message: 'Transaction not found' 
+                });
             }
 
             // Skip if already processed
             if (transaction.payment.status === 'success') {
-                return res.status(200).json({ status: 'success', message: 'Already processed' });
+                return res.status(200).json({ 
+                    status: 'success', 
+                    message: 'Already processed' 
+                });
             }
 
             // Update payment details
             transaction.payment = {
-                ...transaction.payment,
+                gateway: 'RazorPay',
+                orderId: payment.order_id,
                 paymentId: payment.id,
+                signature: razorpaySignature,
+                amount: payment.amount / 100,
+                currency: payment.currency,
                 status: 'success',
                 gatewayResponse: { payment, order },
-                completedAt: new Date()
+                initiatedAt: transaction.payment.initiatedAt,
+                completedAt: new Date(payment.created_at * 1000)
             };
 
             // Process successful payment
@@ -325,20 +355,22 @@ export const handleWebhook = async (req, res) => {
 
             // Process coupon if used
             const couponCode = order.notes?.couponCode;
-            if (couponCode) {
+            if (couponCode && transaction.couponDetails?.code) {
                 const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
                 if (coupon) {
                     await CouponUsage.create({
                         coupon: coupon._id,
                         user: transaction.userId,
-                        discountApplied: coupon.discountType === 'free_days' ?
-                            (order.notes?.extendedDays || 0) : 0
+                        transaction: transaction._id,
+                        discountApplied: coupon.discountType === 'free_days' ? 
+                            (order.notes?.extendedDays || 0) : 0,
+                        appliedAt: new Date()
                     });
                 }
             }
 
+            // Handle plan activation or queuing
             if (activePlan) {
-                // Queue new plan to start after current plan ends
                 status = 'queued';
                 startDate = new Date(activePlan.endDate);
                 endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
@@ -347,15 +379,14 @@ export const handleWebhook = async (req, res) => {
                     transaction.userId,
                     'Plan Queued Successfully',
                     `Your ${validityDays}-day plan will activate on ${startDate.toLocaleDateString()}`,
-                    'dashboard'
+                    'subscriptions'
                 );
             } else {
-                // Activate immediately
                 await sendNotification(
                     transaction.userId,
                     'Plan Activated',
                     `Your ${validityDays}-day plan is now active!`,
-                    'dashboard'
+                    'subscriptions'
                 );
             }
 
@@ -364,38 +395,44 @@ export const handleWebhook = async (req, res) => {
             transaction.status = status;
             await transaction.save();
 
-            console.log(`Successfully processed webhook for order ${orderId}`);
+            console.log(`Successfully processed webhook for payment: ${payment.id}`);
         }
 
         res.status(200).json({ status: 'success' });
     } catch (error) {
-        console.error('Error processing Razorpay webhook:', error);
-        res.status(500).json({ status: 'error', message: error.message });
+        console.error('Error in handleWebhook:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Internal server error',
+            error: error.message 
+        });
     }
 };
 
+// Helper function for sending notifications
 async function sendNotification(userId, title, message, screen) {
     try {
-        const user = await User.findById(userId);
-        if (!user || !user.deviceToken) {
-            console.error("No device token found for user:", userId);
+        const user = await User.findById(userId).select('deviceToken');
+        if (!user?.deviceToken) {
+            console.warn(`No device token found for user: ${userId}`);
             return;
         }
 
         const payload = {
             notification: {
-                title: title,
+                title,
                 body: message,
             },
             data: {
-                screen: screen,
+                screen,
+                type: 'subscription_update'
             },
-            token: user.deviceToken,
+            token: user.deviceToken
         };
 
-        const response = await admin.messaging().send(payload);
-        console.log("Notification sent successfully:", response);
+        await admin.messaging().send(payload);
+        console.log(`Notification sent to user: ${userId}`);
     } catch (error) {
-        console.error("Error sending notification:", error);
+        console.error('Error sending notification:', error);
     }
 }
