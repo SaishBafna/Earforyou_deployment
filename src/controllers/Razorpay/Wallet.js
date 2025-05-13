@@ -406,7 +406,7 @@ export const paymentService = {
             }
 
             // Add talk time to wallet only if payment was successful
-            if (paymentDetails.status === "success") {
+            if (paymentDetails.gatewayResponse.status === "captured") {
                 wallet.talkTime += finalTalkTime;
 
                 // Add the plan to the user's wallet
