@@ -1235,7 +1235,62 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, populatedMessage, "Message sent successfully"));
 });
 
+const sendFirebaseNotification = async (tokens, notificationData) => {
+  console.log('Sending notification to tokens:', tokens);
+  if (!Array.isArray(tokens) || tokens.length === 0) {
+    console.warn('No valid tokens provided for notification.');
+    return;
+  }
 
+  const cleanedTokens = tokens.filter(token => typeof token === 'string' && token.trim() !== '');
+  if (cleanedTokens.length === 0) {
+    console.warn('All tokens are empty or invalid strings.');
+    return;
+  }
+
+  const message = {
+    notification: {
+      title: notificationData.title || '',
+      body: notificationData.body || ''
+    },
+    data: {
+      ...notificationData.data,
+      screen: 'Group_Chat',
+
+    },
+    tokens: cleanedTokens,
+    android: {
+      priority: 'high'
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1
+        }
+      }
+    }
+  };
+
+  try {
+    const response = await admin.messaging().sendEachForMulticast(message);
+    console.log('Firebase notification response:', response);
+    if (response.failureCount > 0) {
+      const failedTokens = [];
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          failedTokens.push(cleanedTokens[idx]);
+        }
+      });
+      console.warn('Some tokens failed:', failedTokens);
+    }
+
+    return response;
+  } catch (error) {
+    console.error('Error sending Firebase notification:', error);
+    throw error;
+  }
+};
 
 /**
  * @route GET /api/v1/chats/group
@@ -2166,7 +2221,6 @@ const addParticipantsToGroup = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, updatedGroupChat, "Participants added successfully"));
 });
-
 /**
  * @route PUT /api/v1/chats/group/:chatId/remove
  * @description Remove participant from group chat
@@ -2570,14 +2624,18 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Group chat not found");
   }
 
+  // Check if group allows joining by request
   if (groupChat.settings.joinByLink) {
     throw new ApiError(400, "This group allows joining by link only");
   }
 
+  // Check if already a member
   if (groupChat.participants.some(p => p.equals(req.user._id))) {
     throw new ApiError(400, "You are already a member of this group");
   }
 
+  // Check if already requested
+  // Fixed variable naming conflict (renamed parameter to avoid confusion)
   if (groupChat.pendingJoinRequests.some(pendingReq => pendingReq.user.equals(req.user._id))) {
     throw new ApiError(400, "You have already requested to join this group");
   }
@@ -2600,44 +2658,42 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
 
   // Get user info for notification
   const user = await User.findById(req.user._id)
-    .select("username name avatar")
+    .select("username")
     .lean();
 
-  // Prepare notification data
-  const notificationData = {
-    chatId: chatId.toString(),
-    userId: req.user._id.toString(),
-    username: user.username,
-    name: user.name || user.username,
-    avatar: user.avatar || null,
-    message: message?.trim() || "",
-    groupName: groupChat.name,
-    type: 'join_request',
-    timestamp: new Date().toISOString()
-  };
+  // Ensure admins is an array and use it correctly
+  // Convert to array of admin IDs if not already
+  const adminIds = Array.isArray(groupChat.admins) ? groupChat.admins : [];
 
-  // Get admin device tokens
-  const admins = await User.find({ _id: { $in: groupChat.admins } })
-    .select("deviceToken")
-    .lean();
-  const adminTokens = admins.map(admin => admin.deviceToken).filter(Boolean);
+  // Notify group admins individually
+  const adminNotifications = adminIds.map(adminId =>
+    emitSocketEvent(
+      req,
+      adminId.toString(),
+      ChatEventEnum.JOIN_REQUEST_EVENT,
+      {
+        chatId,
+        userId: req.user._id,
+        username: user.username,
+        message: message?.trim() || ""
+      }
+    )
+  );
 
-  // Send push notification to admins
-  if (adminTokens.length > 0) {
-    await sendFirebaseNotification(adminTokens, {
-      title: `New join request for ${groupChat.name}`,
-      body: `${user.name || user.username} wants to join the group`,
-      data: notificationData
-    });
-  }
+  await Promise.all(adminNotifications);
 
-  // Notify group admins using helper function (for socket.io or other real-time notifications)
+  // Send group notifications to admins
   await sendGroupNotifications(req, {
     chatId,
-    participants: Array.isArray(groupChat.admins) ? groupChat.admins : [],
+    participants: adminIds, // Use the adminIds array
     eventType: ChatEventEnum.JOIN_REQUEST_EVENT,
-    data: notificationData,
-    includePushNotifications: false // We already sent push notifications above
+    data: {
+      chatId,
+      userId: req.user._id,
+      username: user.username,
+      message: message?.trim() || "",
+      groupName: groupChat.name
+    }
   });
 
   return res
@@ -2645,6 +2701,10 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, updatedChat, "Join request submitted successfully"));
 });
 
+/**
+ * @route PUT /api/v1/chats/group/:chatId/approve/:userId
+ * @description Approve or reject a join request
+ */
 const approveJoinRequest = asyncHandler(async (req, res) => {
   const { chatId, userId } = req.params;
   const { approve } = req.body;
@@ -2658,7 +2718,7 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
     _id: chatId,
     isGroupChat: true,
     admins: req.user._id,
-  }).select("participants pendingJoinRequests admins name").lean();
+  }).select("participants pendingJoinRequests admins").lean();
 
   if (!groupChat) {
     throw new ApiError(404, "Group chat not found or you're not an admin");
@@ -2698,68 +2758,35 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       { new: true, lean: true }
     );
 
-    // Get user and admin info for notifications
-    const [newMember, admin] = await Promise.all([
-      User.findById(userId).select("username name avatar deviceToken").lean(),
-      User.findById(req.user._id).select("username name").lean()
+    // Notify all parties
+    await Promise.all([
+      ...groupChat.participants.map(pId =>
+        emitSocketEvent(
+          req,
+          pId.toString(),
+          ChatEventEnum.UPDATE_GROUP_EVENT,
+          updatedChat
+        )
+      ),
+      emitSocketEvent(
+        req,
+        userId.toString(),
+        ChatEventEnum.NEW_GROUP_CHAT_EVENT,
+        updatedChat
+      ),
+      ...groupChat.admins.map(adminId =>
+        emitSocketEvent(
+          req,
+          adminId.toString(),
+          ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
+          {
+            chatId,
+            userId,
+            approvedBy: req.user._id,
+          }
+        )
+      ),
     ]);
-
-    // Prepare notification data
-    const notificationData = {
-      chatId: chatId.toString(),
-      groupName: groupChat.name,
-      userId: userId.toString(),
-      username: newMember.username,
-      name: newMember.name || newMember.username,
-      approvedBy: req.user._id.toString(),
-      adminName: admin.name || admin.username,
-      type: 'join_request_approved',
-      timestamp: new Date().toISOString()
-    };
-
-    // Get the new member's device token
-    const newMemberToken = newMember.deviceToken ? [newMember.deviceToken] : [];
-
-    // Send push notification to the new member
-    if (newMemberToken.length > 0) {
-      await sendFirebaseNotification(newMemberToken, {
-        title: `Welcome to ${groupChat.name}`,
-        body: `Your join request has been approved by ${admin.name || admin.username}`,
-        data: notificationData
-      });
-    }
-
-    // Notify all participants about group update
-    await sendGroupNotifications(req, {
-      chatId,
-      participants: groupChat.participants,
-      eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
-      data: {
-        ...updatedChat,
-        type: 'group_update',
-        action: 'new_member'
-      }
-    });
-
-    // Notify the new participant specifically
-    await sendGroupNotifications(req, {
-      chatId,
-      participants: [userId],
-      eventType: ChatEventEnum.NEW_GROUP_CHAT_EVENT,
-      data: {
-        ...updatedChat,
-        type: 'group_added',
-        welcomeMessage: `You've been added to ${groupChat.name}`
-      }
-    });
-
-    // Notify admins about approval
-    await sendGroupNotifications(req, {
-      chatId,
-      participants: groupChat.admins,
-      eventType: ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
-      data: notificationData
-    });
 
     return res
       .status(200)
@@ -2775,49 +2802,22 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       { new: true, lean: true }
     );
 
-    // Get admin and requesting user info for notification
-    const [admin, requestingUser] = await Promise.all([
-      User.findById(req.user._id).select("username name").lean(),
-      User.findById(userId).select("username name deviceToken").lean()
-    ]);
-
-    // Prepare rejection notification data
-    const rejectionData = {
-      chatId: chatId.toString(),
-      groupName: groupChat.name,
-      userId: userId.toString(),
-      rejectedBy: req.user._id.toString(),
-      adminName: admin.name || admin.username,
-      type: 'join_request_rejected',
-      timestamp: new Date().toISOString()
-    };
-
-    // Get the requesting user's device token
-    const userToken = requestingUser.deviceToken ? [requestingUser.deviceToken] : [];
-
-    // Send push notification to the rejected user
-    if (userToken.length > 0) {
-      await sendFirebaseNotification(userToken, {
-        title: `Join request rejected`,
-        body: `Your request to join ${groupChat.name} was rejected by ${admin.name || admin.username}`,
-        data: rejectionData
-      });
-    }
-
     // Notify the rejected user
-    await sendGroupNotifications(req, {
-      chatId,
-      participants: [userId],
-      eventType: ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
-      data: rejectionData
-    });
+    await emitSocketEvent(
+      req,
+      userId.toString(),
+      ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
+      {
+        chatId,
+        rejectedBy: req.user._id,
+      }
+    );
 
     return res
       .status(200)
       .json(new ApiResponse(200, updatedChat, "Join request rejected successfully"));
   }
 });
-
 
 /**
  * @route GET /api/v1/chats/group/:chatId/requests
@@ -3039,64 +3039,6 @@ const revokeGroupInviteLink = asyncHandler(async (req, res) => {
 
 
 // Utility function for sending notifications
-
-const sendFirebaseNotification = async (tokens, notificationData) => {
-  console.log('Sending notification to tokens:', tokens);
-  if (!Array.isArray(tokens) || tokens.length === 0) {
-    console.warn('No valid tokens provided for notification.');
-    return;
-  }
-
-  const cleanedTokens = tokens.filter(token => typeof token === 'string' && token.trim() !== '');
-  if (cleanedTokens.length === 0) {
-    console.warn('All tokens are empty or invalid strings.');
-    return;
-  }
-
-  const message = {
-    notification: {
-      title: notificationData.title || '',
-      body: notificationData.body || ''
-    },
-    data: {
-      ...notificationData.data,
-      screen: 'Group_Chat',
-
-    },
-    tokens: cleanedTokens,
-    android: {
-      priority: 'high'
-    },
-    apns: {
-      payload: {
-        aps: {
-          sound: 'default',
-          badge: 1
-        }
-      }
-    }
-  };
-
-  try {
-    const response = await admin.messaging().sendEachForMulticast(message);
-    console.log('Firebase notification response:', response);
-    if (response.failureCount > 0) {
-      const failedTokens = [];
-      response.responses.forEach((resp, idx) => {
-        if (!resp.success) {
-          failedTokens.push(cleanedTokens[idx]);
-        }
-      });
-      console.warn('Some tokens failed:', failedTokens);
-    }
-
-    return response;
-  } catch (error) {
-    console.error('Error sending Firebase notification:', error);
-    throw error;
-  }
-};
-
 
 const sendGroupNotifications = async (req, {
   chatId,
