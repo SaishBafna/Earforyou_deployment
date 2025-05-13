@@ -3,6 +3,7 @@ import PaymentGateway from "../models/PaymentGetway.js";
 export const getPaymentGateway = async (req, res) => {
     try {
         const gateway = await PaymentGateway.findOne();
+
         if (!gateway) {
             return res.status(404).json({ message: 'No payment gateway found' });
         }
