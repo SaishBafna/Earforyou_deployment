@@ -2556,7 +2556,6 @@ const deleteGroupChat = asyncHandler(async (req, res) => {
  * @route POST /api/v1/chats/group/:chatId/join
  * @description Request to join a group
  */
-
 const requestToJoinGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { message } = req.body;
@@ -2818,7 +2817,6 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       .json(new ApiResponse(200, updatedChat, "Join request rejected successfully"));
   }
 });
-
 
 
 /**
