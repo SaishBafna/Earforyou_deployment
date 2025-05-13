@@ -35,6 +35,8 @@ export const paymentService = {
             let coupon = null;
             let finalAmount = plan.price;
             let couponDetails = null;
+            let bonusTalkTime = 0;
+            let finalTalkTime = plan.talkTime;
 
             // Process coupon if provided
             if (couponCode) {
@@ -66,13 +68,22 @@ export const paymentService = {
                             throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
                         }
 
-                        // Apply coupon discount based on type
+                        // Calculate bonus talk time based on coupon type
+                        if (coupon.discountType === 'percentage') {
+                            bonusTalkTime = Math.floor(plan.talkTime * (coupon.discountValue / 100));
+                        } else if (coupon.discountType === 'fixed') {
+                            // For fixed amount coupons, convert the discount to equivalent talk time
+                            const talkTimePerRupee = plan.talkTime / plan.price;
+                            bonusTalkTime = Math.floor(coupon.discountValue * talkTimePerRupee);
+                        }
 
+                        finalTalkTime = plan.talkTime + bonusTalkTime;
 
                         couponDetails = {
                             code: coupon.code,
                             discountType: coupon.discountType,
-                            discountValue: coupon.discountValue
+                            discountValue: coupon.discountValue,
+                            bonusTalkTime: bonusTalkTime
                         };
 
                     } catch (couponError) {
@@ -80,6 +91,7 @@ export const paymentService = {
                         // Continue without coupon
                         coupon = null;
                         finalAmount = plan.price;
+                        finalTalkTime = plan.talkTime;
                     }
                 }
             }
@@ -96,8 +108,9 @@ export const paymentService = {
                     planId: planId.toString(),
                     couponCode: couponCode || '',
                     originalAmount: plan.price,
-                    discountAmount: plan.price - finalAmount,
-                    talkTime: plan.talkTime
+                    originalTalkTime: plan.talkTime,
+                    bonusTalkTime: bonusTalkTime,
+                    finalTalkTime: finalTalkTime
                 }
             });
 
@@ -115,7 +128,9 @@ export const paymentService = {
                     name: plan.name,
                     talkTime: plan.talkTime
                 },
-                coupon: couponDetails
+                coupon: couponDetails,
+                bonusTalkTime: bonusTalkTime,
+                finalTalkTime: finalTalkTime
             };
         } catch (error) {
             console.error('Error in createOrder:', error);
@@ -140,9 +155,10 @@ export const paymentService = {
             // Fetch the order to get original details
             const order = await instance.orders.fetch(paymentData.razorpay_order_id);
             const originalAmount = order.notes?.originalAmount || plan.price;
-            const discountAmount = order.notes?.discountAmount || 0;
-            const finalAmount = originalAmount - discountAmount;
-            const talkTime = order.notes?.talkTime || plan.talkTime;
+            const originalTalkTime = order.notes?.originalTalkTime || plan.talkTime;
+            const bonusTalkTime = order.notes?.bonusTalkTime || 0;
+            const finalTalkTime = order.notes?.finalTalkTime || plan.talkTime;
+            const finalAmount = originalAmount; // Price remains unchanged
 
             let paymentDetails;
             try {
@@ -159,7 +175,6 @@ export const paymentService = {
                             signature: paymentData.razorpay_signature,
                             amount: finalAmount,
                             originalAmount: originalAmount,
-                            discountAmount: discountAmount,
                             gatewayResponse: payment,
                             completedAt: new Date()
                         };
@@ -173,25 +188,11 @@ export const paymentService = {
 
             // Process coupon if it exists
             let coupon = null;
-            let bonusTalkTime = 0;
-            let finalTalkTime = talkTime;
-
             if (couponCode) {
                 coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
 
                 if (coupon) {
                     try {
-                        // Apply coupon benefits for talk time
-                        if (coupon.discountType === 'percentage') {
-                            bonusTalkTime = Math.floor(talkTime * (coupon.discountValue / 100));
-                            finalTalkTime = talkTime + bonusTalkTime;
-                        } else if (coupon.discountType === 'fixed') {
-                            // For fixed amount coupons, convert the discount to equivalent talk time
-                            const talkTimePerRupee = talkTime / originalAmount;
-                            bonusTalkTime = Math.floor(coupon.discountValue * talkTimePerRupee);
-                            finalTalkTime = talkTime + bonusTalkTime;
-                        }
-
                         // Record coupon usage
                         await CouponUsage.create({
                             coupon: coupon._id,
@@ -209,8 +210,6 @@ export const paymentService = {
                     } catch (couponError) {
                         console.log("Coupon processing error:", couponError.message);
                         // Continue without coupon benefits
-                        bonusTalkTime = 0;
-                        finalTalkTime = talkTime;
                     }
                 }
             }
@@ -386,7 +385,9 @@ export const paymentService = {
                     rechargeDate: new Date(),
                     planId: planId,
                     couponCode: couponCode || undefined,
-                    talkTimeAdded: finalTalkTime
+                    talkTimeAdded: finalTalkTime,
+                    bonusTalkTime: bonusTalkTime,
+                    baseTalkTime: finalTalkTime - bonusTalkTime
                 });
 
                 await wallet.save();
@@ -431,9 +432,10 @@ export const paymentService = {
             const planId = order.notes.planId;
             const couponCode = order.notes.couponCode || null;
             const originalAmount = order.notes.originalAmount || payment.amount / 100;
-            const discountAmount = order.notes.discountAmount || 0;
-            const finalAmount = originalAmount - discountAmount;
-            const talkTime = order.notes?.talkTime || 0;
+            const originalTalkTime = order.notes.originalTalkTime || 0;
+            const bonusTalkTime = order.notes.bonusTalkTime || 0;
+            const finalTalkTime = order.notes.finalTalkTime || originalTalkTime;
+            const finalAmount = originalAmount; // Price remains unchanged
 
             const plan = await SubscriptionPlan.findById(planId);
             if (!plan) {
@@ -442,24 +444,11 @@ export const paymentService = {
 
             // Process coupon if it exists
             let coupon = null;
-            let bonusTalkTime = 0;
-            let finalTalkTime = talkTime;
-
             if (couponCode) {
                 coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
 
                 if (coupon) {
                     try {
-                        // Apply coupon benefits for talk time
-                        if (coupon.discountType === 'percentage') {
-                            bonusTalkTime = Math.floor(talkTime * (coupon.discountValue / 100));
-                            finalTalkTime = talkTime + bonusTalkTime;
-                        } else if (coupon.discountType === 'fixed') {
-                            const talkTimePerRupee = talkTime / originalAmount;
-                            bonusTalkTime = Math.floor(coupon.discountValue * talkTimePerRupee);
-                            finalTalkTime = talkTime + bonusTalkTime;
-                        }
-
                         // Record coupon usage
                         await CouponUsage.create({
                             coupon: coupon._id,
@@ -476,8 +465,6 @@ export const paymentService = {
 
                     } catch (couponError) {
                         console.log("Coupon processing error in webhook:", couponError.message);
-                        bonusTalkTime = 0;
-                        finalTalkTime = talkTime;
                     }
                 }
             }
@@ -489,7 +476,6 @@ export const paymentService = {
                 paymentId: payment.id,
                 amount: finalAmount,
                 originalAmount: originalAmount,
-                discountAmount: discountAmount,
                 gatewayResponse: payment,
                 completedAt: new Date()
             };

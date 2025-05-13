@@ -127,6 +127,7 @@ import './controllers/Recharge/ChatRecharge/chatjob.js'
 import Razor from './routes/RazorPayRoute/ChatRazorpayRoute.js'
 import RazorWallet from './routes/RazorPayRoute/WalletRazorpayRoute.js'
 import RazorPaltFrom from './routes/RazorPayRoute/PlatfromRazorpayroute.js'
+import changeGateway from './routes/getWay.js'
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");
@@ -173,6 +174,8 @@ app.use("/api/v1", Razor);
 
 app.use("/api/v1", RazorWallet);
 app.use("/api/v1", RazorPaltFrom);
+
+app.use("/api/v1/changeGateway", changeGateway);
 
 
 app.use("/api/v1", PlatformRoute);
