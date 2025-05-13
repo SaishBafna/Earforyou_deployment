@@ -1,5 +1,5 @@
 // controllers/payment/razorpayController.js
-import { createRazorpayOrder, verifyRazorpayPayment } from '../../utils/razorpay.js';
+import { createRazorpayOrder, verifyRazorpayPayment } from './utils/RazorpayUtils.js';
 import PlatformCharges from '../../models/Wallet/PlatfromCharges/Platfrom.js';
 import MyPlan from '../../models/Wallet/PlatfromCharges/myPlanSchema.js';
 import { CouponUsage, Coupon } from '../../models/CouponSystem/couponModel.js';
