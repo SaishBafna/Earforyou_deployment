@@ -1,4 +1,4 @@
-import PaymentGateway from "../models/PaymentGetway";
+import PaymentGateway from "../models/PaymentGetway.js";
 // Get the current active payment gateway
 export const getPaymentGateway = async (req, res) => {
     try {
