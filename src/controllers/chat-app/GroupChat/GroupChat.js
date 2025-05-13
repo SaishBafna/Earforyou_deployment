@@ -2635,7 +2635,6 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   }
 
   // Check if already requested
-  // Fixed variable naming conflict (renamed parameter to avoid confusion)
   if (groupChat.pendingJoinRequests.some(pendingReq => pendingReq.user.equals(req.user._id))) {
     throw new ApiError(400, "You have already requested to join this group");
   }
@@ -2656,36 +2655,15 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     { new: true, lean: true }
   );
 
-  //   // Get user info for notification
+  // Get user info for notification
   const user = await User.findById(req.user._id)
     .select("username")
     .lean();
 
-  //   // Ensure admins is an array and use it correctly
-  //   // Convert to array of admin IDs if not already
-  const adminIds = Array.isArray(groupChat.admins) ? groupChat.admins : [];
-
-  // Notify group admins individually
-  const adminNotifications = adminIds.map(adminId =>
-    emitSocketEvent(
-      req,
-      adminId.toString(),
-      ChatEventEnum.JOIN_REQUEST_EVENT,
-      {
-        chatId,
-        userId: req.user._id,
-        username: user.username,
-        message: message?.trim() || ""
-      }
-    )
-  );
-
-  await Promise.all(adminNotifications);
-
-  // Send group notifications to admins
+  // Notify group admins using helper function
   await sendGroupNotifications(req, {
     chatId,
-    participants: adminIds, // Use the adminIds array
+    participants: Array.isArray(groupChat.admins) ? groupChat.admins : [],
     eventType: ChatEventEnum.JOIN_REQUEST_EVENT,
     data: {
       chatId,
@@ -2701,13 +2679,10 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, updatedChat, "Join request submitted successfully"));
 });
 
-
 // /**
 //  * @route PUT /api/v1/chats/group/:chatId/approve/:userId
 //  * @description Approve or reject a join request
 //  */
-
-
 const approveJoinRequest = asyncHandler(async (req, res) => {
   const { chatId, userId } = req.params;
   const { approve } = req.body;
@@ -2761,35 +2736,33 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       { new: true, lean: true }
     );
 
-    // Notify all parties
-    await Promise.all([
-      ...groupChat.participants.map(pId =>
-        emitSocketEvent(
-          req,
-          pId.toString(),
-          ChatEventEnum.UPDATE_GROUP_EVENT,
-          updatedChat
-        )
-      ),
-      emitSocketEvent(
-        req,
-        userId.toString(),
-        ChatEventEnum.NEW_GROUP_CHAT_EVENT,
-        updatedChat
-      ),
-      ...groupChat.admins.map(adminId =>
-        emitSocketEvent(
-          req,
-          adminId.toString(),
-          ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
-          {
-            chatId,
-            userId,
-            approvedBy: req.user._id,
-          }
-        )
-      ),
-    ]);
+    // Notify all participants about group update
+    await sendGroupNotifications(req, {
+      chatId,
+      participants: groupChat.participants,
+      eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
+      data: updatedChat
+    });
+
+    // Notify the new participant
+    await emitSocketEvent(
+      req,
+      userId.toString(),
+      ChatEventEnum.NEW_GROUP_CHAT_EVENT,
+      updatedChat
+    );
+
+    // Notify admins about approval
+    await sendGroupNotifications(req, {
+      chatId,
+      participants: groupChat.admins,
+      eventType: ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
+      data: {
+        chatId,
+        userId,
+        approvedBy: req.user._id,
+      }
+    });
 
     return res
       .status(200)
@@ -2823,75 +2796,6 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
 });
 
 
-const sendGroupNotifications1 = async (req, {
-  chatId,
-  participants,
-  excludedUsers = [],
-  eventType,
-  notificationBody
-  data,
-  includePushNotifications = true
-}) => {
-  try {
-    // Get necessary user data
-    const usersToNotify = await User.find({
-      _id: { $in: participants },
-      _id: { $nin: excludedUsers }
-    }).select('_id deviceToken');
-
-    // Socket notifications
-    const socketNotifications = usersToNotify.map(user => {
-      try {
-        return emitSocketEvent(
-          req,
-          user._id.toString(),
-          eventType,
-          data
-        );
-      } catch (error) {
-        console.error(`Socket notification failed for user ${user._id}`, error);
-        return null;
-      }
-    });
-
-    // Push notifications
-    let pushNotifications = [];
-    if (includePushNotifications && req.admin?.messaging) {  // Changed to req.admin
-      pushNotifications = usersToNotify
-        .filter(user => user.deviceToken)
-        .map(async user => {
-          try {
-            // Convert all data values to strings
-            const stringData = {};
-            for (const key in data) {
-              stringData[key] = data[key]?.toString() || '';
-            }
-
-
-            const message = {
-              notification: {
-                title: 'Group Notification',
-                body: notificationBody,
-              },
-              token: user.deviceToken,
-              data: {
-                chatId: chatId.toString(),
-                type: eventType.toString(),
-                ...stringData
-              },
-            };
-            await req.admin.messaging().send(message);  // Changed to req.admin
-          } catch (error) {
-            console.error(`FCM failed for user ${user._id}`, error);
-          }
-        });
-    }
-
-    await Promise.allSettled([...socketNotifications, ...pushNotifications]);
-  } catch (error) {
-    console.error('Error in sendGroupNotifications:', error);
-  }
-};
 
 /**
  * @route GET /api/v1/chats/group/:chatId/requests
