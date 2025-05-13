@@ -2821,7 +2821,6 @@ const deleteGroupChat = asyncHandler(async (req, res) => {
 
 
 
-
 const requestToJoinGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { message } = req.body;
@@ -2995,7 +2994,7 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
     ]);
 
     // Send push notifications
-    await sendGroupNotifications(req, {
+    await sendGroupNotifications1(req, {
       chatId,
       participants: [...groupChat.participants, userId],
       eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
@@ -3081,7 +3080,7 @@ const sendGroupNotifications1 = async (req, {
 
     // Push notifications
     let pushNotifications = [];
-    if (includePushNotifications && admin?.messaging) {
+    if (includePushNotifications && req.admin?.messaging) {  // Changed to req.admin
       pushNotifications = usersToNotify
         .filter(user => user.deviceToken)
         .map(async user => {
@@ -3116,7 +3115,7 @@ const sendGroupNotifications1 = async (req, {
                 ...stringData
               },
             };
-            await admin.messaging().send(message);
+            await req.admin.messaging().send(message);  // Changed to req.admin
           } catch (error) {
             console.error(`FCM failed for user ${user._id}`, error);
           }
