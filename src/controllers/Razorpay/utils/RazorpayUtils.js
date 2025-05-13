@@ -14,13 +14,13 @@ export const createRazorpayOrder = async (amount, currency = 'INR', receipt, not
         if (isNaN(amountInPaise)) {
             throw new Error('Amount must be a valid number');
         }
-        if (amountInPaise < 100) { // Minimum amount is 100 paise (1 INR)
+        if (amountInPaise < 100) {
             throw new Error('Amount must be at least 1 INR');
         }
 
         // Validate receipt length
         if (receipt.length > 40) {
-            receipt = receipt.substring(0, 40); // Truncate to 40 characters
+            receipt = receipt.substring(0, 40);
         }
 
         const options = {
@@ -28,7 +28,7 @@ export const createRazorpayOrder = async (amount, currency = 'INR', receipt, not
             currency,
             receipt,
             notes,
-            payment_capture: 1 // Auto-capture payment
+            payment_capture: 1
         };
 
         const order = await razorpay.orders.create(options);
@@ -50,7 +50,6 @@ export const verifyRazorpayPayment = async (orderId, paymentId, signature) => {
             throw new Error('Payment signature verification failed');
         }
 
-        // Optionally fetch payment details from Razorpay
         const payment = await razorpay.payments.fetch(paymentId);
         return {
             verified: true,

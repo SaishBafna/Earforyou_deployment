@@ -5,6 +5,7 @@ import MyPlan from '../../models/Wallet/PlatfromCharges/myPlanSchema.js';
 import { CouponUsage, Coupon } from '../../models/CouponSystem/couponModel.js';
 import User from '../../models/Users.js';
 import admin from 'firebase-admin';
+import crypto from 'crypto';
 
 export const createOrder = async (req, res) => {
     const { planId, couponCode } = req.body;
@@ -56,7 +57,7 @@ export const createOrder = async (req, res) => {
                         }
                     }
 
-                    if (coupon.minimumOrderAmount && planDetails.amount < coupon.minimumOrderAmount) {
+                    if (coupon.minimumOrderAmount && planDetails.price < coupon.minimumOrderAmount) {
                         throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required`);
                     }
 
@@ -81,7 +82,7 @@ export const createOrder = async (req, res) => {
         }
 
         // Create Razorpay order
-        const receipt = `plan_${planId}_${Date.now()}`.substring(0, 40); // Ensure receipt is <= 40 chars
+        const receipt = `plan_${planId}_${Date.now()}`.substring(0, 40);
         const notes = {
             userId: userId.toString(),
             planId: planId.toString(),
@@ -106,7 +107,7 @@ export const createOrder = async (req, res) => {
             payment: {
                 gateway: 'RazorPay',
                 orderId: order.id,
-                amount: planDetails.amount,
+                amount: planDetails.price,
                 currency: 'INR',
                 status: 'created',
                 gatewayResponse: order
@@ -375,7 +376,6 @@ export const handleWebhook = async (req, res) => {
 
 async function sendNotification(userId, title, message, screen) {
     try {
-        // Assuming you have the FCM device token stored in your database
         const user = await User.findById(userId);
         if (!user || !user.deviceToken) {
             console.error("No device token found for user:", userId);
