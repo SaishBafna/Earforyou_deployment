@@ -3,8 +3,8 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import Wallet from '../../models/Wallet/Wallet.js';
 import SubscriptionPlan from '../../models/Subscription/Subscription.js';
-// import { CouponUsage, Coupon } from '../../models/Coupon/Coupon.js'; // ✅ Correct
 import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
+
 // Initialize Razorpay instance with error handling
 let instance;
 try {
@@ -308,7 +308,7 @@ export const paymentService = {
             const fetchedPayment = await instance.payments.fetch(paymentData.razorpay_payment_id);
 
             if (!fetchedPayment) {
-                throw new ApiError(400, 'Payment not found');
+                throw new Error('Payment not found');
             }
 
             // Step 2: Check if payment is already captured
@@ -360,7 +360,7 @@ export const paymentService = {
     },
 
     /**
-     * Creates subscription record with coupon support
+     * Creates subscription record with coupon support and updates wallet
      */
     async createSubscription(userId, planId, paymentDetails, finalTalkTime, bonusTalkTime = 0, couponCode = null) {
         try {
@@ -404,29 +404,40 @@ export const paymentService = {
                 });
             }
 
-            // Add talk time to wallet
-            wallet.talkTime += finalTalkTime;
-            wallet.plan.push({ planId });
+            // Add talk time to wallet only if payment was successful
+            if (paymentDetails.status === "success") {
+                wallet.talkTime += finalTalkTime;
 
-            // Add payment record
-            wallet.recharges.push({
-                amount: paymentDetails.amount,
-                payment: {
-                    gateway: "RazorPay",
-                    transactionId: paymentDetails.transactionId,
-                    paymentId: paymentDetails.paymentId,
+                // Add the plan to the user's wallet
+                wallet.plan.push({
+                    planId,
+                    name: plan.name,
+                    talkTime: finalTalkTime,
+                    validityDays: plan.validityDays,
+                    expiryDate: expiryDate,
+                    status: 'active'
+                });
+
+                // Add payment record
+                wallet.recharges.push({
                     amount: paymentDetails.amount,
-                    currency: "INR",
-                    status: "success",
-                    gatewayResponse: paymentDetails.gatewayResponse,
-                    completedAt: new Date()
-                },
-                rechargeDate: new Date(),
-                planId: planId,
-                couponCode: couponCode || undefined
-            });
+                    payment: {
+                        gateway: "RazorPay",
+                        transactionId: paymentDetails.transactionId,
+                        paymentId: paymentDetails.paymentId,
+                        amount: paymentDetails.amount,
+                        currency: "INR",
+                        status: "success",
+                        gatewayResponse: paymentDetails.gatewayResponse,
+                        completedAt: new Date()
+                    },
+                    rechargeDate: new Date(),
+                    planId: planId,
+                    couponCode: couponCode || undefined
+                });
 
-            await wallet.save();
+                await wallet.save();
+            }
 
             return {
                 subscription: subscriptionData,
@@ -693,10 +704,6 @@ export const paymentService = {
         }
     }
 };
-
-
-
-
 
 async function sendNotification(userId, title, message, screen) {
     // Assuming you have the FCM device token stored in your database
