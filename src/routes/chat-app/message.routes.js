@@ -21,7 +21,7 @@ router
   .post(
     upload.fields([{ name: "attachments", maxCount: 5 }]),
     mongoIdPathVariableValidator("chatId"),
-    checkChatAccess,
+    
     sendMessageValidator(),
     validate,
     sendMessage
