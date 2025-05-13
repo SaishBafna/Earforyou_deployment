@@ -106,3 +106,35 @@ export const paymentController = {
         }
     }
 };
+
+
+
+
+async function sendNotification(userId, title, message, screen) {
+    // Assuming you have the FCM device token stored in your database
+    const user = await User.findById(userId);
+    const deviceToken = user.deviceToken;
+
+    if (!deviceToken) {
+        console.error("No device token found for user:", userId);
+        return;
+    }
+
+    const payload = {
+        notification: {
+            title: title,
+            body: message,
+        },
+        data: {
+            screen: screen, // This will be used in the client app to navigate
+        },
+        token: deviceToken,
+    };
+
+    try {
+        const response = await admin.messaging().send(payload);
+        console.log("Notification sent successfully:", response);
+    } catch (error) {
+        console.error("Error sending notification:", error);
+    }
+}

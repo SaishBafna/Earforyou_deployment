@@ -376,6 +376,7 @@ export const paymentService = {
                 user: userId,
                 plan: planId,
                 expiryDate,
+                balance: finalTalkTime,
                 talkTime: finalTalkTime,
                 isActive: paymentDetails.status === "success",
                 payment: {
