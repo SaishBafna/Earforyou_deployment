@@ -9,6 +9,7 @@ import { upload } from "../../middlewares/multer.middlewares.js";
 import { sendMessageValidator } from "../../validators/chat-app/message.validators.js";
 import { mongoIdPathVariableValidator } from "../../validators/common/mongodb.validators.js";
 import { validate } from "../../validators/validate.js";
+import { checkChatAccess } from "../../middlewares/auth/ChaeckChatUse.js";
 
 const router = Router();
 
@@ -18,6 +19,7 @@ router
   .route("/:chatId")
   .get(mongoIdPathVariableValidator("chatId"), validate, getAllMessages)
   .post(
+    checkChatAccess,
     upload.fields([{ name: "attachments", maxCount: 5 }]),
     mongoIdPathVariableValidator("chatId"),
     sendMessageValidator(),
