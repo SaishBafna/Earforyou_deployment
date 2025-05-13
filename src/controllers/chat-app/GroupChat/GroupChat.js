@@ -2610,217 +2610,6 @@ const deleteGroupChat = asyncHandler(async (req, res) => {
  * @route POST /api/v1/chats/group/:chatId/join
  * @description Request to join a group
  */
-// const requestToJoinGroup = asyncHandler(async (req, res) => {
-//   const { chatId } = req.params;
-//   const { message } = req.body;
-
-//   // Get group chat and validate
-//   const groupChat = await GroupChat.findOne({
-//     _id: chatId,
-//     isGroupChat: true
-//   }).select("participants pendingJoinRequests admins settings name").lean();
-
-//   if (!groupChat) {
-//     throw new ApiError(404, "Group chat not found");
-//   }
-
-//   // Check if group allows joining by request
-//   if (groupChat.settings.joinByLink) {
-//     throw new ApiError(400, "This group allows joining by link only");
-//   }
-
-//   // Check if already a member
-//   if (groupChat.participants.some(p => p.equals(req.user._id))) {
-//     throw new ApiError(400, "You are already a member of this group");
-//   }
-
-//   // Check if already requested
-//   // Fixed variable naming conflict (renamed parameter to avoid confusion)
-//   if (groupChat.pendingJoinRequests.some(pendingReq => pendingReq.user.equals(req.user._id))) {
-//     throw new ApiError(400, "You have already requested to join this group");
-//   }
-
-//   // Add join request
-//   const updatedChat = await GroupChat.findByIdAndUpdate(
-//     chatId,
-//     {
-//       $push: {
-//         pendingJoinRequests: {
-//           user: req.user._id,
-//           requestedAt: new Date(),
-//           message: message?.trim() || ""
-//         },
-//       },
-//       $set: { lastActivity: new Date() }
-//     },
-//     { new: true, lean: true }
-//   );
-
-//   // Get user info for notification
-//   const user = await User.findById(req.user._id)
-//     .select("username")
-//     .lean();
-
-//   // Ensure admins is an array and use it correctly
-//   // Convert to array of admin IDs if not already
-//   const adminIds = Array.isArray(groupChat.admins) ? groupChat.admins : [];
-
-//   // Notify group admins individually
-//   const adminNotifications = adminIds.map(adminId =>
-//     emitSocketEvent(
-//       req,
-//       adminId.toString(),
-//       ChatEventEnum.JOIN_REQUEST_EVENT,
-//       {
-//         chatId,
-//         userId: req.user._id,
-//         username: user.username,
-//         message: message?.trim() || ""
-//       }
-//     )
-//   );
-
-//   await Promise.all(adminNotifications);
-
-//   // Send group notifications to admins
-//   await sendGroupNotifications(req, {
-//     chatId,
-//     participants: adminIds, // Use the adminIds array
-//     eventType: ChatEventEnum.JOIN_REQUEST_EVENT,
-//     data: {
-//       chatId,
-//       userId: req.user._id,
-//       username: user.username,
-//       message: message?.trim() || "",
-//       groupName: groupChat.name
-//     }
-//   });
-
-//   return res
-//     .status(200)
-//     .json(new ApiResponse(200, updatedChat, "Join request submitted successfully"));
-// });
-
-// /**
-//  * @route PUT /api/v1/chats/group/:chatId/approve/:userId
-//  * @description Approve or reject a join request
-//  */
-// const approveJoinRequest = asyncHandler(async (req, res) => {
-//   const { chatId, userId } = req.params;
-//   const { approve } = req.body;
-
-//   if (typeof approve !== "boolean") {
-//     throw new ApiError(400, "Approve must be a boolean value");
-//   }
-
-//   // Get group chat and validate admin status
-//   const groupChat = await GroupChat.findOne({
-//     _id: chatId,
-//     isGroupChat: true,
-//     admins: req.user._id,
-//   }).select("participants pendingJoinRequests admins").lean();
-
-//   if (!groupChat) {
-//     throw new ApiError(404, "Group chat not found or you're not an admin");
-//   }
-
-//   // Find the join request
-//   const joinRequest = groupChat.pendingJoinRequests.find(req =>
-//     req.user.equals(userId)
-//   );
-
-//   if (!joinRequest) {
-//     throw new ApiError(404, "Join request not found");
-//   }
-
-//   if (approve) {
-//     // Validate user exists
-//     const userExists = await User.exists({ _id: userId });
-//     if (!userExists) {
-//       throw new ApiError(404, "User not found");
-//     }
-
-//     // Calculate unread count for the new participant
-//     const unreadCount = await GroupChatMessage.countDocuments({
-//       chat: chatId,
-//       sender: { $ne: userId },
-//     });
-
-//     // Add user to participants
-//     const updatedChat = await GroupChat.findByIdAndUpdate(
-//       chatId,
-//       {
-//         $addToSet: { participants: userId },
-//         $pull: { pendingJoinRequests: { user: userId } },
-//         $push: { unreadCounts: { user: userId, count: unreadCount } },
-//         $set: { lastActivity: new Date() }
-//       },
-//       { new: true, lean: true }
-//     );
-
-//     // Notify all parties
-//     await Promise.all([
-//       ...groupChat.participants.map(pId =>
-//         emitSocketEvent(
-//           req,
-//           pId.toString(),
-//           ChatEventEnum.UPDATE_GROUP_EVENT,
-//           updatedChat
-//         )
-//       ),
-//       emitSocketEvent(
-//         req,
-//         userId.toString(),
-//         ChatEventEnum.NEW_GROUP_CHAT_EVENT,
-//         updatedChat
-//       ),
-//       ...groupChat.admins.map(adminId =>
-//         emitSocketEvent(
-//           req,
-//           adminId.toString(),
-//           ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
-//           {
-//             chatId,
-//             userId,
-//             approvedBy: req.user._id,
-//           }
-//         )
-//       ),
-//     ]);
-
-//     return res
-//       .status(200)
-//       .json(new ApiResponse(200, updatedChat, "Join request approved successfully"));
-//   } else {
-//     // Reject the join request
-//     const updatedChat = await GroupChat.findByIdAndUpdate(
-//       chatId,
-//       {
-//         $pull: { pendingJoinRequests: { user: userId } },
-//         $set: { lastActivity: new Date() }
-//       },
-//       { new: true, lean: true }
-//     );
-
-//     // Notify the rejected user
-//     await emitSocketEvent(
-//       req,
-//       userId.toString(),
-//       ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
-//       {
-//         chatId,
-//         rejectedBy: req.user._id,
-//       }
-//     );
-
-//     return res
-//       .status(200)
-//       .json(new ApiResponse(200, updatedChat, "Join request rejected successfully"));
-//   }
-// });
-
-
-
 const requestToJoinGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { message } = req.body;
@@ -2846,6 +2635,7 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   }
 
   // Check if already requested
+  // Fixed variable naming conflict (renamed parameter to avoid confusion)
   if (groupChat.pendingJoinRequests.some(pendingReq => pendingReq.user.equals(req.user._id))) {
     throw new ApiError(400, "You have already requested to join this group");
   }
@@ -2866,12 +2656,13 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     { new: true, lean: true }
   );
 
-  // Get user info for notification
+  //   // Get user info for notification
   const user = await User.findById(req.user._id)
     .select("username")
     .lean();
 
-  // Ensure admins is an array and use it correctly
+  //   // Ensure admins is an array and use it correctly
+  //   // Convert to array of admin IDs if not already
   const adminIds = Array.isArray(groupChat.admins) ? groupChat.admins : [];
 
   // Notify group admins individually
@@ -2881,8 +2672,8 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
       adminId.toString(),
       ChatEventEnum.JOIN_REQUEST_EVENT,
       {
-        chatId: chatId.toString(),
-        userId: req.user._id.toString(),
+        chatId,
+        userId: req.user._id,
         username: user.username,
         message: message?.trim() || ""
       }
@@ -2892,13 +2683,13 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   await Promise.all(adminNotifications);
 
   // Send group notifications to admins
-  await sendGroupNotifications1(req, {
+  await sendGroupNotifications(req, {
     chatId,
-    participants: adminIds,
+    participants: adminIds, // Use the adminIds array
     eventType: ChatEventEnum.JOIN_REQUEST_EVENT,
     data: {
-      chatId: chatId.toString(),
-      userId: req.user._id.toString(),
+      chatId,
+      userId: req.user._id,
       username: user.username,
       message: message?.trim() || "",
       groupName: groupChat.name
@@ -2909,6 +2700,13 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, updatedChat, "Join request submitted successfully"));
 });
+
+
+// /**
+//  * @route PUT /api/v1/chats/group/:chatId/approve/:userId
+//  * @description Approve or reject a join request
+//  */
+
 
 const approveJoinRequest = asyncHandler(async (req, res) => {
   const { chatId, userId } = req.params;
@@ -2985,25 +2783,13 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
           adminId.toString(),
           ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
           {
-            chatId: chatId.toString(),
-            userId: userId.toString(),
-            approvedBy: req.user._id.toString(),
+            chatId,
+            userId,
+            approvedBy: req.user._id,
           }
         )
       ),
     ]);
-
-    // Send push notifications
-    await sendGroupNotifications1(req, {
-      chatId,
-      participants: [...groupChat.participants, userId],
-      eventType: ChatEventEnum.UPDATE_GROUP_EVENT,
-      data: {
-        chatId: chatId.toString(),
-        action: 'new_member',
-        userId: userId.toString()
-      }
-    });
 
     return res
       .status(200)
@@ -3025,22 +2811,10 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       userId.toString(),
       ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
       {
-        chatId: chatId.toString(),
-        rejectedBy: req.user._id.toString(),
+        chatId,
+        rejectedBy: req.user._id,
       }
     );
-
-    // Send push notification to the rejected user
-    await sendGroupNotifications1(req, {
-      chatId,
-      participants: [userId],
-      eventType: ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
-      data: {
-        chatId: chatId.toString(),
-        rejectedBy: req.user._id.toString(),
-        groupName: updatedChat.name || 'the group'
-      }
-    });
 
     return res
       .status(200)
@@ -3048,11 +2822,13 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
   }
 });
 
+
 const sendGroupNotifications1 = async (req, {
   chatId,
   participants,
   excludedUsers = [],
   eventType,
+  notificationBody
   data,
   includePushNotifications = true
 }) => {
@@ -3091,17 +2867,6 @@ const sendGroupNotifications1 = async (req, {
               stringData[key] = data[key]?.toString() || '';
             }
 
-            // Create notification body based on event type
-            let notificationBody = 'You have a new group notification';
-            if (eventType === ChatEventEnum.JOIN_REQUEST_EVENT) {
-              notificationBody = `New join request from ${stringData.username}`;
-            } else if (eventType === ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT) {
-              notificationBody = `Your join request was approved`;
-            } else if (eventType === ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT) {
-              notificationBody = `Your join request was rejected`;
-            } else if (eventType === ChatEventEnum.UPDATE_GROUP_EVENT) {
-              notificationBody = `Group updated: ${stringData.action === 'new_member' ? 'New member joined' : 'Group settings changed'}`;
-            }
 
             const message = {
               notification: {
