@@ -35,7 +35,6 @@ export const paymentService = {
             let coupon = null;
             let finalAmount = plan.price;
             let couponDetails = null;
-            let bonusTalkTime = 0;
 
             // Process coupon if provided
             if (couponCode) {
@@ -76,9 +75,6 @@ export const paymentService = {
                             finalAmount = plan.price - coupon.discountValue;
                             if (finalAmount < 0) finalAmount = 0;
                             console.log(`Applied fixed coupon worth ₹${coupon.discountValue}`);
-                        } else if (coupon.discountType === 'free_days') {
-                            // For free days, we don't modify the price but will add extra talk time later
-                            console.log(`Will add ${coupon.discountValue} free days`);
                         }
 
                         couponDetails = {
@@ -108,7 +104,8 @@ export const paymentService = {
                     planId: planId.toString(),
                     couponCode: couponCode || '',
                     originalAmount: plan.price,
-                    discountAmount: plan.price - finalAmount
+                    discountAmount: plan.price - finalAmount,
+                    talkTime: plan.talkTime
                 }
             });
 
@@ -124,8 +121,7 @@ export const paymentService = {
                 key: process.env.RAZORPAY_KEY_ID,
                 plan: {
                     name: plan.name,
-                    talkTime: plan.talkTime,
-                    validity: plan.validityDays
+                    talkTime: plan.talkTime
                 },
                 coupon: couponDetails
             };
@@ -136,9 +132,9 @@ export const paymentService = {
     },
 
     /**
-     * Verifies payment and activates subscription with coupon handling
+     * Verifies payment and adds talkTime to wallet balance
      */
-    async verifyAndActivate(userId, planId, paymentData, couponCode = null) {
+    async verifyAndAddTalkTime(userId, planId, paymentData, couponCode = null) {
         try {
             if (!paymentData || !paymentData.razorpay_order_id || !paymentData.razorpay_payment_id || !paymentData.razorpay_signature) {
                 throw new Error("Invalid payment data provided");
@@ -154,13 +150,14 @@ export const paymentService = {
             const originalAmount = order.notes?.originalAmount || plan.price;
             const discountAmount = order.notes?.discountAmount || 0;
             const finalAmount = originalAmount - discountAmount;
+            const talkTime = order.notes?.talkTime || plan.talkTime;
 
             let paymentDetails;
             try {
                 paymentDetails = await this.processPayment(paymentData, finalAmount);
             } catch (error) {
                 if (error.message.includes('already been captured')) {
-                    // If payment was already captured, verify and create subscription
+                    // If payment was already captured, verify and proceed
                     const payment = await instance.payments.fetch(paymentData.razorpay_payment_id);
                     if (payment.status === 'captured') {
                         paymentDetails = {
@@ -185,7 +182,7 @@ export const paymentService = {
             // Process coupon if it exists
             let coupon = null;
             let bonusTalkTime = 0;
-            let finalTalkTime = plan.talkTime;
+            let finalTalkTime = talkTime;
 
             if (couponCode) {
                 coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
@@ -194,18 +191,13 @@ export const paymentService = {
                     try {
                         // Apply coupon benefits for talk time
                         if (coupon.discountType === 'percentage') {
-                            bonusTalkTime = Math.floor(plan.talkTime * (coupon.discountValue / 100));
-                            finalTalkTime = plan.talkTime + bonusTalkTime;
+                            bonusTalkTime = Math.floor(talkTime * (coupon.discountValue / 100));
+                            finalTalkTime = talkTime + bonusTalkTime;
                         } else if (coupon.discountType === 'fixed') {
                             // For fixed amount coupons, convert the discount to equivalent talk time
-                            const talkTimePerRupee = plan.talkTime / originalAmount;
+                            const talkTimePerRupee = talkTime / originalAmount;
                             bonusTalkTime = Math.floor(coupon.discountValue * talkTimePerRupee);
-                            finalTalkTime = plan.talkTime + bonusTalkTime;
-                        } else if (coupon.discountType === 'free_days') {
-                            // For free days, we'll add extra days' worth of talk time
-                            const dailyTalkTime = plan.talkTime / 30; // Assuming 30-day plan
-                            bonusTalkTime = Math.floor(coupon.discountValue * dailyTalkTime);
-                            finalTalkTime = plan.talkTime + bonusTalkTime;
+                            finalTalkTime = talkTime + bonusTalkTime;
                         }
 
                         // Record coupon usage
@@ -226,13 +218,13 @@ export const paymentService = {
                         console.log("Coupon processing error:", couponError.message);
                         // Continue without coupon benefits
                         bonusTalkTime = 0;
-                        finalTalkTime = plan.talkTime;
+                        finalTalkTime = talkTime;
                     }
                 }
             }
 
-            // Create subscription with updated talk time
-            const subscription = await this.createSubscription(
+            // Add talk time to wallet balance
+            const walletUpdate = await this.addTalkTimeToWallet(
                 userId,
                 planId,
                 paymentDetails,
@@ -241,9 +233,9 @@ export const paymentService = {
                 coupon ? coupon.code : null
             );
 
-            return subscription;
+            return walletUpdate;
         } catch (error) {
-            console.error('Error in verifyAndActivate:', error);
+            console.error('Error in verifyAndAddTalkTime:', error);
             throw error;
         }
     },
@@ -360,35 +352,14 @@ export const paymentService = {
     },
 
     /**
-     * Creates subscription record with coupon support and updates wallet
+     * Adds talk time to wallet balance and records transaction
      */
-    async createSubscription(userId, planId, paymentDetails, finalTalkTime, bonusTalkTime = 0, couponCode = null) {
+    async addTalkTimeToWallet(userId, planId, paymentDetails, finalTalkTime, bonusTalkTime = 0, couponCode = null) {
         try {
             const plan = await SubscriptionPlan.findById(planId);
             if (!plan) {
                 throw new Error("Plan not found");
             }
-
-            const expiryDate = new Date();
-            expiryDate.setDate(expiryDate.getDate() + plan.validityDays);
-
-            const subscriptionData = {
-                user: userId,
-                plan: planId,
-                expiryDate,
-                balance: finalTalkTime,
-                talkTime: finalTalkTime,
-                isActive: paymentDetails.status === "success",
-                payment: {
-                    gateway: "RazorPay",
-                    currency: "INR",
-                    ...paymentDetails
-                },
-                couponDetails: couponCode ? {
-                    code: couponCode,
-                    bonusTalkTime: bonusTalkTime
-                } : undefined
-            };
 
             // Find or create wallet
             let wallet = await Wallet.findOne({ userId });
@@ -396,28 +367,16 @@ export const paymentService = {
                 wallet = await Wallet.create({
                     userId,
                     balance: 0,
-                    talkTime: 0,
                     currency: 'inr',
                     recharges: [],
                     deductions: [],
-                    plan: [],
                     lastUpdated: new Date()
                 });
             }
 
-            // Add talk time to wallet only if payment was successful
+            // Add talk time to wallet balance only if payment was successful
             if (paymentDetails.gatewayResponse.status === "captured") {
-                wallet.talkTime += finalTalkTime;
-
-                // Add the plan to the user's wallet
-                wallet.plan.push({
-                    planId,
-                    name: plan.name,
-                    talkTime: finalTalkTime,
-                    validityDays: plan.validityDays,
-                    expiryDate: expiryDate,
-                    status: 'active'
-                });
+                wallet.balance += finalTalkTime;
 
                 // Add payment record
                 wallet.recharges.push({
@@ -434,17 +393,21 @@ export const paymentService = {
                     },
                     rechargeDate: new Date(),
                     planId: planId,
-                    couponCode: couponCode || undefined
+                    couponCode: couponCode || undefined,
+                    talkTimeAdded: finalTalkTime
                 });
 
                 await wallet.save();
             }
 
             return {
-                subscription: subscriptionData,
                 wallet: {
-                    balance: wallet.balance,
-                    talkTime: wallet.talkTime
+                    balance: wallet.balance
+                },
+                paymentDetails: {
+                    transactionId: paymentDetails.transactionId,
+                    amount: paymentDetails.amount,
+                    status: paymentDetails.status
                 },
                 couponApplied: couponCode ? {
                     code: couponCode,
@@ -452,8 +415,8 @@ export const paymentService = {
                 } : null
             };
         } catch (error) {
-            console.error('Subscription creation error:', error);
-            throw new Error(`Failed to create subscription: ${error.message}`);
+            console.error('Error adding talk time to wallet:', error);
+            throw new Error(`Failed to add talk time to wallet: ${error.message}`);
         }
     },
 
@@ -478,6 +441,7 @@ export const paymentService = {
             const originalAmount = order.notes.originalAmount || payment.amount / 100;
             const discountAmount = order.notes.discountAmount || 0;
             const finalAmount = originalAmount - discountAmount;
+            const talkTime = order.notes?.talkTime || 0;
 
             const plan = await SubscriptionPlan.findById(planId);
             if (!plan) {
@@ -487,7 +451,7 @@ export const paymentService = {
             // Process coupon if it exists
             let coupon = null;
             let bonusTalkTime = 0;
-            let finalTalkTime = plan.talkTime;
+            let finalTalkTime = talkTime;
 
             if (couponCode) {
                 coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
@@ -496,16 +460,12 @@ export const paymentService = {
                     try {
                         // Apply coupon benefits for talk time
                         if (coupon.discountType === 'percentage') {
-                            bonusTalkTime = Math.floor(plan.talkTime * (coupon.discountValue / 100));
-                            finalTalkTime = plan.talkTime + bonusTalkTime;
+                            bonusTalkTime = Math.floor(talkTime * (coupon.discountValue / 100));
+                            finalTalkTime = talkTime + bonusTalkTime;
                         } else if (coupon.discountType === 'fixed') {
-                            const talkTimePerRupee = plan.talkTime / originalAmount;
+                            const talkTimePerRupee = talkTime / originalAmount;
                             bonusTalkTime = Math.floor(coupon.discountValue * talkTimePerRupee);
-                            finalTalkTime = plan.talkTime + bonusTalkTime;
-                        } else if (coupon.discountType === 'free_days') {
-                            const dailyTalkTime = plan.talkTime / 30;
-                            bonusTalkTime = Math.floor(coupon.discountValue * dailyTalkTime);
-                            finalTalkTime = plan.talkTime + bonusTalkTime;
+                            finalTalkTime = talkTime + bonusTalkTime;
                         }
 
                         // Record coupon usage
@@ -525,12 +485,12 @@ export const paymentService = {
                     } catch (couponError) {
                         console.log("Coupon processing error in webhook:", couponError.message);
                         bonusTalkTime = 0;
-                        finalTalkTime = plan.talkTime;
+                        finalTalkTime = talkTime;
                     }
                 }
             }
 
-            // Create subscription with updated talk time
+            // Add talk time to wallet
             const paymentDetails = {
                 status: "success",
                 transactionId: payment.order_id,
@@ -542,7 +502,7 @@ export const paymentService = {
                 completedAt: new Date()
             };
 
-            return await this.createSubscription(
+            return await this.addTalkTimeToWallet(
                 userId,
                 planId,
                 paymentDetails,
@@ -576,11 +536,9 @@ export const paymentService = {
                     wallet = await Wallet.create({
                         userId,
                         balance: 0,
-                        talkTime: 0,
                         currency: 'inr',
                         recharges: [],
                         deductions: [],
-                        plan: [],
                         lastUpdated: new Date()
                     });
                 }
@@ -636,11 +594,9 @@ export const paymentService = {
                 wallet = await Wallet.create({
                     userId,
                     balance: 0,
-                    talkTime: 0,
                     currency: 'inr',
                     recharges: [],
                     deductions: [],
-                    plan: [],
                     lastUpdated: new Date()
                 });
             }

@@ -9,8 +9,22 @@ const razorpay = new Razorpay({
 
 export const createRazorpayOrder = async (amount, currency = 'INR', receipt, notes = {}) => {
     try {
+        // Validate amount is a number and positive
+        const amountInPaise = Math.round(Number(amount) * 100);
+        if (isNaN(amountInPaise)) {
+            throw new Error('Amount must be a valid number');
+        }
+        if (amountInPaise < 100) { // Minimum amount is 100 paise (1 INR)
+            throw new Error('Amount must be at least 1 INR');
+        }
+
+        // Validate receipt length
+        if (receipt.length > 40) {
+            receipt = receipt.substring(0, 40); // Truncate to 40 characters
+        }
+
         const options = {
-            amount: amount * 100, // Razorpay expects amount in paise
+            amount: amountInPaise,
             currency,
             receipt,
             notes,
@@ -47,8 +61,5 @@ export const verifyRazorpayPayment = async (orderId, paymentId, signature) => {
         throw error;
     }
 };
-
-
-
 
 export default razorpay;

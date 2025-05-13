@@ -1,12 +1,15 @@
 // controllers/payment/razorpayController.js
-import { createRazorpayOrder, verifyRazorpayPayment } from './utils/RazorpayUtils.js';
+import { createRazorpayOrder, verifyRazorpayPayment } from '../../utils/razorpay.js';
 import PlatformCharges from '../../models/Wallet/PlatfromCharges/Platfrom.js';
 import MyPlan from '../../models/Wallet/PlatfromCharges/myPlanSchema.js';
 import { CouponUsage, Coupon } from '../../models/CouponSystem/couponModel.js';
 import User from '../../models/Users.js';
+import admin from 'firebase-admin';
+
 export const createOrder = async (req, res) => {
     const { planId, couponCode } = req.body;
     const userId = req.user._id;
+
     try {
         // Validate input parameters
         if (!userId || !planId) {
@@ -78,7 +81,7 @@ export const createOrder = async (req, res) => {
         }
 
         // Create Razorpay order
-        const receipt = `plan_${planId}_user_${userId}_${Date.now()}`;
+        const receipt = `plan_${planId}_${Date.now()}`.substring(0, 40); // Ensure receipt is <= 40 chars
         const notes = {
             userId: userId.toString(),
             planId: planId.toString(),
@@ -370,30 +373,26 @@ export const handleWebhook = async (req, res) => {
     }
 };
 
-
-
 async function sendNotification(userId, title, message, screen) {
-    // Assuming you have the FCM device token stored in your database
-    const user = await User.findById(userId);
-    const deviceToken = user.deviceToken;
-
-    if (!deviceToken) {
-        console.error("No device token found for user:", userId);
-        return;
-    }
-
-    const payload = {
-        notification: {
-            title: title,
-            body: message,
-        },
-        data: {
-            screen: screen, // This will be used in the client app to navigate
-        },
-        token: deviceToken,
-    };
-
     try {
+        // Assuming you have the FCM device token stored in your database
+        const user = await User.findById(userId);
+        if (!user || !user.deviceToken) {
+            console.error("No device token found for user:", userId);
+            return;
+        }
+
+        const payload = {
+            notification: {
+                title: title,
+                body: message,
+            },
+            data: {
+                screen: screen,
+            },
+            token: user.deviceToken,
+        };
+
         const response = await admin.messaging().send(payload);
         console.log("Notification sent successfully:", response);
     } catch (error) {
