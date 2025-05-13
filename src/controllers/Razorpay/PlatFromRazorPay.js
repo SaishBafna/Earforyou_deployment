@@ -109,7 +109,7 @@ export const createOrder = async (req, res) => {
             payment: {
                 gateway: 'RazorPay',
                 orderId: order.id,
-                transactionId: order.id, // Added transactionId here
+                transactionId: order.id,
                 amount: planDetails.price,
                 currency: 'INR',
                 status: 'created',
@@ -148,10 +148,10 @@ export const verifyPayment = async (req, res) => {
 
     try {
         // Validate input
-        if (!orderId || !paymentId || !signature || !transactionId) {
+        if (!orderId || !paymentId || !signature) {
             return res.status(400).json({
                 success: false,
-                message: 'Missing required parameters: orderId, paymentId, signature, and transactionId are required'
+                message: 'Missing required parameters: orderId, paymentId, and signature are required'
             });
         }
 
@@ -159,8 +159,14 @@ export const verifyPayment = async (req, res) => {
         const verification = await verifyRazorpayPayment(orderId, paymentId, signature);
         const payment = verification.payment;
 
-        // Get transaction
-        const transaction = await PlatformCharges.findById(transactionId);
+        // Find transaction by either transactionId or orderId
+        let transaction;
+        if (transactionId) {
+            transaction = await PlatformCharges.findById(transactionId);
+        } else {
+            transaction = await PlatformCharges.findOne({ 'payment.orderId': orderId });
+        }
+
         if (!transaction) {
             return res.status(404).json({
                 success: false,
@@ -179,16 +185,14 @@ export const verifyPayment = async (req, res) => {
 
         // Update payment details
         transaction.payment = {
-            gateway: 'RazorPay',
-            orderId,
+            ...transaction.payment,
             paymentId,
             signature,
-            transactionId: payment.id, // Added transactionId here
+            transactionId: payment.id,
             amount: payment.amount / 100, // Convert from paise to rupees
             currency: payment.currency,
             status: payment.status === 'captured' ? 'success' : 'failed',
             gatewayResponse: payment,
-            initiatedAt: transaction.payment.initiatedAt,
             completedAt: new Date()
         };
 
@@ -212,6 +216,10 @@ export const verifyPayment = async (req, res) => {
             if (couponCode && transaction.couponDetails?.code) {
                 const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
                 if (coupon) {
+                    // Update coupon usage count
+                    coupon.currentUses += 1;
+                    await coupon.save();
+
                     await CouponUsage.create({
                         coupon: coupon._id,
                         user: transaction.userId,
@@ -327,16 +335,14 @@ export const handleWebhook = async (req, res) => {
 
             // Update payment details
             transaction.payment = {
-                gateway: 'RazorPay',
-                orderId: payment.order_id,
+                ...transaction.payment,
                 paymentId: payment.id,
                 signature: razorpaySignature,
-                transactionId: payment.id, // Added transactionId here
+                transactionId: payment.id,
                 amount: payment.amount / 100,
                 currency: payment.currency,
                 status: 'success',
                 gatewayResponse: { payment, order },
-                initiatedAt: transaction.payment.initiatedAt,
                 completedAt: new Date(payment.created_at * 1000)
             };
 
@@ -359,6 +365,10 @@ export const handleWebhook = async (req, res) => {
             if (couponCode && transaction.couponDetails?.code) {
                 const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
                 if (coupon) {
+                    // Update coupon usage count
+                    coupon.currentUses += 1;
+                    await coupon.save();
+
                     await CouponUsage.create({
                         coupon: coupon._id,
                         user: transaction.userId,

@@ -19,9 +19,9 @@ router
   .route("/:chatId")
   .get(mongoIdPathVariableValidator("chatId"), validate, getAllMessages)
   .post(
-    checkChatAccess,
     upload.fields([{ name: "attachments", maxCount: 5 }]),
     mongoIdPathVariableValidator("chatId"),
+    checkChatAccess,
     sendMessageValidator(),
     validate,
     sendMessage
