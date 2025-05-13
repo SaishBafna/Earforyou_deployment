@@ -6,8 +6,6 @@ import User from '../../models/Users.js';
 import admin from 'firebase-admin';
 import crypto from 'crypto';
 
-
-
 export const createOrder = async (req, res) => {
     const { planId, couponCode } = req.body;
     const userId = req.user._id;
@@ -36,7 +34,7 @@ export const createOrder = async (req, res) => {
         let extendedDays = 0;
 
         if (couponCode) {
-            const coupon = await Coupon.findOne({ 
+            const coupon = await Coupon.findOne({
                 code: couponCode.toUpperCase(),
                 isActive: true
             });
@@ -111,6 +109,7 @@ export const createOrder = async (req, res) => {
             payment: {
                 gateway: 'RazorPay',
                 orderId: order.id,
+                transactionId: order.id, // Added transactionId here
                 amount: planDetails.price,
                 currency: 'INR',
                 status: 'created',
@@ -184,6 +183,7 @@ export const verifyPayment = async (req, res) => {
             orderId,
             paymentId,
             signature,
+            transactionId: payment.id, // Added transactionId here
             amount: payment.amount / 100, // Convert from paise to rupees
             currency: payment.currency,
             status: payment.status === 'captured' ? 'success' : 'failed',
@@ -216,7 +216,7 @@ export const verifyPayment = async (req, res) => {
                         coupon: coupon._id,
                         user: transaction.userId,
                         transaction: transaction._id,
-                        discountApplied: coupon.discountType === 'free_days' ? 
+                        discountApplied: coupon.discountType === 'free_days' ?
                             (transaction.payment.gatewayResponse.notes?.extendedDays || 0) : 0,
                         appliedAt: new Date()
                     });
@@ -255,8 +255,8 @@ export const verifyPayment = async (req, res) => {
 
         return res.status(200).json({
             success: payment.status === 'captured',
-            message: payment.status === 'captured' 
-                ? 'Payment verified successfully' 
+            message: payment.status === 'captured'
+                ? 'Payment verified successfully'
                 : 'Payment verification failed',
             transactionId: transaction._id,
             status: transaction.status
@@ -298,9 +298,9 @@ export const handleWebhook = async (req, res) => {
         // Handle only payment captured events
         if (event === 'payment.captured') {
             if (!payment || !order) {
-                return res.status(400).json({ 
-                    status: 'error', 
-                    message: 'Missing payment or order data' 
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Missing payment or order data'
                 });
             }
 
@@ -311,17 +311,17 @@ export const handleWebhook = async (req, res) => {
 
             if (!transaction) {
                 console.error(`Transaction not found for order: ${payment.order_id}`);
-                return res.status(404).json({ 
-                    status: 'error', 
-                    message: 'Transaction not found' 
+                return res.status(404).json({
+                    status: 'error',
+                    message: 'Transaction not found'
                 });
             }
 
             // Skip if already processed
             if (transaction.payment.status === 'success') {
-                return res.status(200).json({ 
-                    status: 'success', 
-                    message: 'Already processed' 
+                return res.status(200).json({
+                    status: 'success',
+                    message: 'Already processed'
                 });
             }
 
@@ -331,6 +331,7 @@ export const handleWebhook = async (req, res) => {
                 orderId: payment.order_id,
                 paymentId: payment.id,
                 signature: razorpaySignature,
+                transactionId: payment.id, // Added transactionId here
                 amount: payment.amount / 100,
                 currency: payment.currency,
                 status: 'success',
@@ -362,7 +363,7 @@ export const handleWebhook = async (req, res) => {
                         coupon: coupon._id,
                         user: transaction.userId,
                         transaction: transaction._id,
-                        discountApplied: coupon.discountType === 'free_days' ? 
+                        discountApplied: coupon.discountType === 'free_days' ?
                             (order.notes?.extendedDays || 0) : 0,
                         appliedAt: new Date()
                     });
@@ -401,10 +402,10 @@ export const handleWebhook = async (req, res) => {
         res.status(200).json({ status: 'success' });
     } catch (error) {
         console.error('Error in handleWebhook:', error);
-        res.status(500).json({ 
-            status: 'error', 
+        res.status(500).json({
+            status: 'error',
             message: 'Internal server error',
-            error: error.message 
+            error: error.message
         });
     }
 };
