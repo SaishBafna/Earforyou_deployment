@@ -157,7 +157,7 @@ router.post('/wallet/verify', protect, async (req, res) => {
     const { planId, paymentData, couponCode } = req.body;
     const userId = req.user._id;
 
-    const result = await paymentService.verifyAndActivate(
+    const result = await paymentService.verifyAndAddTalkTime(
       userId,
       planId,
       paymentData,

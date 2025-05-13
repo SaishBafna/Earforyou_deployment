@@ -91,7 +91,7 @@ export const createOrder = async (req, res) => {
         };
 
         const order = await createRazorpayOrder(
-            planDetails.amount,
+            planDetails.price,
             'INR',
             receipt,
             notes
