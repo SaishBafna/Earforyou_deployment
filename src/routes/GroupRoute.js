@@ -25,6 +25,7 @@ import {
 } from "../controllers/chat-app/GroupChat/GroupChat.js";
 import { checkandcut } from "../middlewares/auth/ChaeckChatUse.js";
 import { checkChatStatus } from "../middlewares/auth/checkChatStatus.js";
+import { protect } from "../middlewares/auth/authMiddleware.js";
 
 
 const router = express.Router();
@@ -95,6 +96,6 @@ router.route("/:chatId/revoke-link")
 
 
 
-router.get('/check-access/:receiverId', checkandcut);
+router.get('/check-access/:receiverId', protect, checkandcut);
 
 export default router;
