@@ -55,7 +55,7 @@ router.route("/group/:chatId/leave")
 
 // Group Messages
 router.route("/group/:chatId/messages")
-    .get(mongoIdPathVariableValidator("chatId"), validate, protect, checkChatStatus, getAllGroupMessages) // Get all messages
+    .get(mongoIdPathVariableValidator("chatId"), validate, protect, getAllGroupMessages) // Get all messages
     .post(
         upload.fields([{ name: "attachments", maxCount: 10 }]), // Updated to allow 10 attachments
         mongoIdPathVariableValidator("chatId"),
