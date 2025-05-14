@@ -25,7 +25,6 @@ import {
 } from "../controllers/chat-app/GroupChat/GroupChat.js";
 import { checkandcut } from "../middlewares/auth/ChaeckChatUse.js";
 import { checkChatStatus } from "../middlewares/auth/checkChatStatus.js";
-import { protect } from "../middlewares/auth/authMiddleware.js";
 
 
 const router = express.Router();
