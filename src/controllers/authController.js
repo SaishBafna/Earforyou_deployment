@@ -1714,7 +1714,7 @@ export const getHealer = async (req, res) => {
     const matchConditions = {
       _id: { $ne: loggedInUserId },
       UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
-      userCategory: "Healer" // Add this condition to only get Healers
+      userCategory: "Counsellor" // Add this condition to only get Healers
     };
 
     if (genderFilter) {

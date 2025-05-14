@@ -234,6 +234,8 @@ export const checkandcut = async (req, res) => {
     }
 };
 
+
+
 // export const checkandcut = async (req, res) => {
 //     try {
 //         const { receiverId: chatId } = req.params;
