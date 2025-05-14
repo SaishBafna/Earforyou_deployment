@@ -101,7 +101,7 @@ export const checkChatAccess = asyncHandler(async (req, res, next) => {
 
 
 
-export  const checkandcut  = async (req, res) => {
+export const checkandcut = async (req, res) => {
     try {
         const { receiverId: chatId } = req.params;
         const userId = req.user._id;
@@ -196,6 +196,10 @@ export  const checkandcut  = async (req, res) => {
             metadata.hasPreviousPlans = true;
         } else if (hasNonCompletedPlans) {
             errorMessage = "You have pending payments. Please complete your payment to access chats.";
+            metadata.hasPendingPayments = true;
+        }
+        else {
+            errorMessage = "You don`t have active plan . Please complete your payment to access chats.";
             metadata.hasPendingPayments = true;
         }
 
