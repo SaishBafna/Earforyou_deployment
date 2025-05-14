@@ -1235,62 +1235,6 @@ const sendGroupMessage = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, populatedMessage, "Message sent successfully"));
 });
 
-const sendFirebaseNotification = async (tokens, notificationData) => {
-  console.log('Sending notification to tokens:', tokens);
-  if (!Array.isArray(tokens) || tokens.length === 0) {
-    console.warn('No valid tokens provided for notification.');
-    return;
-  }
-
-  const cleanedTokens = tokens.filter(token => typeof token === 'string' && token.trim() !== '');
-  if (cleanedTokens.length === 0) {
-    console.warn('All tokens are empty or invalid strings.');
-    return;
-  }
-
-  const message = {
-    notification: {
-      title: notificationData.title || '',
-      body: notificationData.body || ''
-    },
-    data: {
-      ...notificationData.data,
-      screen: 'Group_Chat',
-
-    },
-    tokens: cleanedTokens,
-    android: {
-      priority: 'high'
-    },
-    apns: {
-      payload: {
-        aps: {
-          sound: 'default',
-          badge: 1
-        }
-      }
-    }
-  };
-
-  try {
-    const response = await admin.messaging().sendEachForMulticast(message);
-    console.log('Firebase notification response:', response);
-    if (response.failureCount > 0) {
-      const failedTokens = [];
-      response.responses.forEach((resp, idx) => {
-        if (!resp.success) {
-          failedTokens.push(cleanedTokens[idx]);
-        }
-      });
-      console.warn('Some tokens failed:', failedTokens);
-    }
-
-    return response;
-  } catch (error) {
-    console.error('Error sending Firebase notification:', error);
-    throw error;
-  }
-};
 
 /**
  * @route GET /api/v1/chats/group
@@ -1942,145 +1886,6 @@ const updateGroupChatDetails = asyncHandler(async (req, res) => {
  * @route PUT /api/v1/chats/group/:chatId/add
  * @description Add participants to a group chat
  */
-// const addParticipantsToGroup = asyncHandler(async (req, res) => {
-//   const { chatId } = req.params;
-//   const { participants } = req.body;
-
-//   if (!Array.isArray(participants) || participants.length === 0) {
-//     throw new ApiError(400, "Participants array is required");
-//   }
-
-//   // Get group chat and validate admin status
-//   const groupChat = await GroupChat.findOne({
-//     _id: chatId,
-//     isGroupChat: true,
-//     admins: req.user._id
-//   }).lean();
-
-//   if (!groupChat) {
-//     throw new ApiError(404, "Group chat not found or you're not an admin");
-//   }
-
-//   // Filter out existing participants
-//   const newParticipants = participants
-//     .map(id => new mongoose.Types.ObjectId(id))
-//     .filter(p => !groupChat.participants.some(existing => existing.equals(p)));
-
-//   if (newParticipants.length === 0) {
-//     throw new ApiError(400, "All users are already in the group");
-//   }
-
-//   // Validate users exist
-//   const usersCount = await User.countDocuments({ _id: { $in: newParticipants } });
-//   if (usersCount !== newParticipants.length) {
-//     throw new ApiError(404, "One or more users not found");
-//   }
-
-//   // Calculate unread counts for new participants
-//   const unreadCounts = await GroupChatMessage.aggregate([
-//     {
-//       $match: {
-//         chat: new mongoose.Types.ObjectId(chatId),
-//         sender: { $nin: newParticipants }
-//       }
-//     },
-//     {
-//       $group: {
-//         _id: null,
-//         count: { $sum: 1 }
-//       }
-//     }
-//   ]);
-
-//   const totalUnread = unreadCounts[0]?.count || 0;
-
-//   // Prepare updates
-//   const updates = {
-//     $addToSet: { participants: { $each: newParticipants } },
-//     $push: {
-//       unreadCounts: {
-//         $each: newParticipants.map(user => ({ user, count: totalUnread }))
-//       }
-//     },
-//     $set: { lastActivity: new Date() }
-//   };
-
-//   const updatedGroupChat = await GroupChat.findByIdAndUpdate(
-//     chatId,
-//     updates,
-//     { new: true, lean: true }
-//   );
-
-
-//   // Get sender info for notifications
-//   const sender = await User.findById(req.user._id)
-//     .select("username name avatar")
-//     .lean();
-
-//   const senderName = sender.name || sender.username;
-//   const notificationMessage = content
-//     ? `${senderName}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
-//     : `${senderName} sent an attachment`;
-
-//   // Prepare notification data
-//   const notificationData = {
-//     title: groupChat.name || `Group Chat`,
-//     body: notificationMessage,
-//     data: {
-//       chatId: chatId.toString(),
-//       name: groupChat.name || `Group Chat`,
-//       messageId: message._id.toString(),
-//       type: 'group_message',
-//       click_action: 'FLUTTER_NOTIFICATION_CLICK'
-//     },
-//     icon: sender.avatar || null
-//   };
-
-//   // Send notifications to all participants except sender
-//   const notificationPromises = groupChat.participants
-//     .filter(participant =>
-//       participant._id.toString() !== req.user._id.toString() &&
-//       participant.deviceToken &&
-//       typeof participant.deviceToken === 'string' &&
-//       participant.deviceToken.trim() !== ''
-//     )
-//     .map(async (participant) => {
-//       console.log(`Sending notification to user ${participant._id}`);
-//       try {
-//         await sendFirebaseNotification(
-//           [participant.deviceToken], // Pass as array
-//           notificationData
-//         );
-//       } catch (error) {
-//         console.error(`Failed to send notification to user ${participant._id}:`, error);
-//       }
-//     });
-//   // Notify existing participants and new members
-//   const notificationEvents = [
-//     ...groupChat.participants.map(pId =>
-//       emitSocketEvent(
-//         req,
-//         pId.toString(),
-//         ChatEventEnum.UPDATE_GROUP_EVENT,
-//         updatedGroupChat
-//       )
-//     ),
-//     ...newParticipants.map(pId =>
-//       emitSocketEvent(
-//         req,
-//         pId.toString(),
-//         ChatEventEnum.NEW_GROUP_CHAT_EVENT,
-//         updatedGroupChat
-//       )
-//     )
-//   ];
-
-//   await Promise.all(notificationEvents);
-
-//   return res
-//     .status(200)
-//     .json(new ApiResponse(200, updatedGroupChat, "Participants added successfully"));
-// });
 
 const addParticipantsToGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
@@ -2910,6 +2715,7 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
  * @route GET /api/v1/chats/group/:chatId/requests
  * @description Get pending join requests
  */
+
 const getPendingJoinRequests = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
@@ -3206,6 +3012,67 @@ const getNotificationBody = (eventType, data) => {
       return `New join request from ${data.username}`;
     default:
       return 'Group notification';
+  }
+};
+
+
+// fireBase Notification
+
+
+const sendFirebaseNotification = async (tokens, notificationData) => {
+  console.log('Sending notification to tokens:', tokens);
+  if (!Array.isArray(tokens) || tokens.length === 0) {
+    console.warn('No valid tokens provided for notification.');
+    return;
+  }
+
+  const cleanedTokens = tokens.filter(token => typeof token === 'string' && token.trim() !== '');
+  if (cleanedTokens.length === 0) {
+    console.warn('All tokens are empty or invalid strings.');
+    return;
+  }
+
+  const message = {
+    notification: {
+      title: notificationData.title || '',
+      body: notificationData.body || ''
+    },
+    data: {
+      ...notificationData.data,
+      screen: 'Group_Chat',
+
+    },
+    tokens: cleanedTokens,
+    android: {
+      priority: 'high'
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1
+        }
+      }
+    }
+  };
+
+  try {
+    const response = await admin.messaging().sendEachForMulticast(message);
+    console.log('Firebase notification response:', response);
+    if (response.failureCount > 0) {
+      const failedTokens = [];
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          failedTokens.push(cleanedTokens[idx]);
+        }
+      });
+      console.warn('Some tokens failed:', failedTokens);
+    }
+
+    return response;
+  } catch (error) {
+    console.error('Error sending Firebase notification:', error);
+    throw error;
   }
 };
 
