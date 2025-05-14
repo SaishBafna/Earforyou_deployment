@@ -23,7 +23,7 @@ import {
     revokeGroupInviteLink,
     getAllGroups,
 } from "../controllers/chat-app/GroupChat/GroupChat.js";
-import { checkChatAccess } from "../middlewares/auth/ChaeckChatUse.js";
+import { checkandcut } from "../middlewares/auth/ChaeckChatUse.js";
 import { checkChatStatus } from "../middlewares/auth/checkChatStatus.js";
 
 
@@ -34,7 +34,7 @@ const router = express.Router();
 // Group Chat Routes
 router.route("/group")
     .get(protect, getAllGroupChats)                // Get all group chats for current user
-    .post(protect, checkChatAccess, createGroupChat);
+    .post(protect, createGroupChat);
 // Create new group chat
 router.route("/getAllGroups")
     .get(protect, getAllGroups)                // Get all group chats for current user
@@ -55,7 +55,7 @@ router.route("/group/:chatId/leave")
 
 // Group Messages
 router.route("/group/:chatId/messages")
-    .get(mongoIdPathVariableValidator("chatId"), validate, protect, checkChatStatus, checkChatAccess, getAllGroupMessages) // Get all messages
+    .get(mongoIdPathVariableValidator("chatId"), validate, protect, checkChatStatus, getAllGroupMessages) // Get all messages
     .post(
         upload.fields([{ name: "attachments", maxCount: 10 }]), // Updated to allow 10 attachments
         mongoIdPathVariableValidator("chatId"),
@@ -87,8 +87,14 @@ router.route("/:chatId/generate-link")
 router.route("/join/:token")
     .post(protect, joinGroupViaLink);
 
+
+
+
 router.route("/:chatId/revoke-link")
     .delete(protect, revokeGroupInviteLink);
 
+
+
+router.get('/check-access/:receiverId', checkandcut);
 
 export default router;
