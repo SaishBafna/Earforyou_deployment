@@ -349,7 +349,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
 
     // Calculate expiry date with possible coupon extension
     let expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + plan.validityDays + extendedDays);
+    expiryDate.expiryDate.getDate() + plan.validityDays + extendedDays;
 
     // Create subscription record using the schema method
     const subscription = await ChatUserPremium.createFromPayment(
