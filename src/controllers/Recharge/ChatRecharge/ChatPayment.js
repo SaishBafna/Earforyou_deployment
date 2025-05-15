@@ -193,7 +193,7 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 
 export const validateChatPayment = asyncHandler(async (req, res) => {
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
-
+    
     // Validate required parameters
     if (!merchantTransactionId || !userId || !planId) {
         throw new ApiError(400, "Missing required parameters");
@@ -244,7 +244,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
     // Process coupon if provided
     if (couponCode) {
         try {
-            coupon = await Coupon.findOne({
+            coupon = await Coupon.findOne({ 
                 code: couponCode.toUpperCase(),
                 isActive: true
             });
@@ -349,7 +349,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
 
     // Calculate expiry date with possible coupon extension
     let expiryDate = new Date();
-    expiryDate.expiryDate.getDate() + plan.validityDays + extendedDays;
+    expiryDate.setDate(expiryDate.getDate() + plan.validityDays + extendedDays);
 
     // Create subscription record using the schema method
     const subscription = await ChatUserPremium.createFromPayment(
@@ -362,11 +362,11 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
     // Send notification based on payment state
     if (paymentStatus === 'success') {
         let message = `Your payment of ₹${finalAmount.toFixed(2)} for ${plan.name} was successful.`;
-
+        
         if (couponApplied) {
             message += ` ${couponMessage}`;
         }
-
+        
         message += ' Enjoy your premium features!';
 
         await sendNotification(
