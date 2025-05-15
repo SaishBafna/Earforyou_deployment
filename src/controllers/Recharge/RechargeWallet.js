@@ -497,7 +497,7 @@ export const validatePayment = async (req, res) => {
             wallet.recharges[existingTransactionIndex].payment.status !== 'success') {
 
             // Update wallet balance (assuming amount is in INR)
-            wallet.balance += paymentDetails.amount;
+            wallet.balance += finalTalkTime;
             wallet.lastUpdated = new Date();
 
             // Add plan to wallet if not already present
