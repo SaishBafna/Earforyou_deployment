@@ -193,7 +193,6 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 
 export const validateChatPayment = asyncHandler(async (req, res) => {
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
-    let coupon = null;
 
     // Validate required parameters
     if (!merchantTransactionId || !userId || !planId) {
@@ -234,74 +233,92 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
         throw new ApiError(404, "Subscription plan not found");
     }
 
-    // Process coupon if provided
-    if (couponCode) {
-        coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
-    }
-
-    // Initialize variables for coupon processing
+    // Initialize coupon variables
+    let coupon = null;
     let couponApplied = null;
     let discountAmount = 0;
     let extendedDays = 0;
     let finalAmount = amount / 100; // Convert paisa to rupees
+    let couponMessage = '';
 
-    // Process coupon if valid
-    if (coupon) {
+    // Process coupon if provided
+    if (couponCode) {
         try {
-            if (!coupon.isUsable) {
-                throw new ApiError(400, "Coupon is not usable (expired, inactive, or max uses reached)");
-            }
+            coupon = await Coupon.findOne({
+                code: couponCode.toUpperCase(),
+                isActive: true
+            });
 
-            // Check if user has already used this coupon
-            if (!coupon.isReusable) {
-                const existingUsage = await CouponUsage.findOne({
-                    coupon: coupon._id,
-                    user: userId
-                });
-
-                if (existingUsage) {
-                    throw new ApiError(400, "You have already used this coupon");
+            if (coupon) {
+                // Validate coupon
+                const now = new Date();
+                if (coupon.validFrom && now < coupon.validFrom) {
+                    throw new ApiError(400, "This coupon is not valid yet");
                 }
+                if (coupon.validUntil && now > coupon.validUntil) {
+                    throw new ApiError(400, "This coupon has expired");
+                }
+                if (coupon.maxUses && coupon.currentUses >= coupon.maxUses) {
+                    throw new ApiError(400, "This coupon has reached its maximum usage limit");
+                }
+
+                // Check if user has already used this coupon (for non-reusable coupons)
+                if (!coupon.isReusable) {
+                    const existingUsage = await CouponUsage.findOne({
+                        coupon: coupon._id,
+                        user: userId
+                    });
+
+                    if (existingUsage) {
+                        throw new ApiError(400, "You have already used this coupon");
+                    }
+                }
+
+                // Check minimum order amount if applicable
+                if (coupon.minimumOrderAmount && finalAmount < coupon.minimumOrderAmount) {
+                    throw new ApiError(400, `Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
+                }
+
+                // Apply discount based on coupon type
+                switch (coupon.discountType) {
+                    case 'percentage':
+                        discountAmount = finalAmount * (coupon.discountValue / 100);
+                        if (coupon.maxDiscount && discountAmount > coupon.maxDiscount) {
+                            discountAmount = coupon.maxDiscount;
+                        }
+                        finalAmount = finalAmount - discountAmount;
+                        couponMessage = `Applied ${coupon.discountValue}% discount (₹${discountAmount.toFixed(2)} saved)`;
+                        break;
+
+                    case 'fixed':
+                        discountAmount = Math.min(coupon.discountValue, finalAmount);
+                        finalAmount = finalAmount - discountAmount;
+                        couponMessage = `Applied ₹${discountAmount.toFixed(2)} discount`;
+                        break;
+
+                    case 'free_days':
+                        extendedDays = coupon.discountValue;
+                        couponMessage = `Added ${extendedDays} free days to your subscription`;
+                        break;
+
+                    default:
+                        throw new ApiError(400, "Invalid coupon type");
+                }
+
+                // Update coupon usage count
+                coupon.currentUses += 1;
+                await coupon.save();
+                couponApplied = coupon.code;
             }
-
-            // Check minimum order amount if applicable
-            if (coupon.minimumOrderAmount && finalAmount < coupon.minimumOrderAmount) {
-                throw new ApiError(400, `Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
-            }
-
-            // Apply discount based on coupon type
-            switch (coupon.discountType) {
-                case 'percentage':
-                    discountAmount = finalAmount * (coupon.discountValue / 100);
-                    finalAmount = finalAmount - discountAmount;
-                    break;
-
-                case 'fixed':
-                    discountAmount = Math.min(coupon.discountValue, finalAmount);
-                    finalAmount = finalAmount - discountAmount;
-                    break;
-
-                case 'free_days':
-                    extendedDays = coupon.discountValue;
-                    break;
-
-                default:
-                    throw new ApiError(400, "Invalid coupon type");
-            }
-
-            // Update coupon usage count
-            coupon.currentUses += 1;
-            await coupon.save();
-
-            couponApplied = coupon.code;
         } catch (error) {
             console.error("Coupon processing error:", error.message);
-            // Proceed without coupon but inform the user
+            // Send notification about coupon error but proceed with payment
             if (error instanceof ApiError) {
                 await sendNotification(
                     userId,
                     'Coupon Error',
-                    error.message
+                    error.message,
+                    'Payment'
                 );
             }
         }
@@ -321,8 +338,11 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
         gateway: 'PhonePe',
         transactionId: merchantTransactionId,
         amount: finalAmount,
+        originalAmount: amount / 100,
+        discountAmount: discountAmount,
         currency: "INR",
         status: paymentStatus,
+        couponUsed: couponApplied,
         gatewayResponse: response.data,
         completedAt: paymentStatus === 'success' ? new Date() : null
     };
@@ -335,38 +355,44 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
     const subscription = await ChatUserPremium.createFromPayment(
         userId,
         planId,
-        paymentRecord
+        paymentRecord,
+        expiryDate
     );
 
     // Send notification based on payment state
     if (paymentStatus === 'success') {
-        let message = `Your payment of ₹${finalAmount} for premium chat features was successful.`;
+        let message = `Your payment of ₹${finalAmount.toFixed(2)} for ${plan.name} was successful.`;
+
         if (couponApplied) {
-            message += ` (Coupon ${couponApplied} applied, saved ₹${discountAmount})`;
+            message += ` ${couponMessage}`;
         }
-        if (extendedDays > 0) {
-            message += ` Your subscription has been extended by ${extendedDays} days.`;
-        }
-        message += ' Enjoy your subscription!';
+
+        message += ' Enjoy your premium features!';
 
         await sendNotification(
             userId,
             'Payment Successful',
-            message
+            message,
+            'PremiumChat'
         );
 
-        if (coupon) {
+        // Record coupon usage if applied successfully
+        if (coupon && couponApplied) {
             await CouponUsage.create({
                 coupon: coupon._id,
                 user: userId,
-                discountApplied: discountAmount
+                transactionId: merchantTransactionId,
+                discountApplied: discountAmount,
+                freeDaysApplied: extendedDays,
+                finalAmount: finalAmount
             });
         }
     } else if (paymentStatus === 'failed') {
         await sendNotification(
             userId,
             'Payment Failed',
-            'Your payment for premium chat features failed. Please try again.'
+            `Your payment of ₹${finalAmount.toFixed(2)} for ${plan.name} failed. Please try again.`,
+            'Payment'
         );
     }
 
