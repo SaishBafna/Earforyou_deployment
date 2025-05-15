@@ -193,7 +193,7 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 
 export const validateChatPayment = asyncHandler(async (req, res) => {
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
-    
+
     // Validate required parameters
     if (!merchantTransactionId || !userId || !planId) {
         throw new ApiError(400, "Missing required parameters");
@@ -244,7 +244,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
     // Process coupon if provided
     if (couponCode) {
         try {
-            coupon = await Coupon.findOne({ 
+            coupon = await Coupon.findOne({
                 code: couponCode.toUpperCase(),
                 isActive: true
             });
@@ -333,6 +333,10 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
 
     const paymentStatus = paymentStatusMap[state] || 'pending';
 
+    // Calculate expiry date with possible coupon extension
+    let expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + plan.validityDays + extendedDays);
+
     // Create payment record according to new schema
     const paymentRecord = {
         gateway: 'PhonePe',
@@ -347,26 +351,24 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
         completedAt: paymentStatus === 'success' ? new Date() : null
     };
 
-    // Calculate expiry date with possible coupon extension
-    let expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + plan.validityDays + extendedDays);
-
     // Create subscription record using the schema method
-    const subscription = await ChatUserPremium.createFromPayment(
-        userId,
-        planId,
-        paymentRecord,
-        expiryDate
-    );
+    const subscription = await ChatUserPremium.create({
+        user: userId,
+        plan: planId,
+        expiryDate: expiryDate,
+        remainingChats: plan.chatsAllowed,
+        isActive: paymentStatus === 'success',
+        payment: paymentRecord
+    });
 
     // Send notification based on payment state
     if (paymentStatus === 'success') {
         let message = `Your payment of ₹${finalAmount.toFixed(2)} for ${plan.name} was successful.`;
-        
+
         if (couponApplied) {
             message += ` ${couponMessage}`;
         }
-        
+
         message += ' Enjoy your premium features!';
 
         await sendNotification(
