@@ -1531,8 +1531,9 @@ async function sendMNotification(userId, title, message, type, receiverId, sende
         priority: 'high',
       },
       data: {
-        screen: 'Recent_Calls', // Target screen
+        screen: 'Call_list', // Target screen
         params: JSON.stringify({
+          act_tab: '1',
           user_id: userId, // Include Call ID
           type: type, // Type of call
           agent_id: receiverId, // Receiver ID
