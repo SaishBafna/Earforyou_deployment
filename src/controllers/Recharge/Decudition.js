@@ -364,7 +364,7 @@ export const deductPerMinute = async (req, res) => {
     console.log("User Type:", receiver.userType, "User Category:", receiver.userCategory, "Rate:", ratePerMinute, "Commission:", adminCommissionPercent);
 
     // **Calculate total deduction and earnings**
-    const totalDeduction = ratePerMinute * durationInMinutes;
+    const totalDeduction = (ratePerMinute / 2) * durationInMinutes;
     const commission = (adminCommissionPercent / 100) * totalDeduction;
     const amountForReceiver = totalDeduction - commission;
 
