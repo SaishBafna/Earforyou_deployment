@@ -45,7 +45,7 @@ export const paymentService = {
             let extendedDays = 0;
 
             if (couponCode) {
-                const couponResult = await this.processCoupon(couponCode, userId, plan.price);
+                const couponResult = await this.processCoupon(couponCode, userId, plan.price, plan);
                 if (couponResult) {
                     finalAmount = couponResult.finalAmount;
                     discountAmount = couponResult.discountAmount;
@@ -205,8 +205,13 @@ export const paymentService = {
      * @returns { Craft a concise and accurate docstring for this method
      * @returns {Promise<Object|null>} Coupon processing result or null if invalid
      */
-    async processCoupon(couponCode, userId, amount) {
+    async processCoupon(couponCode, userId, amount, planId) {
         try {
+
+            const plan = await ChatPremium.findById(planId); // ✅ Fetch plan inside
+            if (!plan) throw new ApiError(404, 'Plan not found');
+
+
             const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
             if (!coupon) return null;
 
@@ -243,8 +248,11 @@ export const paymentService = {
             // Apply discount based on coupon type
             switch (coupon.discountType) {
                 case 'percentage':
-                    discountAmount = amount * (coupon.discountValue / 100);
-                    finalAmount = amount - discountAmount;
+                    // discountAmount = amount * (coupon.discountValue / 100);
+                    // finalAmount = amount - discountAmount;
+
+                    extendedDays = (coupon.discountValue / 100) * (amount / (amount / plan.validityDays));
+
                     break;
 
                 case 'fixed':
@@ -260,10 +268,14 @@ export const paymentService = {
                     throw new ApiError(400, 'Invalid coupon type');
             }
 
+            // Ensure final amount is not negative
+            // Round to nearest 0.5 days
+            extendedDays = Math.round(extendedDays * 2) / 2;
+
             return {
                 coupon,
-                finalAmount,
-                discountAmount,
+                finalAmount: amount, // Keep original amount
+                discountAmount: 0, // No amount discount
                 extendedDays,
             };
         } catch (error) {

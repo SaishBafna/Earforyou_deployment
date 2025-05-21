@@ -16,6 +16,298 @@ import { Coupon, CouponUsage } from "../../../models/CouponSystem/couponModel.js
 
 
 
+// export const validatePayment = async (req, res) => {
+//     const { merchantTransactionId, userId, planId, couponCode } = req.query;
+//     let coupon = null;
+
+//     try {
+//         console.log("Payment validation initiated", {
+//             merchantTransactionId,
+//             userId,
+//             planId,
+//             couponCode,
+//             timestamp: new Date().toISOString()
+//         });
+
+//         // Validate input parameters
+//         if (!merchantTransactionId || !userId || !planId) {
+//             console.log("Missing required parameters");
+//             return res.status(400).json({
+//                 success: false,
+//                 message: 'Missing merchantTransactionId, userId, or planId'
+//             });
+//         }
+
+//         // Get plan details
+//         const planDetails = await MyPlan.findById(planId);
+//         if (!planDetails) {
+//             console.log("Plan not found", { planId });
+//             return res.status(404).json({
+//                 success: false,
+//                 message: 'Plan details not found'
+//             });
+//         }
+
+//         // Check for existing transaction
+//         const existingTransaction = await PlatformCharges.findOne({
+//             "payment.transactionId": merchantTransactionId
+//         });
+//         if (existingTransaction) {
+//             console.log("Duplicate transaction found", {
+//                 status: existingTransaction.status,
+//                 createdAt: existingTransaction.createdAt
+//             });
+//             return res.status(400).json({
+//                 success: false,
+//                 error: "Transaction already exists",
+//                 currentStatus: existingTransaction.status
+//             });
+//         }
+
+//         // Process coupon if provided
+//         if (couponCode) {
+//             coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+//         }
+
+//         let validityDays = planDetails.validityDays;
+//         let couponDetails = null;
+//         let extendedDays = 0;
+
+//         // Process coupon if valid
+//         if (coupon) {
+//             try {
+//                 console.log("Processing coupon code", { couponCode });
+
+//                 if (!coupon.isUsable) {
+//                     throw new Error("Coupon is not usable");
+//                 }
+
+//                 if (!coupon.isReusable) {
+//                     const existingUsage = await CouponUsage.findOne({
+//                         coupon: coupon._id,
+//                         user: userId
+//                     });
+//                     if (existingUsage) {
+//                         return res.status(400).json({
+//                             success: false,
+//                             message: "You have already used this coupon"
+//                         });
+//                     }
+//                 }
+
+//                 if (coupon.minimumOrderAmount && planDetails.amount < coupon.minimumOrderAmount) {
+//                     throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required`);
+//                 }
+
+//                 if (coupon.discountType === 'free_days') {
+//                     extendedDays = coupon.discountValue;
+//                     validityDays += extendedDays;
+//                     console.log("Extended validity days", { extendedDays, newValidity: validityDays });
+//                 }
+
+//                 // Update coupon usage count
+//                 coupon.currentUses += 1;
+//                 await coupon.save();
+
+//                 couponDetails = {
+//                     code: coupon.code,
+//                     discountType: coupon.discountType,
+//                     discountValue: coupon.discountValue,
+//                     extendedDays: extendedDays
+//                 };
+
+//             } catch (couponError) {
+//                 console.error("Coupon processing failed", {
+//                     error: couponError.message,
+//                     couponCode
+//                 });
+//                 return res.status(400).json({
+//                     success: false,
+//                     message: `Coupon error: ${couponError.message}`
+//                 });
+//             }
+//         }
+
+//         // Verify payment with PhonePe
+//         const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
+//         const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
+//         const sha256Hash = createHash('sha256').update(stringToHash).digest('hex');
+//         const xVerifyChecksum = `${sha256Hash}###${process.env.SALT_INDEX}`;
+
+//         console.log("Verifying payment with PhonePe");
+//         const response = await axios.get(statusUrl, {
+//             headers: {
+//                 "Content-Type": "application/json",
+//                 "X-VERIFY": xVerifyChecksum,
+//                 "X-MERCHANT-ID": process.env.MERCHANT_ID,
+//                 "accept": "application/json",
+//             },
+//             timeout: 10000
+//         });
+
+//         const responseData = response.data;
+//         console.log("PhonePe response", { status: responseData?.data?.state });
+
+//         if (!responseData.success || !responseData.data) {
+//             throw new Error("Invalid response from payment gateway");
+//         }
+
+//         const paymentState = responseData.data.state;
+//         const paymentCode = responseData.code;
+
+//         // Map payment status to our schema
+//         const paymentStatusMap = {
+//             'COMPLETED': 'success',
+//             'PENDING': 'pending',
+//             'FAILED': 'failed'
+//         };
+//         const paymentStatus = paymentStatusMap[paymentState] || 'pending';
+
+//         // Create payment details object according to schema
+//         const paymentDetails = {
+//             gateway: 'PhonePe',
+//             transactionId: merchantTransactionId,
+//             amount: planDetails.amount,
+//             currency: 'INR',
+//             status: paymentStatus,
+//             gatewayResponse: responseData,
+//             completedAt: paymentStatus === 'success' ? new Date() : null
+//         };
+
+//         // Calculate plan dates
+//         const now = new Date();
+//         let startDate = now;
+//         let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
+//         let status = 'processing';
+
+//         // Check for existing active plans if payment is successful
+//         if (paymentStatus === 'success') {
+//             const activePlan = await PlatformCharges.findOne({
+//                 userId,
+//                 status: 'active',
+//                 endDate: { $gt: now }
+//             }).sort({ endDate: -1 });
+
+//             if (coupon) {
+//                 await CouponUsage.create({
+//                     coupon: coupon._id,
+//                     user: userId,
+//                     discountApplied: coupon.discountType === 'free_days' ? extendedDays : 0
+//                 });
+//             }
+
+//             if (activePlan) {
+//                 // Queue new plan to start after current plan ends
+//                 status = 'queued';
+//                 startDate = new Date(activePlan.endDate);
+//                 endDate = new Date(startDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
+
+//                 await sendNotification(
+//                     userId,
+//                     'Plan Queued Successfully',
+//                     `Your ${validityDays}-day plan will activate on ${startDate.toLocaleDateString()}`,
+//                     'dashboard'
+//                 );
+//             } else {
+//                 // Activate immediately
+//                 status = 'active';
+//                 await sendNotification(
+//                     userId,
+//                     'Plan Activated',
+//                     `Your ${validityDays}-day plan is now active!`,
+//                     'dashboard'
+//                 );
+//             }
+//         }
+
+//         // Create transaction record
+//         const transaction = await PlatformCharges.create({
+//             userId,
+//             planId,
+//             planName: planDetails.planName || "Platform Charges",
+//             startDate: paymentStatus === 'success' ? startDate : null,
+//             endDate: paymentStatus === 'success' ? endDate : null,
+//             status: paymentStatus === 'success' ? status : paymentStatus,
+//             payment: paymentDetails
+//         });
+
+//         console.log("Transaction created", { transactionId: transaction._id });
+
+//         // Handle different payment states
+//         switch (paymentStatus) {
+//             case 'success':
+//                 return res.status(200).json({
+//                     success: true,
+//                     message: `Payment successful - Plan ${transaction.status}`,
+//                     data: {
+//                         planId: transaction._id,
+//                         status: transaction.status,
+//                         startDate,
+//                         endDate,
+//                         validityDays,
+//                         couponDetails
+//                     }
+//                 });
+
+//             case 'pending':
+//                 await sendNotification(
+//                     userId,
+//                     'Payment Pending',
+//                     'Your payment is still processing. We will notify you when completed.',
+//                     'dashboard'
+//                 );
+
+//                 return res.status(202).json({
+//                     success: false,
+//                     message: 'Payment pending',
+//                     transactionId: transaction._id
+//                 });
+
+//             default:
+//                 // Failed payment
+//                 await sendNotification(
+//                     userId,
+//                     'Payment Failed',
+//                     'Your payment could not be processed. Please try again.',
+//                     'wallet'
+//                 );
+
+//                 return res.status(400).json({
+//                     success: false,
+//                     message: 'Payment failed',
+//                     transactionId: transaction._id
+//                 });
+//         }
+
+//     } catch (error) {
+//         console.error("Payment validation error", {
+//             error: error.message,
+//             stack: error.stack,
+//             userId,
+//             merchantTransactionId,
+//             timestamp: new Date().toISOString()
+//         });
+
+//         await sendNotification(
+//             userId,
+//             'Payment Error',
+//             'An error occurred while processing your payment. Our team has been notified.',
+//             'wallet'
+//         ).catch(e => console.error("Failed to send notification", e));
+
+//         return res.status(500).json({
+//             success: false,
+//             message: 'Payment processing error',
+//             error: error.message
+//         });
+//     }
+// };
+
+
+
+
+
+
 export const validatePayment = async (req, res) => {
     const { merchantTransactionId, userId, planId, couponCode } = req.query;
     let coupon = null;
@@ -73,7 +365,7 @@ export const validatePayment = async (req, res) => {
         let couponDetails = null;
         let extendedDays = 0;
 
-        // Process coupon if valid
+        // Process coupon if valid (MODIFIED TO ONLY ADD DAYS)
         if (coupon) {
             try {
                 console.log("Processing coupon code", { couponCode });
@@ -99,11 +391,46 @@ export const validatePayment = async (req, res) => {
                     throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required`);
                 }
 
-                if (coupon.discountType === 'free_days') {
-                    extendedDays = coupon.discountValue;
-                    validityDays += extendedDays;
-                    console.log("Extended validity days", { extendedDays, newValidity: validityDays });
+                // MODIFIED: Convert all coupon types to extra days
+                switch (coupon.discountType) {
+                    case 'percentage':
+                        // Calculate extra days = (discount %) × plan duration
+                        extendedDays = (coupon.discountValue / 100) * planDetails.validityDays;
+                        console.log("Percentage coupon applied", {
+                            discountPercent: coupon.discountValue,
+                            extraDays: extendedDays
+                        });
+                        break;
+
+                    case 'fixed':
+                        // Calculate extra days = (fixed discount) / (daily rate)
+                        const dailyRate = planDetails.amount / planDetails.validityDays;
+                        extendedDays = coupon.discountValue / dailyRate;
+                        console.log("Fixed coupon applied", {
+                            discountAmount: coupon.discountValue,
+                            dailyRate,
+                            extraDays: extendedDays
+                        });
+                        break;
+
+                    case 'free_days':
+                        extendedDays = coupon.discountValue;
+                        console.log("Free days coupon applied", { extraDays: extendedDays });
+                        break;
+
+                    default:
+                        throw new Error("Invalid coupon type");
                 }
+
+                // Round to nearest 0.5 days (optional)
+                extendedDays = Math.round(extendedDays * 2) / 2;
+                validityDays += extendedDays;
+
+                console.log("Extended validity days", {
+                    originalDays: planDetails.validityDays,
+                    extendedDays,
+                    newValidity: validityDays
+                });
 
                 // Update coupon usage count
                 coupon.currentUses += 1;
@@ -128,7 +455,7 @@ export const validatePayment = async (req, res) => {
             }
         }
 
-        // Verify payment with PhonePe
+        // Verify payment with PhonePe (remaining code unchanged...)
         const statusUrl = `${process.env.PHONE_PE_HOST_URL}/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}`;
         const stringToHash = `/pg/v1/status/${process.env.MERCHANT_ID}/${merchantTransactionId}${process.env.SALT_KEY}`;
         const sha256Hash = createHash('sha256').update(stringToHash).digest('hex');
@@ -163,18 +490,20 @@ export const validatePayment = async (req, res) => {
         };
         const paymentStatus = paymentStatusMap[paymentState] || 'pending';
 
-        // Create payment details object according to schema
+        // Create payment details object (amount remains unchanged)
         const paymentDetails = {
             gateway: 'PhonePe',
             transactionId: merchantTransactionId,
-            amount: planDetails.amount,
+            amount: planDetails.amount, // Original amount (no discount)
             currency: 'INR',
             status: paymentStatus,
+            couponUsed: coupon?.code || null,
+            extendedDays: extendedDays, // Track bonus days
             gatewayResponse: responseData,
             completedAt: paymentStatus === 'success' ? new Date() : null
         };
 
-        // Calculate plan dates
+        // Calculate plan dates with extended validity
         const now = new Date();
         let startDate = now;
         let endDate = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
@@ -188,11 +517,15 @@ export const validatePayment = async (req, res) => {
                 endDate: { $gt: now }
             }).sort({ endDate: -1 });
 
+            // Record coupon usage (tracking extended days)
             if (coupon) {
                 await CouponUsage.create({
                     coupon: coupon._id,
                     user: userId,
-                    discountApplied: coupon.discountType === 'free_days' ? extendedDays : 0
+                    transactionId: merchantTransactionId,
+                    discountApplied: 0, // No monetary discount
+                    freeDaysApplied: extendedDays, // Track bonus days
+                    finalAmount: planDetails.amount // Original amount
                 });
             }
 
@@ -205,7 +538,7 @@ export const validatePayment = async (req, res) => {
                 await sendNotification(
                     userId,
                     'Plan Queued Successfully',
-                    `Your ${validityDays}-day plan will activate on ${startDate.toLocaleDateString()}`,
+                    `Your ${validityDays}-day plan (with ${extendedDays} bonus days) will activate on ${startDate.toLocaleDateString()}`,
                     'dashboard'
                 );
             } else {
@@ -214,7 +547,7 @@ export const validatePayment = async (req, res) => {
                 await sendNotification(
                     userId,
                     'Plan Activated',
-                    `Your ${validityDays}-day plan is now active!`,
+                    `Your ${validityDays}-day plan (with ${extendedDays} bonus days) is now active!`,
                     'dashboard'
                 );
             }
@@ -231,7 +564,11 @@ export const validatePayment = async (req, res) => {
             payment: paymentDetails
         });
 
-        console.log("Transaction created", { transactionId: transaction._id });
+        console.log("Transaction created", {
+            transactionId: transaction._id,
+            validityDays,
+            extendedDays
+        });
 
         // Handle different payment states
         switch (paymentStatus) {
@@ -245,6 +582,7 @@ export const validatePayment = async (req, res) => {
                         startDate,
                         endDate,
                         validityDays,
+                        extendedDays, // Include in response
                         couponDetails
                     }
                 });
@@ -302,7 +640,6 @@ export const validatePayment = async (req, res) => {
         });
     }
 };
-
 // Additional endpoint to check pending payments
 export const checkPendingPayment = async (req, res) => {
     const { transactionId } = req.params;

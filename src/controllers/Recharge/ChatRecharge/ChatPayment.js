@@ -282,12 +282,9 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
                 // Apply discount based on coupon type
                 switch (coupon.discountType) {
                     case 'percentage':
-                        discountAmount = finalAmount * (coupon.discountValue / 100);
-                        if (coupon.maxDiscount && discountAmount > coupon.maxDiscount) {
-                            discountAmount = coupon.maxDiscount;
-                        }
-                        finalAmount = finalAmount - discountAmount;
-                        couponMessage = `Applied ${coupon.discountValue}% discount (₹${discountAmount.toFixed(2)} saved)`;
+                        extendedDays = (coupon.discountValue / 100) * plan.validityDays;
+                        couponMessage = `Added ${extendedDays.toFixed(1)} extra days (${coupon.discountValue}% of plan duration)`;
+
                         break;
 
                     case 'fixed':
@@ -306,6 +303,7 @@ export const validateChatPayment = asyncHandler(async (req, res) => {
                 }
 
                 // Update coupon usage count
+                extendedDays = Math.round(extendedDays * 2) / 2;
                 coupon.currentUses += 1;
                 await coupon.save();
                 couponApplied = coupon.code;

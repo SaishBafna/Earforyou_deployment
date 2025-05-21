@@ -2,6 +2,7 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { ChatUserPremium } from "../../models/Subscriptionchat/ChatUserPremium.js";
 import mongoose from "mongoose";
+import User from "../../models/Users.js";
 
 export const checkChatAccess = asyncHandler(async (req, res, next) => {
     const { receiverId: chatId } = req.params;
@@ -9,6 +10,24 @@ export const checkChatAccess = asyncHandler(async (req, res, next) => {
 
     if (!mongoose.Types.ObjectId.isValid(chatId)) {
         throw new ApiError(400, "Invalid chat ID format");
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+        throw new ApiError(404, "User not found", {
+            field: "userId",
+            value: userId,
+            reason: "User does not exist"
+        });
+    }
+
+    // Skip premium checks for non-regular users (e.g., admins)
+    if (user.userCategory !== "User") {
+        return next();
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new ApiError(400, "Invalid user ID format");
     }
 
     const chatObjectId = new mongoose.Types.ObjectId(chatId);
@@ -106,6 +125,8 @@ export const checkandcut = async (req, res) => {
         const { receiverId: chatId } = req.params;
         const userId = req.user._id;
 
+
+
         // Validate chat ID format
         if (!mongoose.Types.ObjectId.isValid(chatId)) {
             return res.status(400).json(
@@ -115,6 +136,28 @@ export const checkandcut = async (req, res) => {
                     reason: "Must be a valid MongoDB ObjectId"
                 })
             );
+        }
+
+
+         const user = await User.findById(userId);
+    if (!user) {
+        throw new ApiError(404, "User not found", {
+            field: "userId",
+            value: userId,
+            reason: "User does not exist"
+        });
+    }
+
+    // Skip premium checks for non-regular users (e.g., admins)
+    if (user.userCategory !== "User") {
+            return res.status(200).json({
+                success: true,
+                message: "Chat access granted for non-regular user",
+                data: {
+                    bypass: true,
+                    userCategory: user.userCategory
+                }
+            });
         }
 
         const chatObjectId = new mongoose.Types.ObjectId(chatId);
