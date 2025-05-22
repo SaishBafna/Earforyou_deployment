@@ -62,28 +62,153 @@ const generateAccessAndRefreshTokens = async (userId) => {
 };
 
 
-export const getTopListenersByRating = async (req, res) => {
+// export const getTopListenersByRating = async (req, res) => {
+//   try {
+//     const startTime = process.hrtime();
+
+//     const topListeners = await Review.aggregate([
+//       {
+//         $match: {
+//           rating: { $gte: 0, $lte: 5 },
+//           createdAt: { $exists: true }
+//         }
+//       },
+//       {
+//         $lookup: {
+//           from: "users",
+//           let: { userId: "$user" },
+//           pipeline: [
+//             {
+//               $match: {
+//                 $expr: { $eq: ["$_id", "$$userId"] },
+//                 userType: "RECEIVER",
+//                 UserStatus: "Active"
+//                 // Removed status and deletedAt for broader results
+//               }
+//             },
+//             {
+//               $project: {
+//                 username: 1,
+//                 userCategory: 1,
+//                 status: 1,
+//                 avatarUrl: 1,
+//                 shortDecs: 1,
+//                 Bio: 1,
+//                 CallStatus: 1,
+//                 createdAt: 1
+//               }
+//             }
+//           ],
+//           as: "userData"
+//         }
+//       },
+//       { $match: { userData: { $ne: [] } } },
+//       { $unwind: "$userData" },
+//       {
+//         $group: {
+//           _id: "$user",
+//           averageRating: { $avg: "$rating" },
+//           reviewCount: { $sum: 1 },
+//           username: { $first: "$userData.username" },
+//           userCategory: { $first: "$userData.userCategory" },
+//           status: { $first: "$userData.status" },
+//           avatarUrl: { $first: "$userData.avatarUrl" },
+//           shortBio: { $first: "$userData.shortDecs" },
+//           bio: { $first: "$userData.Bio" },
+//           callStatus: { $first: "$userData.CallStatus" },
+//           createdAt: { $first: "$userData.createdAt" }
+//         }
+//       },
+//       {
+//         $match: {
+//           reviewCount: { $gte: 1 }, // Lowered threshold
+//           averageRating: { $gte: 1 }
+//         }
+//       },
+//       {
+//         $sort: {
+//           averageRating: -1,
+//           reviewCount: -1,
+//           createdAt: -1
+//         }
+//       },
+//       { $limit: 10 },
+//       {
+//         $project: {
+//           userId: "$_id",
+//           username: 1,
+//           userCategory: 1,
+//           status: 1,
+//           callStatus: 1,
+//           avatarUrl: 1,
+//           shortBio: 1,
+//           bio: 1,
+//           reviewCount: 1,
+//           averageRating: { $round: [{ $ifNull: ["$averageRating", 0] }, 2] }
+//         }
+//       }
+//     ]).allowDiskUse(true);
+
+//     const executionTime = ((process.hrtime(startTime)[0] * 1000 +
+//       process.hrtime(startTime)[1] / 1e6).toFixed(2));
+
+//     const rankedListeners = topListeners.map((listener, index) => {
+//       if (!listener.userId || !listener.username) {
+//         console.warn('Invalid listener data:', listener);
+//         return null;
+//       }
+//       return {
+//         rank: index + 1,
+//         ...listener
+//       };
+//     }).filter(listener => listener !== null);
+
+//     if (!rankedListeners.length) {
+//       return res.status(200).json({
+//         success: true,
+//         message: 'No qualifying listeners found',
+//         executionTime: `${executionTime}ms`,
+//         data: []
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       executionTime: `${executionTime}ms`,
+//       data: rankedListeners
+//     });
+
+//   } catch (error) {
+//     console.error('Error fetching top listeners:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch top listeners',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+//     });
+//   }
+// };
+
+export const getTopListenersByDuration = async (req, res) => {
   try {
     const startTime = process.hrtime();
 
-    const topListeners = await Review.aggregate([
+    const topListeners = await callLog.aggregate([
       {
         $match: {
-          rating: { $gte: 0, $lte: 5 },
-          createdAt: { $exists: true }
+          status: "completed",
+          duration: { $gt: 0 } // Only count calls with positive duration
         }
       },
       {
         $lookup: {
           from: "users",
-          let: { userId: "$user" },
+          let: { receiverId: "$receiver" },
           pipeline: [
             {
               $match: {
-                $expr: { $eq: ["$_id", "$$userId"] },
+                $expr: { $eq: ["$_id", "$$receiverId"] },
                 userType: "RECEIVER",
                 UserStatus: "Active"
-                // Removed status and deletedAt for broader results
               }
             },
             {
@@ -102,13 +227,14 @@ export const getTopListenersByRating = async (req, res) => {
           as: "userData"
         }
       },
-      { $match: { userData: { $ne: [] } } },
+      { $match: { userData: { $ne: [] } } }, // Only include listeners with valid user data
       { $unwind: "$userData" },
       {
         $group: {
-          _id: "$user",
-          averageRating: { $avg: "$rating" },
-          reviewCount: { $sum: 1 },
+          _id: "$receiver",
+          totalDuration: { $sum: "$duration" },
+          callCount: { $sum: 1 },
+          averageDuration: { $avg: "$duration" },
           username: { $first: "$userData.username" },
           userCategory: { $first: "$userData.userCategory" },
           status: { $first: "$userData.status" },
@@ -121,18 +247,18 @@ export const getTopListenersByRating = async (req, res) => {
       },
       {
         $match: {
-          reviewCount: { $gte: 1 }, // Lowered threshold
-          averageRating: { $gte: 1 }
+          callCount: { $gte: 1 },
+          totalDuration: { $gte: 60 } // At least 1 minute total duration
         }
       },
       {
         $sort: {
-          averageRating: -1,
-          reviewCount: -1,
-          createdAt: -1
+          totalDuration: -1, // Primary sort by total duration (descending)
+          callCount: -1,    // Secondary sort by call count
+          averageDuration: -1 // Tertiary sort by average duration
         }
       },
-      { $limit: 10 },
+      { $limit: 50 },
       {
         $project: {
           userId: "$_id",
@@ -143,8 +269,10 @@ export const getTopListenersByRating = async (req, res) => {
           avatarUrl: 1,
           shortBio: 1,
           bio: 1,
-          reviewCount: 1,
-          averageRating: { $round: [{ $ifNull: ["$averageRating", 0] }, 2] }
+          reviewCount: "$callCount",
+          averageRating: { $round: [{ $divide: ["$averageDuration", 60] }, 2] }, // in minutes
+          totalDuration: { $round: [{ $divide: ["$totalDuration", 60] }, 2] }, // in minutes
+          totalCalls: "$callCount"
         }
       }
     ]).allowDiskUse(true);
@@ -152,6 +280,8 @@ export const getTopListenersByRating = async (req, res) => {
     const executionTime = ((process.hrtime(startTime)[0] * 1000 +
       process.hrtime(startTime)[1] / 1e6).toFixed(2));
 
+    // Ensure we get at least 10 results if available
+    const minResultsNeeded = 10;
     const rankedListeners = topListeners.map((listener, index) => {
       if (!listener.userId || !listener.username) {
         console.warn('Invalid listener data:', listener);
@@ -163,31 +293,27 @@ export const getTopListenersByRating = async (req, res) => {
       };
     }).filter(listener => listener !== null);
 
-    if (!rankedListeners.length) {
-      return res.status(200).json({
-        success: true,
-        message: 'No qualifying listeners found',
-        executionTime: `${executionTime}ms`,
-        data: []
-      });
-    }
+    const finalResults = rankedListeners.slice(0, Math.max(minResultsNeeded, rankedListeners.length));
 
     res.status(200).json({
       success: true,
       executionTime: `${executionTime}ms`,
-      data: rankedListeners
+      timePeriod: "all_time", // Indicates this is all-time data
+      data: finalResults,
+      message: finalResults.length > 0
+        ? `Found ${finalResults.length} top listeners of all time`
+        : "No listeners found with the specified criteria"
     });
 
   } catch (error) {
-    console.error('Error fetching top listeners:', error);
+    console.error('Error fetching all-time top listeners by duration:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch top listeners',
+      message: 'Failed to fetch all-time top listeners',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
-
 
 export const registerUser = async (req, res) => {
   const { phone, password } = req.body; // Ensure correct field names
@@ -2863,14 +2989,14 @@ export const Reporte_User = async (req, res) => {
 
 // Add or Update Bank Details
 export const addOrUpdateBankDetails = async (req, res) => {
-  const userId = req.user._id || req.user.id;  
+  const userId = req.user._id || req.user.id;
   const {
     bankName,
     accountNumber,
     ifscCode,
     accountHolderName,
   } = req.body;
-  
+
   try {
     // Validate input
     if (!bankName || !accountNumber || !ifscCode || !accountHolderName) {
@@ -2921,8 +3047,8 @@ export const addOrUpdateBankDetails = async (req, res) => {
     await user.save();
 
     return res.status(existingIndex !== -1 ? 200 : 201).json({
-      message: existingIndex !== -1 
-        ? 'Bank details updated successfully.' 
+      message: existingIndex !== -1
+        ? 'Bank details updated successfully.'
         : 'Bank details added successfully.',
       bankDetails: user.bankDetails
     });

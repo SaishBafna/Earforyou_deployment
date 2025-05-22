@@ -29,7 +29,7 @@ import {
     RegisterEnquiry,
     getAllUserCategory,
     GetRegisterEnquiry,
-    getTopListenersByRating,
+    getTopListenersByDuration,
     getAllForCallUser,
     ChatStatusStatus,
     getAllForChatStatus
@@ -48,7 +48,7 @@ router.post('/login', authUser);
 
 router.post('/logout', protect, logoutUser);
 
-router.get('/getTopListenersByRating', getTopListenersByRating);
+router.get('/getTopListenersByRating', getTopListenersByDuration);
 
 router.get('/getAllForCallUser', protect, getAllForCallUser);
 
