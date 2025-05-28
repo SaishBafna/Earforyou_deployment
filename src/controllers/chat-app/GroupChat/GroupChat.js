@@ -2011,24 +2011,36 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   const adminTokens = admins.flatMap(admin => admin.notificationTokens || []);
 
   // Prepare notification data for admins
-  // Convert all values to strings for FCM
   const notificationData = {
     title: "New Join Request",
     body: `${user.username} has requested to join ${groupChat.name}`,
     data: {
-      chatId: chatId.toString(), // Ensure string
-      userId: req.user._id.toString(), // Ensure string
-      username: user.username || "", // Ensure string
+      chatId: chatId,
+      userId: req.user._id,
+      username: user.username,
       type: "JOIN_REQUEST",
-      groupName: groupChat.name || "",
-      message: message?.trim() || ""
+      groupName: groupChat.name
     }
   };
 
   // Send Firebase notifications to admins
   if (adminTokens.length > 0) {
     console.log(`Sending join request notification to ${adminTokens}`);
-    await sendFirebaseNotification(adminTokens, notificationData)
+
+
+    const notificationData1 = {
+      title: "New Join Request",
+      body: `${user.username} has requested to join ${groupChat.name}`,
+      data: {
+        chatId: chatId.toString(),
+        groupName: groupChat.name,
+        type: 'group_message',
+        click_action: 'FLUTTER_NOTIFICATION_CLICK'
+      },
+      icon: sender.avatar || null
+    };
+
+    await sendFirebaseNotification(adminTokens, notificationData1)
       .catch(err => console.error("Failed to send Firebase notification:", err));
   }
 
@@ -2639,6 +2651,6 @@ export {
   revokeGroupInviteLink,
   getAllGroups,
   updateUnreadCounts,
-  
+
 
 };
