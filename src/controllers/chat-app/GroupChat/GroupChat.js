@@ -2005,7 +2005,7 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
 
   // Get admin tokens for Firebase notifications
   const admins = await User.find({ _id: { $in: groupChat.admins } })
-    .select("notificationTokens")
+    .select("deviceToken")
     .lean();
 
   const adminTokens = admins.flatMap(admin => admin.notificationTokens || []);
@@ -2025,6 +2025,7 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
 
   // Send Firebase notifications to admins
   if (adminTokens.length > 0) {
+    console.log(`Sending join request notification to ${adminTokens}`);
     await sendFirebaseNotification(adminTokens, notificationData)
       .catch(err => console.error("Failed to send Firebase notification:", err));
   }
