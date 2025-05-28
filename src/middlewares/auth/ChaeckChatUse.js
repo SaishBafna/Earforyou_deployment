@@ -125,8 +125,6 @@ export const checkandcut = async (req, res) => {
         const { receiverId: chatId } = req.params;
         const userId = req.user._id;
 
-
-
         // Validate chat ID format
         if (!mongoose.Types.ObjectId.isValid(chatId)) {
             return res.status(400).json(
@@ -148,8 +146,7 @@ export const checkandcut = async (req, res) => {
         });
     }
 
-    // Skip premium checks for non-regular users (e.g., admins)
-    if (user.userCategory !== "User") {
+        if (user.userType === "RECEIVER") {
             return res.status(200).json({
                 success: true,
                 message: "Chat access granted for non-regular user",
@@ -159,6 +156,20 @@ export const checkandcut = async (req, res) => {
                 }
             });
         }
+
+        // Skip premium checks for non-regular users (e.g., admins)
+        if (user.userCategory !== "User") {
+            return res.status(200).json({
+                success: true,
+                message: "Chat access granted for non-regular user",
+                data: {
+                    bypass: true,
+                    userCategory: user.userCategory
+                }
+            });
+        }
+
+        
 
         const chatObjectId = new mongoose.Types.ObjectId(chatId);
 

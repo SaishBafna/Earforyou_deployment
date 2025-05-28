@@ -2294,6 +2294,7 @@ const getPendingJoinRequests = asyncHandler(async (req, res) => {
  * @route POST /api/v1/chats/group/:chatId/generate-link
  * @description Generate or regenerate an invite link for a group
  */
+
 const generateGroupInviteLink = asyncHandler(async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -2357,10 +2358,12 @@ const generateGroupInviteLink = asyncHandler(async (req, res) => {
     throw new ApiError(500, error.message || "Failed to generate invite link");
   }
 });
+
 /**
  * @route POST /api/v1/chats/group/join/:token
  * @description Join a group using an invite link
  */
+
 const joinGroupViaLink = asyncHandler(async (req, res) => {
   const { token } = req.params;
 
@@ -2429,6 +2432,7 @@ const joinGroupViaLink = asyncHandler(async (req, res) => {
  * @route DELETE /api/v1/chats/group/:chatId/revoke-link
  * @description Revoke the current invite link
  */
+
 const revokeGroupInviteLink = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
 
@@ -2461,11 +2465,6 @@ const revokeGroupInviteLink = asyncHandler(async (req, res) => {
     )
   );
 });
-
-
-
-
-
 
 
 
