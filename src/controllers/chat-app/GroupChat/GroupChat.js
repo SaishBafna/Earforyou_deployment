@@ -1957,6 +1957,8 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   const { chatId } = req.params;
   const { message } = req.body;
 
+  console.log(`[DEBUG] Starting join request process for chat ${chatId} by user ${req.user._id}`);
+
   // Get group chat and validate
   const groupChat = await GroupChat.findOne({
     _id: chatId,
@@ -1964,21 +1966,27 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   }).select("participants pendingJoinRequests admins settings name").lean();
 
   if (!groupChat) {
+    console.error(`[ERROR] Group chat not found: ${chatId}`);
     throw new ApiError(404, "Group chat not found");
   }
 
+  console.log(`[DEBUG] Found group: ${groupChat.name} with ${groupChat.participants.length} participants`);
+
   // Check if group allows joining by request
   if (groupChat.settings.joinByLink) {
+    console.log(`[DEBUG] Group ${chatId} only allows joining by link`);
     throw new ApiError(400, "This group allows joining by link only");
   }
 
   // Check if already a member
   if (groupChat.participants.some(p => p.equals(req.user._id))) {
+    console.log(`[DEBUG] User ${req.user._id} is already a member of group ${chatId}`);
     throw new ApiError(400, "You are already a member of this group");
   }
 
   // Check if already requested
   if (groupChat.pendingJoinRequests.some(pendingReq => pendingReq.user.equals(req.user._id))) {
+    console.log(`[DEBUG] User ${req.user._id} already has a pending request for group ${chatId}`);
     throw new ApiError(400, "You have already requested to join this group");
   }
 
@@ -1998,73 +2006,105 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
     { new: true, lean: true }
   );
 
+  console.log(`[DEBUG] Join request added for user ${req.user._id} to group ${chatId}`);
+
   // Get user info for notification
   const user = await User.findById(req.user._id)
-    .select("username")
+    .select("username avatar")
     .lean();
+
+  if (!user) {
+    console.error(`[ERROR] User not found: ${req.user._id}`);
+    throw new ApiError(404, "User not found");
+  }
+
+  console.log(`[DEBUG] Retrieved user info for notifications: ${user.username}`);
 
   // Get admin tokens for Firebase notifications
   const admins = await User.find({ _id: { $in: groupChat.admins } })
-    .select("deviceToken")
+    .select("deviceToken notificationSettings isOnline")
     .lean();
 
-  const adminTokens = admins.flatMap(admin => admin.notificationTokens || []);
+  const adminTokens = admins.flatMap(admin => admin.deviceToken ? [admin.deviceToken] : []);
 
-  // Prepare notification data for admins
- 
+  console.log(`[DEBUG] Found ${adminTokens.length} device tokens for ${admins.length} admins`);
 
-  // Send Firebase notifications to admins
+  // Prepare and send Firebase notifications to admins
   if (adminTokens.length > 0) {
-    console.log(`Sending join request notification to ${adminTokens}`);
+    console.log(`[DEBUG] Preparing to send notifications to ${adminTokens.length} admin devices`);
 
-
-    const notificationData1 = {
+    const notificationData = {
       title: "New Join Request",
       body: `${user.username} has requested to join ${groupChat.name}`,
       data: {
         chatId: chatId.toString(),
         groupName: groupChat.name,
-        type: 'group_message',
-        click_action: 'FLUTTER_NOTIFICATION_CLICK'
-      },
-      icon: sender.avatar || null
+        type: 'join_request',
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        userId: req.user._id.toString(),
+        username: user.username,
+        avatar: user.avatar || null
+      }
     };
 
-    await sendFirebaseNotification(adminTokens, notificationData1)
-      .catch(err => console.error("Failed to send Firebase notification:", err));
+    try {
+      await sendFirebaseNotification(adminTokens, notificationData);
+      console.log(`[DEBUG] Successfully sent Firebase notifications to admins`);
+    } catch (err) {
+      console.error("[ERROR] Failed to send Firebase notification:", err);
+      // Continue even if notifications fail
+    }
+  } else {
+    console.log(`[DEBUG] No admin device tokens found, skipping Firebase notifications`);
   }
 
   // Notify group admins individually via socket
-  const adminNotifications = groupChat.admins.map(adminId =>
-    emitSocketEvent(
-      req,
-      adminId.toString(),
-      ChatEventEnum.JOIN_REQUEST_EVENT,
-      {
+  try {
+    const adminNotifications = groupChat.admins.map(adminId => {
+      console.log(`[DEBUG] Sending socket notification to admin ${adminId}`);
+      return emitSocketEvent(
+        req,
+        adminId.toString(),
+        ChatEventEnum.JOIN_REQUEST_EVENT,
+        {
+          chatId,
+          userId: req.user._id,
+          username: user.username,
+          message: message?.trim() || "",
+          groupName: groupChat.name,
+          timestamp: new Date().toISOString()
+        }
+      );
+    });
+
+    await Promise.all(adminNotifications);
+    console.log(`[DEBUG] Successfully sent socket notifications to all admins`);
+  } catch (socketError) {
+    console.error("[ERROR] Failed to send socket notifications:", socketError);
+  }
+
+  // Send group notifications to admins using the dedicated function
+  try {
+    console.log(`[DEBUG] Preparing to send group notifications to admins`);
+    await Promise.all(groupChat.admins.map(adminId =>
+      sendGroupNotification(
+        adminId,
+        "New Join Request",
+        `${user.username} wants to join ${groupChat.name}`,
         chatId,
-        userId: req.user._id,
-        username: user.username,
-        message: message?.trim() || ""
-      }
-    )
-  );
+        null, // No message ID for join requests
+        req.user._id,
+        user.username,
+        user.avatar,
+        false // No attachments
+      )
+    ));
+    console.log(`[DEBUG] Successfully sent group notifications to admins`);
+  } catch (groupNotifyError) {
+    console.error("[ERROR] Failed to send group notifications:", groupNotifyError);
+  }
 
-  await Promise.all(adminNotifications);
-
-  // Send group notifications to admins
-  await sendGroupNotifications(req, {
-    chatId,
-    participants: groupChat.admins,
-    eventType: ChatEventEnum.JOIN_REQUEST_EVENT,
-    data: {
-      chatId,
-      userId: req.user._id,
-      username: user.username,
-      message: message?.trim() || "",
-      groupName: groupChat.name
-    }
-  });
-
+  console.log(`[SUCCESS] Join request processed successfully for user ${req.user._id} to group ${chatId}`);
   return res
     .status(200)
     .json(new ApiResponse(200, updatedChat, "Join request submitted successfully"));
