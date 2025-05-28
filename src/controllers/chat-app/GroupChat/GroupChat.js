@@ -2011,17 +2011,7 @@ const requestToJoinGroup = asyncHandler(async (req, res) => {
   const adminTokens = admins.flatMap(admin => admin.notificationTokens || []);
 
   // Prepare notification data for admins
-  const notificationData = {
-    title: "New Join Request",
-    body: `${user.username} has requested to join ${groupChat.name}`,
-    data: {
-      chatId: chatId,
-      userId: req.user._id,
-      username: user.username,
-      type: "JOIN_REQUEST",
-      groupName: groupChat.name
-    }
-  };
+ 
 
   // Send Firebase notifications to admins
   if (adminTokens.length > 0) {
