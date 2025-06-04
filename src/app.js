@@ -161,7 +161,7 @@ app.use('/api/v1', GroupRoute);
 
 app.use("/api/v1", authRoutes);
 
-app.use("/api/v1/Survey", Survey);
+app.use("/api/v1/survey", Survey);
 
 app.use("/api/v1/meditation", Meditation);
 
