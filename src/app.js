@@ -128,6 +128,7 @@ import Razor from './routes/RazorPayRoute/ChatRazorpayRoute.js'
 import RazorWallet from './routes/RazorPayRoute/WalletRazorpayRoute.js'
 import RazorPaltFrom from './routes/RazorPayRoute/PlatfromRazorpayroute.js'
 import changeGateway from './routes/getWay.js'
+import Survey from './routes/Survey/SurveyRoute.js'
 app.get("/", (req, res) => {
   try {
     res.send("Ear For You Server Running Smoothly");
@@ -159,6 +160,8 @@ app.use('/api/v1', GroupRoute);
 
 
 app.use("/api/v1", authRoutes);
+
+app.use("/api/v1/Survey", Survey);
 
 app.use("/api/v1/meditation", Meditation);
 
