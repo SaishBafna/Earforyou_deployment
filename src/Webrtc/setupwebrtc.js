@@ -1003,15 +1003,7 @@ export const setupWebRTC = (io) => {
           status: 'missed',
         });
 
-        // Log missed call for receiver
-        const logForReceiver = await CallLog.create({
-          caller: new mongoose.Types.ObjectId(receiverId),
-          receiver: new mongoose.Types.ObjectId(callerId),
-          startTime: new Date(),
-          endTime: new Date(),
-          duration: 0,
-          status: 'missed',
-        });
+      
 
         logger.info('Cleaning up call data...');
 
