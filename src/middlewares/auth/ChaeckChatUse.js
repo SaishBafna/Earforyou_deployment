@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import User from "../../models/Users.js";
 
 export const checkChatAccess = asyncHandler(async (req, res, next) => {
-    const { receiverId: chatId } = req.params;
+    const { chatId: chatId } = req.params;
     const userId = req.user._id;
 
     if (!mongoose.Types.ObjectId.isValid(chatId)) {
