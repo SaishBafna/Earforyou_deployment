@@ -25,6 +25,9 @@ export const checkChatAccess = asyncHandler(async (req, res, next) => {
     if (user.userCategory !== "User") {
         return next();
     }
+    if (user.userType === "RECEIVER") {
+        return next();
+    }
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
         throw new ApiError(400, "Invalid user ID format");
