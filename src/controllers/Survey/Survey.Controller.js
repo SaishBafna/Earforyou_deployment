@@ -11,27 +11,70 @@ export const createSurvey = async (req, res) => {
             email,
             mobile,
             overwhelmedFrequency,
-            experiencedConditions,
+            experiencedConditions = [],
             awarenessLevel,
             comfortTalking,
             professionalHelp,
-            supportBarriers,
+            supportBarriers = [],
             recommendLikelihood,
             preferredFeature,
-            desiredContent,
+            desiredContent = [],
             discoveryMethod,
-            feedback,
+            feedback = ''
         } = req.body;
 
-        // Validate required fields (either email or mobile must be provided)
-        if (!email && !mobile) {
+        // Validate required fields
+        const requiredFields = {
+            name,
+            overwhelmedFrequency,
+            awarenessLevel,
+            comfortTalking,
+            professionalHelp,
+            recommendLikelihood,
+            preferredFeature,
+            discoveryMethod
+        };
+
+        for (const [field, value] of Object.entries(requiredFields)) {
+            if (!value || (typeof value === 'string' && value.trim() === '')) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} is required.`
+                });
+            }
+        }
+
+        // Validate at least one contact method is provided
+        if ((!email || email.trim() === '') && (!mobile || mobile.trim() === '')) {
             return res.status(400).json({
                 success: false,
-                message: 'Email or mobile number is required.'
+                message: 'Either email or mobile number must be provided.'
             });
         }
 
-        // Validate that arrays are actually arrays (prevent NoSQL injection)
+        // Validate email format if provided
+        if (email && email.trim() !== '') {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email.trim())) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please provide a valid email address.'
+                });
+            }
+        }
+
+        // Validate mobile format if provided
+        if (mobile && mobile.trim() !== '') {
+            const mobileRegex = /^[0-9]{10,15}$/;
+            if (!mobileRegex.test(mobile.trim())) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please provide a valid mobile number (10-15 digits).'
+                });
+            }
+        }
+
+        // Validate array fields
         const arrayFields = {
             experiencedConditions,
             supportBarriers,
@@ -39,73 +82,100 @@ export const createSurvey = async (req, res) => {
         };
 
         for (const [field, value] of Object.entries(arrayFields)) {
-            if (value && !Array.isArray(value)) {
+            if (!Array.isArray(value)) {
                 return res.status(400).json({
                     success: false,
-                    message: `Invalid data format for ${field}. Expected an array.`
+                    message: `Invalid data format for ${field.replace(/([A-Z])/g, ' $1')}. Expected an array.`
                 });
             }
         }
 
-        // Check for existing survey (case-insensitive email check, trimmed mobile)
-        const existingSurvey = await Survey.findOne({
-            $or: [
-                { email: { $regex: new RegExp(`^${email}$`, 'i') } }, // Case-insensitive
-                { mobile: mobile?.trim() } // Trim whitespace
-            ]
-        });
-
-        if (existingSurvey) {
-            return res.status(400).json({
-                success: false,
-                message: 'A survey with this email or mobile number already exists.',
-                existingSurveyId: existingSurvey._id
-            });
+        // Check for existing survey
+        const existingConditions = [];
+        if (email && email.trim() !== '') {
+            existingConditions.push({ email: { $regex: new RegExp(`^${email.trim()}$`, 'i') } });
+        }
+        if (mobile && mobile.trim() !== '') {
+            existingConditions.push({ mobile: mobile.trim() });
         }
 
-        // Create and save the new survey
-        const survey = new Survey({
-            name,
-            email,
-            mobile,
+        if (existingConditions.length > 0) {
+            const existingSurvey = await Survey.findOne({
+                $or: existingConditions
+            });
+
+            if (existingSurvey) {
+                return res.status(409).json({
+                    success: false,
+                    message: 'A survey with this email or mobile number already exists.',
+                    existingSurveyId: existingSurvey._id
+                });
+            }
+        }
+
+        // Create new survey
+        const surveyData = {
+            name: name.trim(),
+            email: email ? email.trim() : undefined,
+            mobile: mobile ? mobile.trim() : undefined,
             overwhelmedFrequency,
-            experiencedConditions,
+            experiencedConditions: experiencedConditions.map(item => item.trim()),
             awarenessLevel,
             comfortTalking,
             professionalHelp,
-            supportBarriers,
+            supportBarriers: supportBarriers.map(item => item.trim()),
             recommendLikelihood,
             preferredFeature,
-            desiredContent,
+            desiredContent: desiredContent.map(item => item.trim()),
             discoveryMethod,
-            feedback, // This is optional
-        });
+            feedback: feedback.trim()
+        };
 
+        const survey = new Survey(surveyData);
         const createdSurvey = await survey.save();
 
-        // Success response (201 Created)
+        // Success response
         res.status(201).json({
             success: true,
             message: 'Survey created successfully.',
-            data: createdSurvey
+            data: {
+                id: createdSurvey._id,
+                name: createdSurvey.name,
+                email: createdSurvey.email,
+                mobile: createdSurvey.mobile,
+                createdAt: createdSurvey.createdAt
+            }
         });
-    } catch (error) {
-        // Log the error for debugging (do not expose sensitive details)
-        console.error('Survey creation error:', error.message);
 
-        // More specific error handling
+    } catch (error) {
+        console.error('Survey creation error:', error);
+
+        // Handle specific MongoDB errors
         if (error.name === 'ValidationError') {
+            const errors = {};
+            for (const field in error.errors) {
+                errors[field] = error.errors[field].message;
+            }
             return res.status(400).json({
                 success: false,
-                message: 'Validation error',
-                errors: error.errors
+                message: 'Validation failed',
+                errors
             });
         }
 
-        // Generic error response (500 Internal Server Error)
+        // Handle duplicate key errors
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message: 'A survey with this email or mobile number already exists.'
+            });
+        }
+
+        // Generic error response
         res.status(500).json({
             success: false,
-            message: 'An error occurred while creating the survey.'
+            message: 'Internal server error while creating survey',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };

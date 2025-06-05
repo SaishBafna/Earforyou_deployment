@@ -14,66 +14,50 @@ const surveySchema = new mongoose.Schema(
             type: String,
             required: true,
         },
-        nervousnessFrequency: {
+        overwhelmedFrequency: {
             type: String,
             required: true,
         },
-        panicAttack: {
-            type: String,
-            required: true,
-        },
-        strategies: {
+        experiencedConditions: {
             type: [String],
             required: true,
         },
-        effectiveness: {
+        awarenessLevel: {
             type: String,
             required: true,
         },
-        hasResources: {
+        comfortTalking: {
             type: String,
             required: true,
         },
-        resourcesUsed: {
-            type: [String],
-            default: [],
-        },
-        diagnosed: {
+        professionalHelp: {
             type: String,
             required: true,
         },
-        selfSuspect: {
-            type: String,
-            required: true,
-        },
-        confidence: {
-            type: String,
-            required: true,
-        },
-        treatments: {
+        supportBarriers: {
             type: [String],
             required: true,
         },
-        infoSources: {
+        recommendLikelihood: {
+            type: String,
+            required: true,
+        },
+        preferredFeature: {
+            type: String,
+            required: true,
+        },
+        desiredContent: {
             type: [String],
             required: true,
         },
-        stigma: {
+        discoveryMethod: {
             type: String,
             required: true,
         },
-        awareness: {
+        feedback: {
             type: String,
             required: true,
-        },
-        likelihood: {
-            type: String,
-            required: true,
-        },
-        desiredFeatures: {
-            type: [String],
-            required: true,
-        },
+        }
     },
     {
         timestamps: true,
