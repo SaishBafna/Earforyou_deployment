@@ -67,6 +67,16 @@ export const paymentService = {
                         if (coupon.minimumOrderAmount && plan.price < coupon.minimumOrderAmount) {
                             throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
                         }
+                        // NEW: Validate coupon applicability to this pricing type and plan
+                        if (!coupon.isApplicableToPricingType('call')) {
+                            throw new ApiError(400, "This coupon cannot be used for chat services");
+                        }
+
+                        // NEW: Check if coupon is restricted to specific pricing IDs
+                        if (coupon.applicablePricingIds.length > 0 &&
+                            !coupon.isApplicableToPricingId(planId)) {
+                            throw new ApiError(400, "This coupon cannot be used with this plan");
+                        }
 
                         // Calculate bonus talk time based on coupon type
                         if (coupon.discountType === 'percentage') {

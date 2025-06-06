@@ -51,7 +51,6 @@ const couponSchema = new mongoose.Schema({
         required: true
     },
     minimumOrderAmount: Number,
-
     isStaffOnly: {
         type: Boolean,
         default: false
@@ -63,6 +62,26 @@ const couponSchema = new mongoose.Schema({
     isPublic: {
         type: Boolean,
         default: true
+    },
+    applicablePricingTypes: {
+        type: [String],
+        enum: ['chat', 'call', 'platform_charges', 'other'],
+        default: ['chat', 'call','platform_charges']
+    },
+    // New field for specific pricing IDs
+    applicablePricingIds: {
+        type: [mongoose.Schema.Types.ObjectId],
+        default: [], // Empty array means applicable to all pricing IDs
+        ref: 'Pricing' // Assuming you have a Pricing model
+    },
+    applicablePaymentMethods: {
+        type: [String],
+        enum: ['wallet', 'credit_card', 'debit_card', 'net_banking', 'upi', 'other'],
+        default: ['wallet', 'credit_card', 'debit_card', 'net_banking', 'upi']
+    },
+    applicableServiceTypes: {
+        type: [String],
+        default: []
     }
 }, {
     timestamps: true,
@@ -87,6 +106,22 @@ couponSchema.pre('save', function (next) {
     next();
 });
 
+couponSchema.methods.isApplicableToPricingType = function(pricingType) {
+    return this.applicablePricingTypes.length === 0 || 
+           this.applicablePricingTypes.includes(pricingType);
+};
+
+couponSchema.methods.isApplicableToPaymentMethod = function(paymentMethod) {
+    return this.applicablePaymentMethods.length === 0 || 
+           this.applicablePaymentMethods.includes(paymentMethod);
+};
+
+// New method to check if coupon is applicable to a specific pricing ID
+couponSchema.methods.isApplicableToPricingId = function(pricingId) {
+    return this.applicablePricingIds.length === 0 || 
+           this.applicablePricingIds.some(id => id.equals(pricingId));
+};
+
 export const Coupon = mongoose.model('Coupon', couponSchema);
 
 const usageSchema = new mongoose.Schema({
@@ -100,13 +135,38 @@ const usageSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
-
     discountApplied: {
+        type: Number,
+        required: true
+    },
+    pricingType: {
+        type: String,
+        enum: ['chat', 'call', 'platform_charges', 'other'],
+        required: true
+    },
+    // New field to track the specific pricing ID used
+    pricingId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Pricing',
+        required: false // Optional if not all usages are tied to specific pricing
+    },
+    paymentMethod: {
+        type: String,
+        enum: ['wallet', 'credit_card', 'debit_card', 'net_banking', 'upi', 'other'],
+        required: true
+    },
+    serviceType: String,
+    orderAmount: {
+        type: Number,
+        required: true
+    },
+    discountedAmount: {
         type: Number,
         required: true
     }
 }, { timestamps: true });
 
 usageSchema.index({ coupon: 1, user: 1 });
+usageSchema.index({ pricingId: 1 }); // New index for faster queries by pricing ID
 
 export const CouponUsage = mongoose.model('CouponUsage', usageSchema);

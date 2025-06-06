@@ -400,6 +400,17 @@ export const validatePayment = async (req, res) => {
           throw new Error(`Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
         }
 
+        // NEW: Validate coupon applicability to this pricing type and plan
+        if (!coupon.isApplicableToPricingType('call')) {
+          throw new ApiError(400, "This coupon cannot be used for chat services");
+        }
+
+        // NEW: Check if coupon is restricted to specific pricing IDs
+        if (coupon.applicablePricingIds.length > 0 &&
+          !coupon.isApplicableToPricingId(planId)) {
+          throw new ApiError(400, "This coupon cannot be used with this plan");
+        }
+
         // Apply coupon discount based on type
         if (coupon.discountType === 'percentage') {
           bonusTalkTime = Math.floor(talkTime * (coupon.discountValue / 100));

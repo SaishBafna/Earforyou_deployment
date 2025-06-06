@@ -484,6 +484,17 @@ export const createOrder = async (req, res) => {
                     });
                 }
 
+                // NEW: Validate coupon applicability to this pricing type and plan
+                if (!coupon.isApplicableToPricingType('platform_charges')) {
+                    throw new ApiError(400, "This coupon cannot be used for chat services");
+                }
+
+                // NEW: Check if coupon is restricted to specific pricing IDs
+                if (coupon.applicablePricingIds.length > 0 &&
+                    !coupon.isApplicableToPricingId(planId)) {
+                    throw new ApiError(400, "This coupon cannot be used with this plan");
+                }
+
                 // MODIFIED: Convert all coupon types to extra days
                 switch (coupon.discountType) {
                     case 'percentage':

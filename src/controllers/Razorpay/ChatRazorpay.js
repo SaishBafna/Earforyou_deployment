@@ -241,6 +241,17 @@ export const paymentService = {
                 throw new ApiError(400, `Minimum order amount of ₹${coupon.minimumOrderAmount} required for this coupon`);
             }
 
+            // NEW: Validate coupon applicability to this pricing type and plan
+            if (!coupon.isApplicableToPricingType('chat')) {
+                throw new ApiError(400, "This coupon cannot be used for chat services");
+            }
+
+            // NEW: Check if coupon is restricted to specific pricing IDs
+            if (coupon.applicablePricingIds.length > 0 &&
+                !coupon.isApplicableToPricingId(planId)) {
+                throw new ApiError(400, "This coupon cannot be used with this plan");
+            }
+
             let finalAmount = amount;
             let discountAmount = 0;
             let extendedDays = 0;
