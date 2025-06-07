@@ -323,10 +323,6 @@ export { getAllMessages, sendMessage, deleteMessage };
 
 
 
-
-import admin from "firebase-admin"; // Ensure Firebase Admin SDK is initialized
-import User from "../models/User.js"; // Adjust the path according to your project structure
-
 async function sendNotification(userId, title, message, chatId, messageId, senderId, sendername, senderavatar) {
   try {
     // Get user device token
