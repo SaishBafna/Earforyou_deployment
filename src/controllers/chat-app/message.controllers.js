@@ -276,6 +276,53 @@ export { getAllMessages, sendMessage, deleteMessage };
 
 
 
+// async function sendNotification(userId, title, message, chatId, messageId, senderId, sendername, senderavatar) {
+//   // Assuming you have the FCM device token stored in your database
+//   const user = await User.findById(userId);
+//   const deviceToken = user.deviceToken;
+
+//   if (!deviceToken) {
+//     console.error("No device token found for user:", userId);
+//     return;
+//   }
+
+//   const payload = {
+//     android: {
+//       priority: 'high',
+
+//       notification: {
+//         title: title,
+//         body: message,
+
+//       },
+//     },
+//     data: {
+//       screen: 'Chat', // The screen name you want to navigate to
+//       params: JSON.stringify({
+//         chatId: chatId,
+//         messageId: messageId,
+//         type: 'chat_message',
+//         AgentID: senderId,
+//         friendName: sendername,
+//         imageurl: senderavatar || '', // Add sender's avatar if available
+//         // Include any other parameters your Chat screen needs
+//       })
+
+//     },
+//     token: deviceToken,
+//   };
+
+//   try {
+//     const response = await admin.messaging().send(payload);
+//     console.log("Notification sent successfully:", response);
+//   } catch (error) {
+//     console.error("Error sending notification:", error);
+//   }
+// }
+
+
+
+
 async function sendNotification(userId, title, message, chatId, messageId, senderId, sendername, senderavatar) {
   // Assuming you have the FCM device token stored in your database
   const user = await User.findById(userId);
@@ -287,29 +334,45 @@ async function sendNotification(userId, title, message, chatId, messageId, sende
   }
 
   const payload = {
-    android: {
-      priority: 'high',
-
-      notification: {
-        title: title,
-        body: message,
-
-      },
+    notification: {
+      title: title,
+      body: message,
+      // iOS specific properties
+      sound: 'default',
+      badge: '1'
     },
     data: {
-      screen: 'Chat', // The screen name you want to navigate to
+      screen: 'Chat',
       params: JSON.stringify({
         chatId: chatId,
         messageId: messageId,
         type: 'chat_message',
         AgentID: senderId,
         friendName: sendername,
-        imageurl: senderavatar || '', // Add sender's avatar if available
-        // Include any other parameters your Chat screen needs
+        imageurl: senderavatar || '',
       })
-
     },
-    token: deviceToken,
+    android: {
+      priority: 'high',
+      notification: {
+        sound: 'default',
+        channel_id: 'your_channel_id' // Required for Android 8.0+
+      }
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1,
+          mutableContent: 1,
+          contentAvailable: 1
+        }
+      },
+      headers: {
+        'apns-priority': '10' // Immediate delivery
+      }
+    },
+    token: deviceToken
   };
 
   try {
@@ -319,4 +382,3 @@ async function sendNotification(userId, title, message, chatId, messageId, sende
     console.error("Error sending notification:", error);
   }
 }
-
