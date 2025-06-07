@@ -167,7 +167,7 @@ export const validateCoupon = async (req, res) => {
 
         // Check expiry
         const now = new Date();
-        if (coupon.isExpired || (coupon.validUntil && new Date(coupon.validUntil) < now) {
+        if (coupon.isExpired || (coupon.validUntil && new Date(coupon.validUntil) < now)) {
             return res.status(400).json({
                 success: false,
                 error: 'COUPON_EXPIRED',
