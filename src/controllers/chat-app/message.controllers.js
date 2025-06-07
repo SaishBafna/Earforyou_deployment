@@ -322,63 +322,63 @@ export { getAllMessages, sendMessage, deleteMessage };
 
 
 
+
+
+import admin from "firebase-admin"; // Ensure Firebase Admin SDK is initialized
+import User from "../models/User.js"; // Adjust the path according to your project structure
+
 async function sendNotification(userId, title, message, chatId, messageId, senderId, sendername, senderavatar) {
-  const user = await User.findById(userId);
-  const deviceToken = user?.deviceToken;
+  try {
+    // Get user device token
+    const user = await User.findById(userId);
+    const deviceToken = user?.deviceToken;
 
-  if (!deviceToken) {
-    console.error("No device token found for user:", userId);
-    return;
-  }
+    if (!deviceToken) {
+      console.error("No device token found for user:", userId);
+      return;
+    }
 
-  const payload = {
-    token: deviceToken,
-
-    notification: {
-      title: title,
-      body: message,
-    },
-
-    data: {
-      screen: 'Chat',
-      type: 'chat_message',
-      chatId: chatId,
-      messageId: messageId,
-      AgentID: senderId,
-      friendName: sendername,
-      imageurl: senderavatar || '',
-    },
-
-    android: {
-      priority: 'high',
+    // Define the payload
+    const payload = {
+      token: deviceToken,
       notification: {
-        sound: 'default',
-        channel_id: 'earforyou123',
+        title: title,
+        body: message,
       },
-    },
-
-    apns: {
-      headers: {
-        'apns-priority': '10', // 10 for immediate delivery, 5 for background
+      data: {
+        screen: 'Chat',
+        chatId: chatId?.toString() || '',
+        messageId: messageId?.toString() || '',
+        type: 'chat_message',
+        AgentID: senderId?.toString() || '',
+        friendName: sendername || '',
+        imageurl: senderavatar || '',
       },
-      payload: {
-        aps: {
-          alert: {
-            title: title,
-            body: message,
-          },
-          sound: 'default',
-          badge: 1,
-          contentAvailable: true,
+      android: {
+        priority: "high",
+      },
+      apns: {
+        payload: {
+          aps: {
+            contentAvailable: true,
+            alert: {
+              title: title,
+              body: message,
+            }
+          }
+        },
+        headers: {
+          'apns-priority': '10'
         }
       }
-    },
-  };
+    };
 
-  try {
+    // Send notification
     const response = await admin.messaging().send(payload);
     console.log("Notification sent successfully:", response);
+
   } catch (error) {
     console.error("Error sending notification:", error);
   }
 }
+
