@@ -1,7 +1,7 @@
 import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 
 export const validateCoupon = async (req, res) => {
-    const { couponCode, userId, pricingType } = req.query;
+    const { couponCode, userId, pricingType,pricingId } = req.query;
 
     // If no coupon code provided, return success (coupon is optional)
     if (!couponCode) {
