@@ -1,7 +1,7 @@
 import { Coupon, CouponUsage } from '../../models/CouponSystem/couponModel.js';
 
 export const validateCoupon = async (req, res) => {
-    const { couponCode, userId } = req.query;
+    const { couponCode, userId, pricingType } = req.query;
 
     // If no coupon code provided, return success (coupon is optional)
     if (!couponCode) {
@@ -25,6 +25,29 @@ export const validateCoupon = async (req, res) => {
             });
         }
 
+
+
+
+        // Enhanced pricing validation
+        if (pricingId) {
+            // Check against restricted pricing IDs if any exist
+            if (coupon.applicablePricingIds.length > 0 &&
+                !coupon.applicablePricingIds.some(id => id.equals(new mongoose.Types.ObjectId(pricingId)))) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Coupon not valid for the selected pricing plan'
+                });
+            }
+
+            // If you have pricingType in request, validate that too
+            if (pricingType && coupon.applicablePricingTypes.length > 0 &&
+                !coupon.applicablePricingTypes.includes(pricingType)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Coupon not valid for this type of service'
+                });
+            }
+        }
         // Check if coupon is active
         if (!coupon.isActive) {
             return res.status(400).json({
@@ -82,7 +105,7 @@ export const validateCoupon = async (req, res) => {
             }
         }
 
-        // If all checks passed, return coupon details
+        // If all checkas passed, return coupon details
         return res.status(200).json({
             success: true,
             message: 'Coupon is valid',
