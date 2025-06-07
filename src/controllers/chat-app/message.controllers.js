@@ -322,11 +322,9 @@ export { getAllMessages, sendMessage, deleteMessage };
 
 
 
-
 async function sendNotification(userId, title, message, chatId, messageId, senderId, sendername, senderavatar) {
-  // Assuming you have the FCM device token stored in your database
   const user = await User.findById(userId);
-  const deviceToken = user.deviceToken;
+  const deviceToken = user?.deviceToken;
 
   if (!deviceToken) {
     console.error("No device token found for user:", userId);
@@ -334,45 +332,47 @@ async function sendNotification(userId, title, message, chatId, messageId, sende
   }
 
   const payload = {
+    token: deviceToken,
+
     notification: {
       title: title,
       body: message,
-      // iOS specific properties
-      sound: 'default',
-      badge: '1'
     },
+
     data: {
       screen: 'Chat',
-      params: JSON.stringify({
-        chatId: chatId,
-        messageId: messageId,
-        type: 'chat_message',
-        AgentID: senderId,
-        friendName: sendername,
-        imageurl: senderavatar || '',
-      })
+      type: 'chat_message',
+      chatId: chatId,
+      messageId: messageId,
+      AgentID: senderId,
+      friendName: sendername,
+      imageurl: senderavatar || '',
     },
+
     android: {
       priority: 'high',
       notification: {
         sound: 'default',
-        channel_id: 'your_channel_id' // Required for Android 8.0+
-      }
+        channel_id: 'earforyou123',
+      },
     },
+
     apns: {
+      headers: {
+        'apns-priority': '10', // 10 for immediate delivery, 5 for background
+      },
       payload: {
         aps: {
+          alert: {
+            title: title,
+            body: message,
+          },
           sound: 'default',
           badge: 1,
-          mutableContent: 1,
-          contentAvailable: 1
+          contentAvailable: true,
         }
-      },
-      headers: {
-        'apns-priority': '10' // Immediate delivery
       }
     },
-    token: deviceToken
   };
 
   try {
