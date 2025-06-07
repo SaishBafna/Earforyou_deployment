@@ -2118,7 +2118,10 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
   const { chatId, userId } = req.params;
   const { approve } = req.body;
 
+  console.log(`[DEBUG] Starting join request approval process for chat ${chatId}, user ${userId} by admin ${req.user._id}`);
+
   if (typeof approve !== "boolean") {
+    console.error(`[ERROR] Invalid approve value: ${approve}`);
     throw new ApiError(400, "Approve must be a boolean value");
   }
 
@@ -2127,11 +2130,14 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
     _id: chatId,
     isGroupChat: true,
     admins: req.user._id,
-  }).select("participants pendingJoinRequests admins name").lean();
+  }).select("participants pendingJoinRequests admins name settings").lean();
 
   if (!groupChat) {
+    console.error(`[ERROR] Group chat not found or user not admin: ${chatId}, admin ${req.user._id}`);
     throw new ApiError(404, "Group chat not found or you're not an admin");
   }
+
+  console.log(`[DEBUG] Found group: ${groupChat.name} with ${groupChat.participants.length} participants`);
 
   // Find the join request
   const joinRequest = groupChat.pendingJoinRequests.find(req =>
@@ -2139,20 +2145,24 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
   );
 
   if (!joinRequest) {
+    console.error(`[ERROR] Join request not found for user ${userId} in group ${chatId}`);
     throw new ApiError(404, "Join request not found");
   }
 
   // Get admin and user info for notifications
   const [admin, user] = await Promise.all([
-    User.findById(req.user._id).select("username").lean(),
-    User.findById(userId).select("username notificationTokens").lean()
+    User.findById(req.user._id).select("username avatar deviceToken notificationSettings").lean(),
+    User.findById(userId).select("username avatar deviceToken notificationSettings").lean()
   ]);
 
   if (approve) {
     // Validate user exists
     if (!user) {
+      console.error(`[ERROR] User not found: ${userId}`);
       throw new ApiError(404, "User not found");
     }
+
+    console.log(`[DEBUG] Approving request for user ${user.username} to join group ${groupChat.name}`);
 
     // Calculate unread count for the new participant
     const unreadCount = await GroupChatMessage.countDocuments({
@@ -2172,20 +2182,31 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       { new: true, lean: true }
     );
 
-    // Get all participant tokens for notifications
-    const participants = await User.find({ _id: { $in: groupChat.participants } })
-      .select("notificationTokens")
-      .lean();
-    const participantTokens = participants.flatMap(p => p.notificationTokens || []);
+    console.log(`[DEBUG] User ${userId} added to group ${chatId}`);
+
+    // Get all participant tokens for notifications (excluding the new user)
+    const participants = await User.find({
+      _id: { $in: groupChat.participants, $ne: userId }
+    }).select("deviceToken notificationSettings").lean();
+
+    const participantTokens = participants.flatMap(p =>
+      p.deviceToken && p.notificationSettings?.groupUpdates !== false ? [p.deviceToken] : []
+    );
+
+    console.log(`[DEBUG] Found ${participantTokens.length} participant device tokens for notifications`);
 
     // Prepare notification data
     const userNotificationData = {
       title: "Join Request Approved",
-      body: `Your request to join ${groupChat.name} has been approved`,
+      body: `Your request to join ${groupChat.name} has been approved by ${admin.username}`,
       data: {
-        chatId: chatId,
+        chatId: chatId.toString(),
         groupName: groupChat.name,
-        type: "JOIN_REQUEST_APPROVED"
+        type: "JOIN_REQUEST_APPROVED",
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        approvedBy: req.user._id.toString(),
+        adminUsername: admin.username,
+        adminAvatar: admin.avatar || null
       }
     };
 
@@ -2193,64 +2214,123 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
       title: "New Member",
       body: `${user.username} has joined ${groupChat.name}`,
       data: {
-        chatId: chatId,
-        userId: userId,
+        chatId: chatId.toString(),
+        userId: userId.toString(),
         username: user.username,
+        avatar: user.avatar || null,
         type: "NEW_MEMBER",
-        groupName: groupChat.name
+        groupName: groupChat.name,
+        addedBy: req.user._id.toString(),
+        addedByUsername: admin.username
       }
     };
 
     // Send Firebase notifications
     await Promise.all([
       // Notify the user who was approved
-      user.notificationTokens?.length > 0
-        ? sendFirebaseNotification(user.notificationTokens, userNotificationData)
-          .catch(err => console.error("Failed to send user approval notification:", err))
+      user.deviceToken && user.notificationSettings?.joinRequestUpdates !== false
+        ? sendFirebaseNotification([user.deviceToken], userNotificationData)
+          .then(() => console.log(`[DEBUG] Sent approval notification to user ${userId}`))
+          .catch(err => console.error("[ERROR] Failed to send user approval notification:", err))
         : Promise.resolve(),
 
       // Notify group participants about new member
       participantTokens.length > 0
         ? sendFirebaseNotification(participantTokens, groupNotificationData)
-          .catch(err => console.error("Failed to send group notification:", err))
+          .then(() => console.log(`[DEBUG] Sent new member notification to ${participantTokens.length} participants`))
+          .catch(err => console.error("[ERROR] Failed to send group notification:", err))
         : Promise.resolve()
     ]);
 
     // Notify all parties via socket
-    await Promise.all([
-      ...groupChat.participants.map(pId =>
-        emitSocketEvent(
-          req,
-          pId.toString(),
-          ChatEventEnum.UPDATE_GROUP_EVENT,
-          updatedChat
-        )
-      ),
-      emitSocketEvent(
-        req,
-        userId.toString(),
-        ChatEventEnum.NEW_GROUP_CHAT_EVENT,
-        updatedChat
-      ),
-      ...groupChat.admins.map(adminId =>
-        emitSocketEvent(
-          req,
-          adminId.toString(),
-          ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
-          {
-            chatId,
-            userId,
-            approvedBy: req.user._id,
-          }
-        )
-      ),
-    ]);
+    try {
+      console.log(`[DEBUG] Sending socket notifications`);
+      await Promise.all([
+        // Notify existing participants about group update
+        ...groupChat.participants.map(pId =>
+          emitSocketEvent(
+            req,
+            pId.toString(),
+            ChatEventEnum.UPDATE_GROUP_EVENT,
+            updatedChat
+          )
+        ),
 
+        // Notify new member about their new group
+        emitSocketEvent(
+          req,
+          userId.toString(),
+          ChatEventEnum.NEW_GROUP_CHAT_EVENT,
+          updatedChat
+        ),
+
+        // Notify admins about the approval
+        ...groupChat.admins.map(adminId =>
+          emitSocketEvent(
+            req,
+            adminId.toString(),
+            ChatEventEnum.JOIN_REQUEST_APPROVED_EVENT,
+            {
+              chatId,
+              userId,
+              approvedBy: req.user._id,
+              username: user.username,
+              groupName: groupChat.name,
+              timestamp: new Date().toISOString()
+            }
+          )
+        ),
+      ]);
+      console.log(`[DEBUG] Socket notifications sent successfully`);
+    } catch (socketError) {
+      console.error("[ERROR] Failed to send socket notifications:", socketError);
+    }
+
+    // Send group notifications using the dedicated function
+    try {
+      console.log(`[DEBUG] Sending group notifications`);
+      await Promise.all([
+        // Notify the new member
+        sendGroupNotification(
+          userId,
+          "Join Request Approved",
+          `Your request to join ${groupChat.name} has been approved`,
+          chatId,
+          null,
+          req.user._id,
+          admin.username,
+          admin.avatar,
+          false
+        ),
+
+        // Notify existing participants
+        ...groupChat.participants.map(participantId =>
+          sendGroupNotification(
+            participantId,
+            "New Group Member",
+            `${user.username} has joined ${groupChat.name}`,
+            chatId,
+            null,
+            req.user._id,
+            admin.username,
+            admin.avatar,
+            false
+          )
+        )
+      ]);
+      console.log(`[DEBUG] Group notifications sent successfully`);
+    } catch (groupNotifyError) {
+      console.error("[ERROR] Failed to send group notifications:", groupNotifyError);
+    }
+
+    console.log(`[SUCCESS] Join request approved successfully for user ${userId} to group ${chatId}`);
     return res
       .status(200)
       .json(new ApiResponse(200, updatedChat, "Join request approved successfully"));
   } else {
     // Reject the join request
+    console.log(`[DEBUG] Rejecting request for user ${userId} to join group ${groupChat.name}`);
+
     const updatedChat = await GroupChat.findByIdAndUpdate(
       chatId,
       {
@@ -2263,31 +2343,93 @@ const approveJoinRequest = asyncHandler(async (req, res) => {
     // Prepare rejection notification
     const rejectionNotificationData = {
       title: "Join Request Rejected",
-      body: `Your request to join ${groupChat.name} has been rejected`,
+      body: `Your request to join ${groupChat.name} has been rejected by ${admin.username}`,
       data: {
-        chatId: chatId,
+        chatId: chatId.toString(),
         groupName: groupChat.name,
-        type: "JOIN_REQUEST_REJECTED"
+        type: "JOIN_REQUEST_REJECTED",
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        rejectedBy: req.user._id.toString(),
+        adminUsername: admin.username,
+        adminAvatar: admin.avatar || null,
+        reason: req.body.reason || ""
       }
     };
 
-    // Send Firebase notification to rejected user
-    if (user?.notificationTokens?.length > 0) {
-      await sendFirebaseNotification(user.notificationTokens, rejectionNotificationData)
-        .catch(err => console.error("Failed to send rejection notification:", err));
+    // Send Firebase notification to rejected user if they have notifications enabled
+    if (user?.deviceToken && user?.notificationSettings?.joinRequestUpdates !== false) {
+      try {
+        await sendFirebaseNotification([user.deviceToken], rejectionNotificationData);
+        console.log(`[DEBUG] Sent rejection notification to user ${userId}`);
+      } catch (err) {
+        console.error("[ERROR] Failed to send rejection notification:", err);
+      }
     }
 
     // Notify the rejected user via socket
-    await emitSocketEvent(
-      req,
-      userId.toString(),
-      ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
-      {
-        chatId,
-        rejectedBy: req.user._id,
-      }
-    );
+    try {
+      await emitSocketEvent(
+        req,
+        userId.toString(),
+        ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
+        {
+          chatId,
+          rejectedBy: req.user._id,
+          groupName: groupChat.name,
+          adminUsername: admin.username,
+          timestamp: new Date().toISOString(),
+          reason: req.body.reason || ""
+        }
+      );
+      console.log(`[DEBUG] Sent rejection socket event to user ${userId}`);
+    } catch (socketError) {
+      console.error("[ERROR] Failed to send rejection socket event:", socketError);
+    }
 
+    // Send group notification to the rejected user
+    if (user) {
+      try {
+        await sendGroupNotification(
+          userId,
+          "Join Request Rejected",
+          `Your request to join ${groupChat.name} has been rejected`,
+          chatId,
+          null,
+          req.user._id,
+          admin.username,
+          admin.avatar,
+          false
+        );
+        console.log(`[DEBUG] Sent rejection group notification to user ${userId}`);
+      } catch (groupNotifyError) {
+        console.error("[ERROR] Failed to send rejection group notification:", groupNotifyError);
+      }
+    }
+
+    // Notify admins about the rejection
+    try {
+      await Promise.all(groupChat.admins.map(adminId =>
+        emitSocketEvent(
+          req,
+          adminId.toString(),
+          ChatEventEnum.JOIN_REQUEST_REJECTED_EVENT,
+          {
+            chatId,
+            userId,
+            rejectedBy: req.user._id,
+            username: user?.username || "Unknown",
+            groupName: groupChat.name,
+            timestamp: new Date().toISOString()
+          }
+        )
+      ));
+      
+      console.log(`[DEBUG] Notified admins about rejection`);
+    } catch (adminNotifyError) {
+      console.error("[ERROR] Failed to notify admins about rejection:", adminNotifyError);
+    }
+
+    console.log(`[SUCCESS] Join request rejected successfully for user ${userId} to group ${chatId}`);
     return res
       .status(200)
       .json(new ApiResponse(200, updatedChat, "Join request rejected successfully"));
