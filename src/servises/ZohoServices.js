@@ -15,7 +15,7 @@ const getAuthorizationCode = () => {
     const params = {
         client_id: process.env.ZOHO_CLIENT_ID,
         response_type: 'code',
-        scope: 'ZohoCampaigns.contact.CREATE,ZohoCampaigns.lists.ALL,ZohoCampaigns.subscribe.CREATE',
+        scope: "ZohoMail.accounts.READ, ZohoMail.messages.CREATE",
         redirect_uri: process.env.ZOHO_REDIRECT_URI,
         access_type: 'offline',
         prompt: 'consent'
