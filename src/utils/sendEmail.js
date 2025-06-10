@@ -99,6 +99,8 @@ const sendEmail = async (email, subject, message) => {
             })
         });
 
+        console.log("response",response);
+
         // ... rest of the code
     } catch (error) {
         console.error('Full error object:', {
