@@ -74,6 +74,9 @@ const sendEmail = async (email, subject, message) => {
         if (!authToken) throw new Error('Unable to get access token');
 
         const fromEmail = process.env.ZOHO_FROM_EMAIL;
+        console.log("fromEmail",fromEmail);
+        console.log("process.env.ZOHO_ACCOUNT_ID",process.env.ZOHO_ACCOUNT_ID);
+
 
         // Try without account ID first
         const endpoint = process.env.ZOHO_MAIL_ENDPOINT || 'https://mail.zoho.com/api/accounts';
