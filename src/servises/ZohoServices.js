@@ -73,7 +73,7 @@ const refreshAccessToken = async () => {
             client_id: '1000.M9PNU2DDSI2RFY2K2HVLTCY4153HTN',
             client_secret: 'c1217b89fccf397a715ddb7a1b56df5d068494db4c',
             grant_type: 'refresh_token',
-            scope: 'ZohoCampaigns.subscribe.CREATE'
+            scope: 'ZohoMail.fullaccess.all'
         };
 
         const response = await axios.post(
