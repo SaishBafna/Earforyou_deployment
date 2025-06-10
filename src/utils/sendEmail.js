@@ -70,14 +70,18 @@ const getZohoAccessToken = async () => {
 // Step 2: Send Email using the fresh Zoho Access Token
 const sendEmail = async (email, subject, message) => {
     try {
-        const authToken = await getZohoAccessToken(); // Get fresh token dynamically
-        console.log("authToken",authToken);
+        const authToken = await getZohoAccessToken();
         if (!authToken) throw new Error('Unable to get access token');
 
         const fromEmail = process.env.ZOHO_FROM_EMAIL;
-        const accountId = process.env.ZOHO_ACCOUNT_ID;
 
-        const response = await fetch(`https://mail.zoho.com/api/accounts/${accountId}/messages`, {
+        // Try without account ID first
+        const endpoint = process.env.ZOHO_MAIL_ENDPOINT || 'https://mail.zoho.com/api/accounts';
+        const url = process.env.ZOHO_ACCOUNT_ID
+            ? `${endpoint}/${process.env.ZOHO_ACCOUNT_ID}/messages`
+            : `${endpoint}/messages`;
+
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Zoho-oauthtoken ${authToken}`,
@@ -88,21 +92,18 @@ const sendEmail = async (email, subject, message) => {
                 toAddress: email,
                 subject: subject,
                 content: message,
-                mailFormat: 'text' // or 'html'
+                mailFormat: 'html' // try with html format
             })
         });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.message || 'Failed to send email via Zoho API');
-        }
-
-        console.log('✅ Email sent successfully via Zoho API:', data);
-        return data;
+        // ... rest of the code
     } catch (error) {
-        console.error('❌ Error sending email via Zoho API:', error);
-        throw new Error('Error sending email via Zoho API');
+        console.error('Full error object:', {
+            message: error.message,
+            stack: error.stack,
+            response: error.response?.data
+        });
+        throw error;
     }
 };
 
