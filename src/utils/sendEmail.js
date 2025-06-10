@@ -1,6 +1,7 @@
 
 // import nodemailer from 'nodemailer';
 
+
 // const sendEmail = async (email, subject, message) => {
 //     try {
 //         let transporter = nodemailer.createTransport({
@@ -28,13 +29,55 @@
 // };
 
 
+
+
+
+
+import fetch from 'node-fetch';
+
+// Step 1: Fetch Zoho Access Token using refresh token
+
+const getZohoAccessToken = async () => {
+    try {
+        const params = new URLSearchParams();
+        params.append('refresh_token', process.env.ZOHO_REFRESH_TOKEN);
+        params.append('client_id', process.env.ZOHO_CLIENT_ID);
+        params.append('client_secret', process.env.ZOHO_CLIENT_SECRET);
+        params.append('grant_type', 'refresh_token');
+
+        const response = await fetch('https://accounts.zoho.in/oauth/v2/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: params,
+        });
+
+        const data = await response.json();
+
+        if (data.access_token) {
+            return data.access_token;
+        } else {
+            console.error('Failed to get access token:', data);
+            return null;
+        }
+    } catch (err) {
+        console.error('Error fetching access token:', err);
+        return null;
+    }
+};
+
+// Step 2: Send Email using the fresh Zoho Access Token
 const sendEmail = async (email, subject, message) => {
     try {
-        const authToken = process.env.ZOHO_MAIL_AUTH_TOKEN;
+        const authToken = await getZohoAccessToken(); // Get fresh token dynamically
+        console.log("authToken",authToken);
+        if (!authToken) throw new Error('Unable to get access token');
+
         const fromEmail = process.env.ZOHO_FROM_EMAIL;
         const accountId = process.env.ZOHO_ACCOUNT_ID;
 
-        const response = await fetch('https://mail.zoho.com/api/accounts/' + accountId + '/messages', {
+        const response = await fetch(`https://mail.zoho.com/api/accounts/${accountId}/messages`, {
             method: 'POST',
             headers: {
                 'Authorization': `Zoho-oauthtoken ${authToken}`,
@@ -45,7 +88,7 @@ const sendEmail = async (email, subject, message) => {
                 toAddress: email,
                 subject: subject,
                 content: message,
-                mailFormat: 'text' // or 'html' if sending HTML content
+                mailFormat: 'text' // or 'html'
             })
         });
 
@@ -55,10 +98,10 @@ const sendEmail = async (email, subject, message) => {
             throw new Error(data.message || 'Failed to send email via Zoho API');
         }
 
-        console.log('Email sent successfully via Zoho API:', data);
+        console.log('✅ Email sent successfully via Zoho API:', data);
         return data;
     } catch (error) {
-        console.error('Error sending email via Zoho API:', error);
+        console.error('❌ Error sending email via Zoho API:', error);
         throw new Error('Error sending email via Zoho API');
     }
 };
@@ -66,5 +109,6 @@ const sendEmail = async (email, subject, message) => {
 export default sendEmail;
 
 
-// =ukvalleytech@gmail.com   
+
+// =ukvalleytech@gmail.com
 // =leuekrikffdperkg
