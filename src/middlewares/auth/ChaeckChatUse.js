@@ -63,7 +63,7 @@ const otherParticipants = chatWithParticipants.participants;
         throw new ApiError(400, "Invalid user ID format");
     }
 
-    const chatObjectId = new mongoose.Types.ObjectId(chatId);
+    const chatObjectId = new mongoose.Types.ObjectId(otherParticipants);
 
     // Parallel lookups for better performance
     const [existingChatUsage, activePlan, hasCompletedPlans, hasNonCompletedPlans] = await Promise.all([
