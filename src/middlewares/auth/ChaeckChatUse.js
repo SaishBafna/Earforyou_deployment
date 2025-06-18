@@ -7,32 +7,33 @@ import { Chat } from "../../models/chat.modal.js";
 
 export const checkChatAccess = asyncHandler(async (req, res, next) => {
     const { chatId } = req.params;
-const userId = req.user._id;
+    const userId = req.user._id;
 
-console.log("chatId", chatId);
-
-// Find the chat and select only the participants field
-const chat = await Chat.findById(chatId).select('participants');
-
-console.log("chat",chat);
-if (!chat) {
-    return res.status(404).json({ message: "Chat not found" });
-}
-
-// Get participants who are not the current user
-const otherParticipants = chat.participants.filter(
-    participantId => !participantId.equals(userId)
-);
-
-
-
-console.log("otherParticipants",otherParticipants);
-
-
-    if (!mongoose.Types.ObjectId.isValid(otherParticipants)) {
+    // Validate input IDs
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
         throw new ApiError(400, "Invalid chat ID format");
     }
 
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new ApiError(400, "Invalid user ID format");
+    }
+
+    // Find the chat and select only the participants field
+    const chat = await Chat.findById(chatId).select('participants');
+    if (!chat) {
+        throw new ApiError(404, "Chat not found");
+    }
+
+    // Get the other participant ID (assuming 1:1 chat)
+    const [otherParticipantId] = chat.participants.filter(
+        participantId => !participantId.equals(userId)
+    );
+
+    if (!otherParticipantId) {
+        throw new ApiError(400, "Invalid chat participants configuration");
+    }
+
+    // Check user existence and type
     const user = await User.findById(userId);
     if (!user) {
         throw new ApiError(404, "User not found", {
@@ -42,30 +43,21 @@ console.log("otherParticipants",otherParticipants);
         });
     }
 
-    // Skip premium checks for non-regular users (e.g., admins)
-    if (user.userCategory !== "User") {
+    // Skip premium checks for non-regular users
+    if (user.userCategory !== "User" || user.userType === "RECEIVER") {
         return next();
     }
-    if (user.userType === "RECEIVER") {
-        return next();
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-        throw new ApiError(400, "Invalid user ID format");
-    }
-
-    const chatObjectId = new mongoose.Types.ObjectId(otherParticipants);
 
     // Parallel lookups for better performance
     const [existingChatUsage, activePlan, hasCompletedPlans, hasNonCompletedPlans] = await Promise.all([
-        // Check if chat was already used in a COMPLETED or SUCCESS plan
+        // Check if chat was already used in a valid plan
         ChatUserPremium.findOne({
             user: userId,
             "payment.status": { $in: ["COMPLETED", "success"] },
-            "usedChats.chatId": chatObjectId
+            "usedChats.chatId": otherParticipantId
         }).populate('plan').lean(),
 
-        // Find the most recent active, COMPLETED or SUCCESS plan with remaining chats
+        // Find the most recent active valid plan with remaining chats
         ChatUserPremium.findOne({
             user: userId,
             isActive: true,
@@ -74,13 +66,13 @@ console.log("otherParticipants",otherParticipants);
             remainingChats: { $gt: 0 }
         }).sort({ purchaseDate: -1 }).populate('plan'),
 
-        // Check if user has any COMPLETED or SUCCESS plans
+        // Check if user has any completed plans
         ChatUserPremium.exists({
             user: userId,
             "payment.status": { $in: ["COMPLETED", "success"] }
         }),
 
-        // Check if user has any non-COMPLETED and non-SUCCESS plans
+        // Check if user has any pending payments
         ChatUserPremium.exists({
             user: userId,
             "payment.status": { $nin: ["COMPLETED", "success"] }
@@ -95,7 +87,7 @@ console.log("otherParticipants",otherParticipants);
             expiryDate: existingChatUsage.expiryDate,
             plan: existingChatUsage.plan,
             previouslyUsed: true,
-            lastUsedAt: existingChatUsage.usedChats.find(chat => chat.chatId.equals(chatObjectId)).usedAt
+            lastUsedAt: existingChatUsage.usedChats.find(chat => chat.chatId.equals(otherParticipantId))?.usedAt || new Date()
         };
         return next();
     }
@@ -105,7 +97,7 @@ console.log("otherParticipants",otherParticipants);
         // Prepare update operations
         const updateOps = {
             $inc: { remainingChats: -1 },
-            $push: { usedChats: { chatId: chatObjectId, usedAt: new Date() } }
+            $push: { usedChats: { chatId: otherParticipantId, usedAt: new Date() } }
         };
 
         // Auto-deactivate if no chats will be left after this operation
@@ -113,7 +105,7 @@ console.log("otherParticipants",otherParticipants);
             updateOps.$set = { isActive: false };
         }
 
-        // Fire-and-forget the update (no need to await for response)
+        // Fire-and-forget the update
         ChatUserPremium.updateOne({ _id: activePlan._id }, updateOps)
             .catch(err => console.error('Error updating chat plan:', err));
 
@@ -128,8 +120,8 @@ console.log("otherParticipants",otherParticipants);
     }
 
     // Case 3: No active plan available
-    let errorMessage = "No active chat packs available.";
     const metadata = { suggestPurchase: true };
+    let errorMessage = "No active chat packs available.";
 
     if (hasCompletedPlans) {
         errorMessage = "Your chat packs have expired or been fully used. Please purchase a new pack.";
@@ -141,7 +133,6 @@ console.log("otherParticipants",otherParticipants);
 
     throw new ApiError(403, errorMessage, null, metadata);
 });
-
 
 
 export const checkandcut = async (req, res) => {
