@@ -25,8 +25,7 @@ const otherParticipants = chat.participants.filter(
 
 
 
-
-
+console.log("otherParticipants",otherParticipants);
 
 
     if (!mongoose.Types.ObjectId.isValid(otherParticipants)) {
