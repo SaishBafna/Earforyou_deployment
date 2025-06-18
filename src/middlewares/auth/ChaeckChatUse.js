@@ -3,12 +3,42 @@ import { ApiError } from "../../utils/ApiError.js";
 import { ChatUserPremium } from "../../models/Subscriptionchat/ChatUserPremium.js";
 import mongoose from "mongoose";
 import User from "../../models/Users.js";
+import { Chat } from "../../models/chat.modal.js";
 
 export const checkChatAccess = asyncHandler(async (req, res, next) => {
-    const { receiverId: chatId } = req.params;
-    const userId = req.user._id;
+    const { chatId } = req.params;
+const userId = req.user._id;
 
-    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+console.log("chatId", chatId);
+
+// Find the chat and select only the participants field
+const chat = await Chat.findById(chatId).select('participants');
+
+if (!chat) {
+    return res.status(404).json({ message: "Chat not found" });
+}
+
+// Get participants who are not the current user
+const otherParticipants = chat.participants.filter(
+    participantId => !participantId.equals(userId)
+);
+
+// If you need to get the actual user objects, you might want to populate:
+const chatWithParticipants = await Chat.findById(chatId)
+    .select('participants')
+    .populate({
+        path: 'participants',
+        match: { _id: { $ne: userId } },
+        select: 'username profilePic' // select whatever fields you need
+    });
+
+const otherParticipants = chatWithParticipants.participants;
+
+
+
+
+
+    if (!mongoose.Types.ObjectId.isValid(otherParticipants)) {
         throw new ApiError(400, "Invalid chat ID format");
     }
 
