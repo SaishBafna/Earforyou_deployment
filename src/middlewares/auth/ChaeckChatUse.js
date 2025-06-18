@@ -14,6 +14,7 @@ console.log("chatId", chatId);
 // Find the chat and select only the participants field
 const chat = await Chat.findById(chatId).select('participants');
 
+console.log("chat",chat);
 if (!chat) {
     return res.status(404).json({ message: "Chat not found" });
 }
