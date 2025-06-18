@@ -23,16 +23,7 @@ const otherParticipants = chat.participants.filter(
     participantId => !participantId.equals(userId)
 );
 
-// If you need to get the actual user objects, you might want to populate:
-const chatWithParticipants = await Chat.findById(chatId)
-    .select('participants')
-    .populate({
-        path: 'participants',
-        match: { _id: { $ne: userId } },
-        select: 'username profilePic' // select whatever fields you need
-    });
 
-const otherParticipants = chatWithParticipants.participants;
 
 
 
