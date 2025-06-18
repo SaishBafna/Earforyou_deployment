@@ -2,10 +2,16 @@ import mongoose from "mongoose";
 import User from "../../models/Users.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/ApiError.js";
+import { Chat } from "../../models/chat.modal.js";
 
 export const checkChatStatus = asyncHandler(async (req, res, next) => {
     const { receiverId } = req.params;
-    console.log("receiverId",receiverId)
+
+
+    const chat = Chat.findById(receiverId)
+
+    
+
 
     if (!mongoose.Types.ObjectId.isValid(receiverId)) {
         throw new ApiError(400, "Invalid receiver ID format");
