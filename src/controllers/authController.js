@@ -335,7 +335,10 @@ export const registerUser = async (req, res) => {
     // Check if user with phone already exists
     const userExists = await User.findOne({ phone });
     if (userExists) {
-      return res.status(400).json({ message: "User with this phone already exists" });
+      return res.status(400).json({
+        success: false,
+        message: "User with this  email  already exists"
+      });
     }
 
     // Create new user

@@ -27,8 +27,6 @@ router
   .post(
     mongoIdPathVariableValidator("receiverId"),
     validate,
-    checkChatStatus,
-    checkChatAccess,
     createOrGetAOneOnOneChat
   );
 

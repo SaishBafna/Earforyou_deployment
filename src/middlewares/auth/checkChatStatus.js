@@ -5,6 +5,7 @@ import { ApiError } from "../../utils/ApiError.js";
 
 export const checkChatStatus = asyncHandler(async (req, res, next) => {
     const { receiverId } = req.params;
+    console.log("receiverId",receiverId)
 
     if (!mongoose.Types.ObjectId.isValid(receiverId)) {
         throw new ApiError(400, "Invalid receiver ID format");
