@@ -186,12 +186,16 @@ export const createSurvey = async (req, res) => {
 export const paticularSurvey = async (req, res) => {
     try {
         const UserId = req.user._id || req.user.id;
+        console.log(UserId);
         const user = await User.findById(UserId);
+        console.log(user);
         if (!user) {
             return res.status(404).json({ success: false, message: "User not found" });
         }
 
-        const surveys = await Survey.find({ email: user.email });
+        const email = user.email;
+        const surveys = await Survey.find({ email: email });
+        console.log(surveys);
 
         if (!surveys || surveys.length === 0) {
             return res.status(404).json({ success: false, message: "No surveys found for this user" });
