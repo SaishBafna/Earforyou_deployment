@@ -188,22 +188,21 @@ export const paticularSurvey = async (req, res) => {
         const UserId = req.user._id || req.user.id;
         const user = await User.findById(UserId);
         if (!user) {
-            return res.status(404).json({ success: false, message: "Survey not found" });
-        }
-        const survey = await Survey.find({ email: user.email });
-
-        if (!survey) {
-            return res.status(404).json({ success: false, message: "Survey not found" });
+            return res.status(404).json({ success: false, message: "User not found" });
         }
 
+        const surveys = await Survey.find({ email: user.email });
 
-        res.status(200).json({ success: true, message: "Survey found", data: survey });
+        if (!surveys || surveys.length === 0) {
+            return res.status(404).json({ success: false, message: "No surveys found for this user" });
+        }
+
+        res.status(200).json({ success: true, message: "Surveys found", data: surveys });
 
     } catch (error) {
+        console.error(error); // Log the error for debugging
         res.status(500).json({ success: false, message: "Internal server error" });
-
     }
-
 }
 
 // @desc    Get all surveys
