@@ -1,6 +1,6 @@
 import Survey from "../../models/Survey.js";
-import User from "../../models/User.js";
 
+import User from "../../models/Users.js";
 
 // @desc    Create a new survey
 // @route   POST /api/surveys
