@@ -185,7 +185,7 @@ export const createSurvey = async (req, res) => {
 
 export const paticularSurvey = async (req, res) => {
     try {
-        const UserId = req.user.id;
+        const UserId = req.user._id || req.user.id;
         const user = await User.findById(UserId);
         if (!user) {
             return res.status(404).json({ success: false, message: "Survey not found" });
