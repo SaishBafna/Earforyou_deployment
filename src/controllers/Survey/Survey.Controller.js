@@ -183,28 +183,22 @@ export const createSurvey = async (req, res) => {
 
 
 
-export const paticularSurvey = async (req, res) => {
+export const getSurveysbyEmail = async (req, res) => {
     try {
-        const UserId = req.user._id || req.user.id;
-        console.log(UserId);
+        const UserId = req.user.id || req.user._id;
         const user = await User.findById(UserId);
-        console.log(user);
         if (!user) {
             return res.status(404).json({ success: false, message: "User not found" });
         }
-
         const email = user.email;
-        const surveys = await Survey.find({ email: email });
-        console.log(surveys);
-
-        if (!surveys || surveys.length === 0) {
-            return res.status(404).json({ success: false, message: "No surveys found for this user" });
+        const surveys = await Survey.findOne({ email: email });
+        console.log("surveys", user)
+        if (!surveys) {
+            return res.status(404).json({ success: false, message: "No surveys found" });
         }
 
         res.status(200).json({ success: true, message: "Surveys found", data: surveys });
-
     } catch (error) {
-        console.error(error); // Log the error for debugging
         res.status(500).json({ success: false, message: "Internal server error" });
     }
 }
