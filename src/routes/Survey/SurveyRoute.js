@@ -6,6 +6,6 @@ const router = express.Router();
 router.route('/').post(createSurvey).get(getSurveys);
 router.route('/:id').get(getSurveyById);
 router.route('/stats').get(getSurveyStats);
-router.route('/paticularSurvey').get(protect,paticularSurvey);
+router.get('/surveys/:id', protect, paticularSurvey);  // This could cause the CastError
 
 export default router;
