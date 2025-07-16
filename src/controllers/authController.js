@@ -406,6 +406,8 @@ export const authUser = async (req, res) => {
   }
 };
 
+//DeleteUser
+
 
 
 export const logoutUser = async (req, res) => {
@@ -624,9 +626,10 @@ export const initiateRegistration = async (req, res) => {
 
     console.log(`Generated OTP: ${otp} for email: ${email}`);
 
-    const otpSent = await sendOtpEmail(email, otp);
+    await sendOtpEmail(email, otp);
 
     console.log("otpSent =", otp);
+
     if (!otp) {
       console.error("Failed to send OTP to email:", email);
       return res.status(500).json({ message: "Failed to send OTP" });
@@ -855,7 +858,7 @@ export const resetPassword = async (req, res) => {
 // Delete User 
 export const deleteUser = async (req, res) => {
   try {
-    const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+    const userId = req.user._id; 
 
     // Check if the user exists
     const userToDelete = await User.findById(userId);

@@ -1,4 +1,5 @@
 import Survey from "../../models/Survey.js";
+import User from "../../models/User.js";
 
 
 // @desc    Create a new survey
@@ -179,6 +180,31 @@ export const createSurvey = async (req, res) => {
         });
     }
 };
+
+
+
+export const paticularSurvey = async (req, res) => {
+    try {
+        const UserId = req.user.id;
+        const user = await User.findById(UserId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: "Survey not found" });
+        }
+        const survey = await Survey.find({ email: user.email });
+
+        if (!survey) {
+            return res.status(404).json({ success: false, message: "Survey not found" });
+        }
+
+
+        res.status(200).json({ success: true, message: "Survey found", data: survey });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Internal server error" });
+
+    }
+
+}
 
 // @desc    Get all surveys
 // @route   GET /api/surveys
