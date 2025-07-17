@@ -191,7 +191,8 @@ export const getSurveysbyEmail = async (req, res) => {
             return res.status(404).json({ success: false, message: "User not found" });
         }
         const email = user.email;
-        const surveys = await Survey.findOne({ email: email });
+        const Phone = user.phone;
+        const surveys = await Survey.findOne({ $or: [{ email: email }, { mobile: Phone }] });
         console.log("surveys", user)
         if (!surveys) {
             return res.status(404).json({ success: false, message: "No surveys found" });
