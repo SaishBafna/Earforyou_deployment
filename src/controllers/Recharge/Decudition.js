@@ -329,7 +329,6 @@ export const deductPerMinute = async (req, res) => {
 
   try {
     const { callerId, receiverId, durationInMinutes } = req.body;
-    console.log(callerId, receiverId, durationInMinutes);
     // Validate input
     if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
       return res.status(400).json({
@@ -340,7 +339,6 @@ export const deductPerMinute = async (req, res) => {
 
     // Fetch receiver's user type and category
     const receiver = await User.findById(receiverId).select('userType userCategory').session(session);
-    console.log(receiver);
     if (!receiver) {
       await session.abortTransaction();
       return res.status(404).json({ success: false, message: 'Receiver not found' });
@@ -352,10 +350,8 @@ export const deductPerMinute = async (req, res) => {
       userType: receiver.userType,
     }).session(session);
 
-    console.log(callRateData);
 
     if (!callRateData) {
-      console.log(callRateData);
       await session.abortTransaction();
       return res.status(500).json({
         success: false,
@@ -373,7 +369,6 @@ export const deductPerMinute = async (req, res) => {
     const amountForReceiver = totalDeduction - commission;
 
     if (isNaN(totalDeduction) || isNaN(amountForReceiver)) {
-            console.log(totalDeduction, amountForReceiver);
 
       await session.abortTransaction();
       return res.status(500).json({
