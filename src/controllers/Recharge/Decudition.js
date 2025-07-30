@@ -329,7 +329,7 @@ export const deductPerMinute = async (req, res) => {
 
   try {
     const { callerId, receiverId, durationInMinutes } = req.body;
-
+    
     // Validate input
     if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
       return res.status(400).json({
@@ -352,6 +352,7 @@ export const deductPerMinute = async (req, res) => {
     }).session(session);
 
     if (!callRateData) {
+      console.log(callRateData);
       await session.abortTransaction();
       return res.status(500).json({
         success: false,
@@ -369,6 +370,8 @@ export const deductPerMinute = async (req, res) => {
     const amountForReceiver = totalDeduction - commission;
 
     if (isNaN(totalDeduction) || isNaN(amountForReceiver)) {
+            console.log(totalDeduction, amountForReceiver);
+
       await session.abortTransaction();
       return res.status(500).json({
         success: false,
