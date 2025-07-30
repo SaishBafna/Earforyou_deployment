@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+    getReviews,
     getUserById,
     logoutUser,
     requestOTP,
@@ -18,16 +19,26 @@ import {
     addBio,
     getChatsWithLatestMessages,
     Reporte_User,
-    addBankDetails,
+    addOrUpdateBankDetails,
     getBankDetails,
     getAllUsers1,
+    getHealer,
     getAllUsers2,
-    UserCategoryData
+    UpdateCallStatus,
+    UserCategoryData,
+    RegisterEnquiry,
+    getAllUserCategory,
+    GetRegisterEnquiry,
+    getTopListenersByDuration,
+    getAllForCallUser,
+    ChatStatusStatus,
+    getAllForChatStatus
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
 import multer from 'multer';
 import { userStatics } from '../controllers/UserData/UserData.js';
+import { expirePlatformCharges } from '../controllers/CronJob/Expiry.js';
 
 
 const router = express.Router();
@@ -36,6 +47,12 @@ router.post('/register', registerUser);
 router.post('/login', authUser);
 
 router.post('/logout', protect, logoutUser);
+
+router.get('/getTopListenersByRating', getTopListenersByDuration);
+
+router.get('/getAllForCallUser', protect, getAllForCallUser);
+
+router.get('/getAllForChatStatus', protect, getAllForChatStatus);
 
 
 // Route for updating user profile
@@ -67,6 +84,10 @@ router.get('/user/:userId', getUserById);
 // router.get('/users', protect, getAllUsers);
 router.get('/users', protect, getAllUsers1);
 
+router.get('/getHealer', protect, getHealer);
+
+router.get('/getAllUserCategory', protect, getAllUserCategory);
+
 router.get('/getAllUsers2', protect, getAllUsers2);
 
 router.get('/listener', protect, listener);
@@ -75,7 +96,7 @@ router.post('/Category', protect, UserCategoryData);
 // Delete User
 router.delete('/deleteUser', protect, deleteUser);
 
-router.post('/addBankDetails', protect, addBankDetails);
+router.post('/addOrUpdateBankDetails', protect, addOrUpdateBankDetails);
 
 router.get('/getBankDetails', protect, getBankDetails);
 
@@ -93,5 +114,15 @@ router.post('/login/verify', verifyLoginOtp);
 router.get('/userStatics', protect, userStatics);
 
 router.get('/getUsersByLatestActivity', protect, getChatsWithLatestMessages);
+router.get('/getReviews/:userId', getReviews);
+router.post('/UpdateCallStatus', protect, UpdateCallStatus);
+
+router.post('/ChatStatusStatus', protect, ChatStatusStatus);
+
+router.get('/expirePlatformCharges', expirePlatformCharges);
+
+router.get('/GetRegisterEnquiry', GetRegisterEnquiry);
+
+router.post('/RegisterEnquiry', RegisterEnquiry);
 
 export default router;

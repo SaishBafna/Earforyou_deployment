@@ -26,6 +26,8 @@ const chatSchema = new Schema(
       of: Number, // Count of unread messages per user
       default: {},
     },
+
+
   },
   { timestamps: true }
 );

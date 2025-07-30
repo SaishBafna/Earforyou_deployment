@@ -1,4 +1,5 @@
 import { Router } from "express";
+
 import {
   createOrGetAOneOnOneChat,
   deleteOneOnOneChat,
@@ -11,7 +12,8 @@ import { protect } from "../../middlewares/auth/authMiddleware.js";
 import { mongoIdPathVariableValidator } from "../../validators/common/mongodb.validators.js";
 import { validate } from "../../validators/validate.js";
 import { getAllAgents } from "../../controllers/chat-app/getAllAgentController.js";
-
+import { checkChatAccess } from "../../middlewares/auth/ChaeckChatUse.js";
+import { checkChatStatus } from "../../middlewares/auth/checkChatStatus.js";
 const router = Router();
 
 router.use(protect);
@@ -25,6 +27,7 @@ router
   .post(
     mongoIdPathVariableValidator("receiverId"),
     validate,
+    checkChatStatus,
     createOrGetAOneOnOneChat
   );
 
