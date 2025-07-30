@@ -329,7 +329,7 @@ export const deductPerMinute = async (req, res) => {
 
   try {
     const { callerId, receiverId, durationInMinutes } = req.body;
-    
+    console.log(callerId, receiverId, durationInMinutes);
     // Validate input
     if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
       return res.status(400).json({
