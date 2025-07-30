@@ -340,6 +340,7 @@ export const deductPerMinute = async (req, res) => {
 
     // Fetch receiver's user type and category
     const receiver = await User.findById(receiverId).select('userType userCategory').session(session);
+    console.log(receiver);
     if (!receiver) {
       await session.abortTransaction();
       return res.status(404).json({ success: false, message: 'Receiver not found' });
@@ -350,6 +351,8 @@ export const deductPerMinute = async (req, res) => {
       userCategory: receiver.userCategory,
       userType: receiver.userType,
     }).session(session);
+
+    console.log(callRateData);
 
     if (!callRateData) {
       console.log(callRateData);
