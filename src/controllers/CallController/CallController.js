@@ -126,10 +126,10 @@ export const getRecentCalls = async (req, res) => {
       $or: [{ caller: userId }, { receiver: userId }],
     })
       .sort({ startTime: -1, endTime: -1 })
-      .skip(skip) // Skip calls for previous pages
-      .limit(PAGE_SIZE) // Limit results to 20 per page
-      .populate('caller', 'username userType userCategory gender Language phone avatarUrl')
-      .populate('receiver', 'username userType userCategory gender Language phone avatarUrl')
+      .skip(skip)
+      .limit(PAGE_SIZE)
+      .populate('caller', 'username userType userCategory phone avatarUrl')
+      .populate('receiver', 'username userType userCategory phone avatarUrl')
       .lean()
       .exec();
 
@@ -138,23 +138,8 @@ export const getRecentCalls = async (req, res) => {
       return res.status(404).json({ message: 'No call history found for this page.' });
     }
 
-    // Helper function to get the average rating of a user
-    const getAverageRating = async (userId) => {
-      const result = await Review.aggregate([
-        { $match: { user: userId } }, // Match reviews for the user
-        {
-          $group: {
-            _id: "$user",
-            averageRating: { $avg: "$rating" },
-            totalReviews: { $sum: 1 }
-          }
-        }
-      ]);
-      return result.length > 0 ? result[0].averageRating.toFixed(2) : null;
-    };
-
-    // Format calls and fetch ratings asynchronously
-    const formattedCalls = await Promise.all(recentCalls.map(async (call) => {
+    // Format calls and hide logged-in user's data
+    const formattedCalls = recentCalls.map(call => {
       const formattedCall = {
         _id: call._id,
         status: call.status,
@@ -163,31 +148,30 @@ export const getRecentCalls = async (req, res) => {
         duration: call.duration,
       };
 
-      if (call.caller._id.toString() === userId.toString()) {
+      // Check if caller exists and has _id
+      const isCallerUser = call.caller && call.caller._id && call.caller._id.toString() === userId.toString();
+      
+      // Check if receiver exists and has _id
+      const isReceiverUser = call.receiver && call.receiver._id && call.receiver._id.toString() === userId.toString();
+
+      // If caller is the logged-in user, only include receiver's data
+      if (isCallerUser) {
         formattedCall.caller = null;
-        formattedCall.receiver = {
-          ...call.receiver,
-          averageRating: await getAverageRating(call.receiver._id)
-        };
-      } else if (call.receiver._id.toString() === userId.toString()) {
+        formattedCall.receiver = call.receiver || null;
+      }
+      // If receiver is the logged-in user, only include caller's data
+      else if (isReceiverUser) {
+        formattedCall.caller = call.caller || null;
         formattedCall.receiver = null;
-        formattedCall.caller = {
-          ...call.caller,
-          averageRating: await getAverageRating(call.caller._id)
-        };
-      } else {
-        formattedCall.caller = {
-          ...call.caller,
-          averageRating: await getAverageRating(call.caller._id)
-        };
-        formattedCall.receiver = {
-          ...call.receiver,
-          averageRating: await getAverageRating(call.receiver._id)
-        };
+      }
+      // In case neither matches (shouldn't happen), include both if they exist
+      else {
+        formattedCall.caller = call.caller || null;
+        formattedCall.receiver = call.receiver || null;
       }
 
       return formattedCall;
-    }));
+    });
 
     // Total count for pagination metadata
     const totalCallsCount = await CallLog.countDocuments({
