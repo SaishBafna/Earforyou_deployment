@@ -1044,7 +1044,7 @@ export const updateProfile = async (req, res) => {
       console.log(validationErrors);
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
+        message: validationErrors,
         errors: validationErrors,
       });
     }
