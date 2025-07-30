@@ -3,7 +3,7 @@ import { addToMailingList } from "../servises/ZohoServices.js";
 import jwt from "jsonwebtoken";
 import ROLES_LIST from "../config/Roles_list.js";
 import crypto from "crypto";
-import { generateOtp, sendOtpEmail } from "../utils/generateOtp.js";
+import { generateOtp, sendOtpEmail, SendTemplate } from "../utils/generateOtp.js";
 import bcrypt from "bcrypt";
 import multer from "multer";
 import unirest from "unirest";
@@ -20,8 +20,20 @@ import EarningWallet from "../models/Wallet/EarningWallet.js";
 import { ChatMessage } from "../models/message.models.js";
 import callLog from '.././models/Talk-to-friend/callLogModel.js'
 import { Chat } from "../models/chat.modal.js";
+import Zhohocampain from "../models/ZohoCampainFrom.js";
+import PlatformCharges from "../models/Wallet/PlatfromCharges/Platfrom.js";
+import MyPlan from "../models/Wallet/PlatfromCharges/myPlanSchema.js";
+import { emitSocketEvent } from "../socket/index.js";
+import { ChatEventEnum } from "../constants.js";
+
+export const generateTransactionId = async () => {
+  const timestamp = Date.now().toString(36); // Convert timestamp to base36
+  const randomString = await crypto.randomBytes(8).toString('hex'); // Generate a random 16-character hex string
+  return `TXN-${timestamp}-${randomString}`; // Format the transaction ID
+};
 
 
+// Example usage
 
 
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -50,6 +62,258 @@ const generateAccessAndRefreshTokens = async (userId) => {
 };
 
 
+// export const getTopListenersByRating = async (req, res) => {
+//   try {
+//     const startTime = process.hrtime();
+
+//     const topListeners = await Review.aggregate([
+//       {
+//         $match: {
+//           rating: { $gte: 0, $lte: 5 },
+//           createdAt: { $exists: true }
+//         }
+//       },
+//       {
+//         $lookup: {
+//           from: "users",
+//           let: { userId: "$user" },
+//           pipeline: [
+//             {
+//               $match: {
+//                 $expr: { $eq: ["$_id", "$$userId"] },
+//                 userType: "RECEIVER",
+//                 UserStatus: "Active"
+//                 // Removed status and deletedAt for broader results
+//               }
+//             },
+//             {
+//               $project: {
+//                 username: 1,
+//                 userCategory: 1,
+//                 status: 1,
+//                 avatarUrl: 1,
+//                 shortDecs: 1,
+//                 Bio: 1,
+//                 CallStatus: 1,
+//                 createdAt: 1
+//               }
+//             }
+//           ],
+//           as: "userData"
+//         }
+//       },
+//       { $match: { userData: { $ne: [] } } },
+//       { $unwind: "$userData" },
+//       {
+//         $group: {
+//           _id: "$user",
+//           averageRating: { $avg: "$rating" },
+//           reviewCount: { $sum: 1 },
+//           username: { $first: "$userData.username" },
+//           userCategory: { $first: "$userData.userCategory" },
+//           status: { $first: "$userData.status" },
+//           avatarUrl: { $first: "$userData.avatarUrl" },
+//           shortBio: { $first: "$userData.shortDecs" },
+//           bio: { $first: "$userData.Bio" },
+//           callStatus: { $first: "$userData.CallStatus" },
+//           createdAt: { $first: "$userData.createdAt" }
+//         }
+//       },
+//       {
+//         $match: {
+//           reviewCount: { $gte: 1 }, // Lowered threshold
+//           averageRating: { $gte: 1 }
+//         }
+//       },
+//       {
+//         $sort: {
+//           averageRating: -1,
+//           reviewCount: -1,
+//           createdAt: -1
+//         }
+//       },
+//       { $limit: 10 },
+//       {
+//         $project: {
+//           userId: "$_id",
+//           username: 1,
+//           userCategory: 1,
+//           status: 1,
+//           callStatus: 1,
+//           avatarUrl: 1,
+//           shortBio: 1,
+//           bio: 1,
+//           reviewCount: 1,
+//           averageRating: { $round: [{ $ifNull: ["$averageRating", 0] }, 2] }
+//         }
+//       }
+//     ]).allowDiskUse(true);
+
+//     const executionTime = ((process.hrtime(startTime)[0] * 1000 +
+//       process.hrtime(startTime)[1] / 1e6).toFixed(2));
+
+//     const rankedListeners = topListeners.map((listener, index) => {
+//       if (!listener.userId || !listener.username) {
+//         console.warn('Invalid listener data:', listener);
+//         return null;
+//       }
+//       return {
+//         rank: index + 1,
+//         ...listener
+//       };
+//     }).filter(listener => listener !== null);
+
+//     if (!rankedListeners.length) {
+//       return res.status(200).json({
+//         success: true,
+//         message: 'No qualifying listeners found',
+//         executionTime: `${executionTime}ms`,
+//         data: []
+//       });
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       executionTime: `${executionTime}ms`,
+//       data: rankedListeners
+//     });
+
+//   } catch (error) {
+//     console.error('Error fetching top listeners:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch top listeners',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+//     });
+//   }
+// };
+
+export const getTopListenersByDuration = async (req, res) => {
+  try {
+    const startTime = process.hrtime();
+
+    const topListeners = await callLog.aggregate([
+      {
+        $match: {
+          status: "completed",
+          duration: { $gt: 0 } // Only count calls with positive duration
+        }
+      },
+      {
+        $lookup: {
+          from: "users",
+          let: { receiverId: "$receiver" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$_id", "$$receiverId"] },
+                userType: "RECEIVER",
+                UserStatus: "Active"
+              }
+            },
+            {
+              $project: {
+                username: 1,
+                userCategory: 1,
+                status: 1,
+                avatarUrl: 1,
+                shortDecs: 1,
+                Bio: 1,
+                CallStatus: 1,
+                createdAt: 1
+              }
+            }
+          ],
+          as: "userData"
+        }
+      },
+      { $match: { userData: { $ne: [] } } }, // Only include listeners with valid user data
+      { $unwind: "$userData" },
+      {
+        $group: {
+          _id: "$receiver",
+          totalDuration: { $sum: "$duration" },
+          callCount: { $sum: 1 },
+          averageDuration: { $avg: "$duration" },
+          username: { $first: "$userData.username" },
+          userCategory: { $first: "$userData.userCategory" },
+          status: { $first: "$userData.status" },
+          avatarUrl: { $first: "$userData.avatarUrl" },
+          shortBio: { $first: "$userData.shortDecs" },
+          bio: { $first: "$userData.Bio" },
+          callStatus: { $first: "$userData.CallStatus" },
+          createdAt: { $first: "$userData.createdAt" }
+        }
+      },
+      {
+        $match: {
+          callCount: { $gte: 1 },
+          totalDuration: { $gte: 60 } // At least 1 minute total duration
+        }
+      },
+      {
+        $sort: {
+          totalDuration: -1, // Primary sort by total duration (descending)
+          callCount: -1,    // Secondary sort by call count
+          averageDuration: -1 // Tertiary sort by average duration
+        }
+      },
+      { $limit: 50 },
+      {
+        $project: {
+          userId: "$_id",
+          username: 1,
+          userCategory: 1,
+          status: 1,
+          callStatus: 1,
+          avatarUrl: 1,
+          shortBio: 1,
+          bio: 1,
+          reviewCount: "$callCount",
+          averageRating: { $round: [{ $divide: ["$averageDuration", 60] }, 2] }, // in minutes
+          totalDuration: { $round: [{ $divide: ["$totalDuration", 60] }, 2] }, // in minutes
+          totalCalls: "$callCount"
+        }
+      }
+    ]).allowDiskUse(true);
+
+    const executionTime = ((process.hrtime(startTime)[0] * 1000 +
+      process.hrtime(startTime)[1] / 1e6).toFixed(2));
+
+    // Ensure we get at least 10 results if available
+    const minResultsNeeded = 10;
+    const rankedListeners = topListeners.map((listener, index) => {
+      if (!listener.userId || !listener.username) {
+        console.warn('Invalid listener data:', listener);
+        return null;
+      }
+      return {
+        rank: index + 1,
+        ...listener
+      };
+    }).filter(listener => listener !== null);
+
+    const finalResults = rankedListeners.slice(0, Math.max(minResultsNeeded, rankedListeners.length));
+
+    res.status(200).json({
+      success: true,
+      executionTime: `${executionTime}ms`,
+      timePeriod: "all_time", // Indicates this is all-time data
+      data: finalResults,
+      message: finalResults.length > 0
+        ? `Found ${finalResults.length} top listeners of all time`
+        : "No listeners found with the specified criteria"
+    });
+
+  } catch (error) {
+    console.error('Error fetching all-time top listeners by duration:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch all-time top listeners',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
 
 export const registerUser = async (req, res) => {
   const { phone, password } = req.body; // Ensure correct field names
@@ -71,7 +335,10 @@ export const registerUser = async (req, res) => {
     // Check if user with phone already exists
     const userExists = await User.findOne({ phone });
     if (userExists) {
-      return res.status(400).json({ message: "User with this phone already exists" });
+      return res.status(400).json({
+        success: false,
+        message: "User with this  email  already exists"
+      });
     }
 
     // Create new user
@@ -138,6 +405,8 @@ export const authUser = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
+
+//DeleteUser
 
 
 
@@ -217,6 +486,9 @@ export const verifyOtp = async (req, res) => {
     res.status(500).json({ message: "Server error", error });
   }
 };
+
+
+
 
 
 //-----------------initiateRegistration-------------------
@@ -354,9 +626,10 @@ export const initiateRegistration = async (req, res) => {
 
     console.log(`Generated OTP: ${otp} for email: ${email}`);
 
-    const otpSent = await sendOtpEmail(email, otp);
+    await sendOtpEmail(email, otp);
 
     console.log("otpSent =", otp);
+
     if (!otp) {
       console.error("Failed to send OTP to email:", email);
       return res.status(500).json({ message: "Failed to send OTP" });
@@ -375,6 +648,23 @@ export const initiateRegistration = async (req, res) => {
 
     try {
       await newUser.save({ session });
+
+      const platform = await PlatformCharges.findOne({ userId: newUser._id }).session(session);
+
+      const plan = await MyPlan.findOne().sort({ createdAt: -1 });
+
+      const token = await generateTransactionId();
+
+      if (!platform) {
+        const data = await PlatformCharges.create([{
+          userId: newUser._id,
+          status: 'expired',
+          transactionId: token,
+          planId: plan._id
+        }], { session });
+
+      }
+
 
       const callRateData = await CallRate.findOne().session(session);
       if (!callRateData) {
@@ -568,7 +858,7 @@ export const resetPassword = async (req, res) => {
 // Delete User 
 export const deleteUser = async (req, res) => {
   try {
-    const userId = req.user._id; // Get user ID from the request (assuming it's set in middleware)
+    const userId = req.user._id; 
 
     // Check if the user exists
     const userToDelete = await User.findById(userId);
@@ -754,7 +1044,7 @@ export const updateProfile = async (req, res) => {
       console.log(validationErrors);
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
+        message: validationErrors,
         errors: validationErrors,
       });
     }
@@ -1090,6 +1380,7 @@ export const UserCategoryData = async (req, res) => {
 
 
 // ------------------------userController.js---------------------------------------
+
 export const updateDeviceToken = async (req, res) => {
   const { deviceToken } = req.body;
 
@@ -1275,9 +1566,7 @@ export const changeUserType = async (req, res) => {
   }
 };
 
-
 // get userby id
-
 export const getUserById = async (req, res) => {
   try {
     const { userId } = req.params;  // Extract userId from the request URL parameters
@@ -1308,282 +1597,6 @@ export const getUserById = async (req, res) => {
 
 
 
-
-// export const getAllUsers1 = async (req, res) => {
-//   try {
-//     // Extract and normalize the gender filter from params or query
-//     const genderFilter = req.query.gender;
-//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-
-//     console.log("Gender Filter (from params):", genderFilter);
-
-//     // Validate the gender parameter
-//     if (genderFilter && !["male", "female"].includes(genderFilter)) {
-//       return res.status(400).json({
-//         message: "Invalid gender parameter. Must be 'male' or 'female'",
-//       });
-//     }
-
-//     // Pagination parameters
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = 21;
-//     const skip = (page - 1) * limit;
-
-//     // Search query from request
-//     const searchQuery = req.query.search || "";
-//     console.log("Search Query:", searchQuery);
-
-//     // Get current timestamp for lastSeen comparison
-//     const currentTime = new Date();
-//     const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
-
-//     // MongoDB aggregation pipeline
-//     const users = await User.aggregate([
-//       {
-//         $match: {
-//           _id: { $ne: loggedInUserId },
-//           UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
-//           ...(genderFilter && { gender: genderFilter }),
-//           ...(searchQuery && {
-//             $or: [
-//               { username: { $regex: searchQuery, $options: "i" } },
-
-//             ],
-//           }),
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: "reviews",
-//           localField: "_id",
-//           foreignField: "user",
-//           as: "ratings",
-//         },
-//       },
-//       {
-//         $addFields: {
-//           avgRating: { $avg: "$ratings.rating" },
-//           reviewCount: { $size: "$ratings" },
-// isOnline: {
-//   $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
-// },
-//           lastSeenStatus: {
-//             $switch: {
-//               branches: [
-//                 {
-//                   case: { $eq: ["$status", "Online"] },
-//                   then: "Online"
-//                 },
-//                 {
-//                   case: { $gte: ["$lastSeen", twentyFourHoursAgo] },
-//                   then: "recently"
-//                 }
-//               ],
-//               default: "away"
-//             }
-//           }
-//         },
-//       },
-//       {
-//         $sort: {
-//           isOnline: -1,
-//           lastSeen: -1
-//         },
-//       },
-//       {
-//         $facet: {
-//           metadata: [{ $count: "totalUsers" }],
-//           users: [
-//             { $skip: skip },
-//             { $limit: limit },
-//             {
-//               $project: {
-//                 _id: 1,
-//                 username: 1,
-//                 name: 1,
-//                 email: 1,
-//                 gender: 1,
-//                 status: 1,
-//                 lastSeen: 1,
-//                 lastSeenStatus: 1,
-//                 avgRating: 1,
-//                 reviewCount: 1,
-//                 isOnline: 1,
-//                 profilePhoto: 1,
-//                 UserStatus: 1,
-//                 shortDecs: 1,
-//                 decs: 1,
-//                 Language: 1,
-//                 Bio: 1,
-//                 avatarUrl: 1,
-//                 userCategory: 1,
-//                 userType: 1,
-//                 report: 1,
-//               },
-//             },
-//           ],
-//         },
-//       },
-//     ]);
-
-//     // Extract metadata and user list from the aggregation results
-//     const totalUsers = users[0]?.metadata[0]?.totalUsers || 0;
-//     const userList = users[0]?.users || [];
-
-//     if (userList.length === 0) {
-//       return res.status(404).json({
-//         message: genderFilter
-//           ? `No ${genderFilter} users found`
-//           : "No users found",
-//       });
-//     }
-
-//     // Send the response with users and pagination details
-//     res.status(200).json({
-//       message: genderFilter
-//         ? `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`
-//         : "Users fetched successfully",
-//       users: userList,
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error fetching users:", error);
-//     res.status(500).json({
-//       message: "Internal server error",
-//       error: error.message,
-//     });
-//   }
-// };
-
-// export const getAllUsers1 = async (req, res) => {
-//   try {
-//     // Extract and normalize the gender filter from params or query
-//     const genderFilter = req.query.gender;
-//     // Extract and normalize the gender filter from params or query
-//     const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
-//     const loggedInUserGender = genderFilter || req.user.gender?.toLowerCase();
-
-//     console.log("Gender Filter (from params):", genderFilter);
-//     console.log("Logged-in User Gender:", loggedInUserGender);
-
-//     // Validate the gender parameter
-//     if (genderFilter && !["male", "female"].includes(genderFilter)) {
-//       return res.status(400).json({
-//         message: "Invalid gender parameter. Must be 'male' or 'female'",
-//       });
-//     }
-
-//     // Pagination parameters
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = 21;
-//     const skip = (page - 1) * limit;
-
-//     // Search query from request
-//     const searchQuery = req.query.search || "";
-//     console.log("Search Query:", searchQuery);
-
-//     // MongoDB aggregation pipeline
-//     const users = await User.aggregate([
-//       {
-//         $match: {
-// _id: { $ne: loggedInUserId },
-// UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
-//           ...(genderFilter && { gender: genderFilter }),
-//           ...(searchQuery && {
-//             $or: [
-//               { username: { $regex: searchQuery, $options: "i" } },
-//               { name: { $regex: searchQuery, $options: "i" } },
-//               { email: { $regex: searchQuery, $options: "i" } },
-//             ],
-//           }),
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: "reviews",
-//           localField: "_id",
-//           foreignField: "user",
-//           as: "ratings",
-//         },
-//       },
-//       {
-//         $addFields: {
-//           avgRating: { $avg: "$ratings.rating" },
-//           reviewCount: { $size: "$ratings" },
-//           isOppositeGender: {
-//             $cond: { if: { $ne: ["$gender", loggedInUserGender] }, then: 1, else: 0 },
-//           },
-//           isOnline: {
-//             $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
-//           },
-//         },
-//       },
-//       {
-//         $sort: {
-//           isOnline: -1,
-//           isOppositeGender: -1,
-//           avgRating: -1,
-//         },
-//       },
-//       {
-//         $facet: {
-//           metadata: [{ $count: "totalUsers" }],
-//           users: [
-//             { $skip: skip },
-//             { $limit: limit },
-//             {
-//               $project: {
-//                 password: 0,
-//                 refreshToken: 0,
-//                 ratings: 0,
-//               },
-//             },
-//           ],
-//         },
-//       },
-//     ]);
-
-//     // Extract metadata and user list from the aggregation results
-//     const totalUsers = users[0]?.metadata[0]?.totalUsers || 0;
-//     const userList = users[0]?.users || [];
-
-//     if (userList.length === 0) {
-//       return res.status(404).json({
-//         message: genderFilter
-//           ? `No ${genderFilter} users found`
-//           : "No users found",
-//       });
-//     }
-
-//     // Send the response with users and pagination details
-//     res.status(200).json({
-//       message: genderFilter
-//         ? `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`
-//         : "Users fetched successfully",
-//       users: userList,
-//       pagination: {
-//         totalUsers,
-//         currentPage: page,
-//         totalPages: Math.ceil(totalUsers / limit),
-//         limit,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error fetching users:", error);
-//     res.status(500).json({
-//       message: "Internal server error",
-//       error: error.message,
-//     });
-//   }
-// };
-
-
-// Add these indexes to your User model schema
 
 
 export const getAllUsers1 = async (req, res) => {
@@ -1658,7 +1671,6 @@ export const getAllUsers1 = async (req, res) => {
       { $skip: skip },
       { $limit: limit },
 
-      // Lookups for additional data
       {
         $lookup: {
           from: "reviews",
@@ -1679,6 +1691,29 @@ export const getAllUsers1 = async (req, res) => {
           ],
           as: "reviewStats"
         }
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$user", "$$userId"] },
+              },
+            },
+            // Optionally project only needed fields to reduce payload size
+            {
+              $project: {
+                rating: 1,
+                comments: 1,
+                createdAt: 1,
+                reviewer: 1, // If you have a reviewer field (e.g., user who left the review)
+              },
+            },
+          ],
+          as: "reviews",
+        },
       },
 
       {
@@ -1740,6 +1775,7 @@ export const getAllUsers1 = async (req, res) => {
           profilePhoto: 1,
           UserStatus: 1,
           shortDecs: 1,
+          CallStatus: 1,
           decs: 1,
           Language: 1,
           Bio: 1,
@@ -1748,7 +1784,7 @@ export const getAllUsers1 = async (req, res) => {
           userType: 1,
           report: 1,
           avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
-          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          reviews: 1, // Include the full reviews array          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
           isOnline: { $eq: ["$status", "Online"] },
           lastSeenStatus: {
             $switch: {
@@ -1773,6 +1809,864 @@ export const getAllUsers1 = async (req, res) => {
     let message = "Users fetched successfully";
     if (genderFilter) {
       message = `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`;
+    }
+
+    res.status(200).json({
+      message,
+      users,
+      pagination: {
+        totalUsers,
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit),
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+export const getHealer = async (req, res) => {
+  try {
+    const genderFilter = req.query.gender?.toLowerCase();
+    const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+    const searchQuery = req.query.search?.trim() || "";
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = 21;
+    const skip = (page - 1) * limit;
+
+    // Validate gender parameter early
+    if (genderFilter && !["male", "female"].includes(genderFilter)) {
+      return res.status(400).json({
+        message: "Invalid gender parameter. Must be 'male' or 'female'",
+      });
+    }
+
+    // Build base match conditions
+    const matchConditions = {
+      _id: { $ne: loggedInUserId },
+      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+      userCategory: "Counsellor" // Add this condition to only get Healers
+    };
+
+    if (genderFilter) {
+      matchConditions.gender = genderFilter;
+    }
+
+    if (searchQuery) {
+      matchConditions.username = { $regex: searchQuery, $options: "i" };
+    }
+
+    // Get total count separately for better performance
+    const totalUsers = await User.countDocuments(matchConditions);
+
+    if (totalUsers === 0) {
+      let message = "No users found";
+      if (genderFilter) message = `No ${genderFilter} users found`;
+      return res.status(404).json({ message });
+    }
+
+    const currentTime = new Date();
+    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+
+    // Optimized main aggregation pipeline
+    const users = await User.aggregate([
+      // Match stage first to reduce documents early
+      { $match: matchConditions },
+
+      // Add a field to help with sorting
+      {
+        $addFields: {
+          sortOrder: {
+            $cond: {
+              if: { $eq: ["$status", "Online"] },
+              then: 1,
+              else: 0
+            }
+          }
+        }
+      },
+
+      // Sort by online status first, then by last seen
+      {
+        $sort: {
+          sortOrder: -1,  // Online users first
+          lastSeen: -1    // Then by most recently seen
+        }
+      },
+
+      // Paginate before heavy operations
+      { $skip: skip },
+      { $limit: limit },
+
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$user", "$$userId"] }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          as: "reviewStats"
+        }
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$user", "$$userId"] },
+              },
+            },
+            // Optionally project only needed fields to reduce payload size
+            {
+              $project: {
+                rating: 1,
+                comments: 1,
+                createdAt: 1,
+                reviewer: 1, // If you have a reviewer field (e.g., user who left the review)
+              },
+            },
+          ],
+          as: "reviews",
+        },
+      },
+
+      {
+        $lookup: {
+          from: "chats",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: [{ $size: "$participants" }, 2] },
+                    { $setIsSubset: [[loggedInUserId, "$$userId"], "$participants"] }
+                  ]
+                }
+              }
+            },
+            { $project: { _id: 1 } },
+            { $limit: 1 }
+          ],
+          as: "chat"
+        }
+      },
+
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: {
+            chatId: { $arrayElemAt: ["$chat._id", 0] },
+            userId: "$_id"
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $eq: ["$sender", "$$userId"] },
+                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } }
+                  ]
+                }
+              }
+            },
+            { $count: "unreadCount" }
+          ],
+          as: "unreadMessages"
+        }
+      },
+
+      // Final projection with computed fields
+      {
+        $project: {
+          username: 1,
+          name: 1,
+          email: 1,
+          gender: 1,
+          status: 1,
+          lastSeen: 1,
+          profilePhoto: 1,
+          UserStatus: 1,
+          shortDecs: 1,
+          CallStatus: 1,
+          decs: 1,
+          Language: 1,
+          Bio: 1,
+          avatarUrl: 1,
+          userCategory: 1,
+          userType: 1,
+          report: 1,
+          avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
+          reviews: 1, // Include the full reviews array          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          isOnline: { $eq: ["$status", "Online"] },
+          lastSeenStatus: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "Online"] }, then: "Online" },
+                { case: { $gte: ["$lastSeen", twentyFourHoursAgo] }, then: "recently" }
+              ],
+              default: "away"
+            }
+          },
+          unreadMessageCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0]
+          },
+          chatId: {
+            $ifNull: [{ $arrayElemAt: ["$chat._id", 0] }, null]
+          }
+        }
+      }
+    ]).exec();
+
+    // Send response
+    let message = "Users fetched successfully";
+    if (genderFilter) {
+      message = `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`;
+    }
+
+    res.status(200).json({
+      message,
+      users,
+      pagination: {
+        totalUsers,
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit),
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+export const getAllForChatStatus = async (req, res) => {
+  try {
+    const genderFilter = req.query.gender?.toLowerCase();
+    const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+    const searchQuery = req.query.search?.trim() || "";
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = 21;
+    const skip = (page - 1) * limit;
+
+    // Validate gender parameter
+    if (genderFilter && !["male", "female"].includes(genderFilter)) {
+      return res.status(400).json({
+        message: "Invalid gender parameter. Must be 'male' or 'female'",
+      });
+    }
+
+    // Build match conditions with CallStatus filter
+    const matchConditions = {
+      _id: { $ne: loggedInUserId },
+      ChatStatus: "Active", // Only include users with active call status
+      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+    };
+
+    if (genderFilter) {
+      matchConditions.gender = genderFilter;
+    }
+
+    if (searchQuery) {
+      matchConditions.username = { $regex: searchQuery, $options: "i" };
+    }
+
+    // Get total count
+    const totalUsers = await User.countDocuments(matchConditions);
+
+    if (totalUsers === 0) {
+      let message = "No active call users found";
+      if (genderFilter) message = `No active call ${genderFilter} users found`;
+      return res.status(404).json({ message });
+    }
+
+    const currentTime = new Date();
+    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+
+    // Optimized aggregation pipeline
+    const users = await User.aggregate([
+      { $match: matchConditions },
+      {
+        $addFields: {
+          sortOrder: {
+            $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
+          },
+        },
+      },
+      { $sort: { sortOrder: -1, lastSeen: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$user", "$$userId"] } } },
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 },
+              },
+            },
+          ],
+          as: "reviewStats",
+        },
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$user", "$$userId"] } } },
+            { $project: { rating: 1, comments: 1, createdAt: 1, reviewer: 1 } },
+          ],
+          as: "reviews",
+        },
+      },
+      {
+        $lookup: {
+          from: "chats",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: [{ $size: "$participants" }, 2] },
+                    { $setIsSubset: [[loggedInUserId, "$$userId"], "$participants"] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+            { $limit: 1 },
+          ],
+          as: "chat",
+        },
+      },
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: {
+            chatId: { $arrayElemAt: ["$chat._id", 0] },
+            userId: "$_id",
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $eq: ["$sender", "$$userId"] },
+                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } },
+                  ],
+                },
+              },
+            },
+            { $count: "unreadCount" },
+          ],
+          as: "unreadMessages",
+        },
+      },
+      {
+        $project: {
+          username: 1,
+          name: 1,
+          gender: 1,
+          status: 1,
+          avatarUrl: 1,
+          lastSeen: 1,
+          profilePhoto: 1,
+          shortDecs: 1,
+          CallStatus: 1,
+          Language: 1,
+          Bio: 1,
+          userCategory: 1,
+          userType: 1,
+          avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
+          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          reviews: 1,
+          isOnline: { $eq: ["$status", "Online"] },
+          lastSeenStatus: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "Online"] }, then: "Online" },
+                { case: { $gte: ["$lastSeen", twentyFourHoursAgo] }, then: "recently" },
+              ],
+              default: "away",
+            },
+          },
+          unreadMessageCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0],
+          },
+          chatId: { $ifNull: [{ $arrayElemAt: ["$chat._id", 0] }, null] },
+        },
+      },
+    ]).exec();
+
+    // Send response
+    let message = "Active call users fetched successfully";
+    if (genderFilter) {
+      message = `Active call ${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`;
+    }
+
+    res.status(200).json({
+      message,
+      users,
+      pagination: {
+        totalUsers,
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit),
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching active call users:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+export const getAllForCallUser = async (req, res) => {
+  try {
+    const genderFilter = req.query.gender?.toLowerCase();
+    const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+    const searchQuery = req.query.search?.trim() || "";
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = 21;
+    const skip = (page - 1) * limit;
+
+    // Validate gender parameter
+    if (genderFilter && !["male", "female"].includes(genderFilter)) {
+      return res.status(400).json({
+        message: "Invalid gender parameter. Must be 'male' or 'female'",
+      });
+    }
+
+    // Build match conditions with CallStatus filter
+    const matchConditions = {
+      _id: { $ne: loggedInUserId },
+      CallStatus: "Active", // Only include users with active call status
+      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] },
+    };
+
+    if (genderFilter) {
+      matchConditions.gender = genderFilter;
+    }
+
+    if (searchQuery) {
+      matchConditions.username = { $regex: searchQuery, $options: "i" };
+    }
+
+    // Get total count
+    const totalUsers = await User.countDocuments(matchConditions);
+
+    if (totalUsers === 0) {
+      let message = "No active call users found";
+      if (genderFilter) message = `No active call ${genderFilter} users found`;
+      return res.status(404).json({ message });
+    }
+
+    const currentTime = new Date();
+    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+
+    // Optimized aggregation pipeline
+    const users = await User.aggregate([
+      { $match: matchConditions },
+      {
+        $addFields: {
+          sortOrder: {
+            $cond: { if: { $eq: ["$status", "Online"] }, then: 1, else: 0 },
+          },
+        },
+      },
+      { $sort: { sortOrder: -1, lastSeen: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$user", "$$userId"] } } },
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 },
+              },
+            },
+          ],
+          as: "reviewStats",
+        },
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$user", "$$userId"] } } },
+            { $project: { rating: 1, comments: 1, createdAt: 1, reviewer: 1 } },
+          ],
+          as: "reviews",
+        },
+      },
+      {
+        $lookup: {
+          from: "chats",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: [{ $size: "$participants" }, 2] },
+                    { $setIsSubset: [[loggedInUserId, "$$userId"], "$participants"] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+            { $limit: 1 },
+          ],
+          as: "chat",
+        },
+      },
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: {
+            chatId: { $arrayElemAt: ["$chat._id", 0] },
+            userId: "$_id",
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $eq: ["$sender", "$$userId"] },
+                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } },
+                  ],
+                },
+              },
+            },
+            { $count: "unreadCount" },
+          ],
+          as: "unreadMessages",
+        },
+      },
+      {
+        $project: {
+          username: 1,
+          name: 1,
+          gender: 1,
+          status: 1,
+          avatarUrl: 1,
+          lastSeen: 1,
+          profilePhoto: 1,
+          shortDecs: 1,
+          CallStatus: 1,
+          Language: 1,
+          Bio: 1,
+          userCategory: 1,
+          userType: 1,
+          avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
+          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          reviews: 1,
+          isOnline: { $eq: ["$status", "Online"] },
+          lastSeenStatus: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "Online"] }, then: "Online" },
+                { case: { $gte: ["$lastSeen", twentyFourHoursAgo] }, then: "recently" },
+              ],
+              default: "away",
+            },
+          },
+          unreadMessageCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0],
+          },
+          chatId: { $ifNull: [{ $arrayElemAt: ["$chat._id", 0] }, null] },
+        },
+      },
+    ]).exec();
+
+    // Send response
+    let message = "Active call users fetched successfully";
+    if (genderFilter) {
+      message = `Active call ${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`;
+    }
+
+    res.status(200).json({
+      message,
+      users,
+      pagination: {
+        totalUsers,
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / limit),
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching active call users:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+export const getAllUserCategory = async (req, res) => {
+  try {
+    const genderFilter = req.query.gender?.toLowerCase();
+    const categoryFilter = req.query.userCategory?.trim();
+    const loggedInUserId = new mongoose.Types.ObjectId(req.user.id);
+    const searchQuery = req.query.search?.trim() || "";
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = 21;
+    const skip = (page - 1) * limit;
+
+    // Validate gender parameter early
+    if (genderFilter && !["male", "female"].includes(genderFilter)) {
+      return res.status(400).json({
+        message: "Invalid gender parameter. Must be 'male' or 'female'",
+      });
+    }
+
+    // Build base match conditions
+    const matchConditions = {
+      _id: { $ne: loggedInUserId },
+      UserStatus: { $nin: ["inActive", "Blocked", "InActive"] }
+    };
+
+    if (genderFilter) {
+      matchConditions.gender = genderFilter;
+    }
+
+    if (categoryFilter) {
+      matchConditions.userCategory = categoryFilter;
+    }
+
+    if (searchQuery) {
+      matchConditions.username = { $regex: searchQuery, $options: "i" };
+    }
+
+    // Get total count separately for better performance
+    const totalUsers = await User.countDocuments(matchConditions);
+
+    if (totalUsers === 0) {
+      let message = "No users found";
+      if (genderFilter) message = `No ${genderFilter} users found`;
+      if (categoryFilter) {
+        message = genderFilter
+          ? `No ${genderFilter} users found in category '${categoryFilter}'`
+          : `No users found in category '${categoryFilter}'`;
+      }
+      return res.status(404).json({ message });
+    }
+
+    const currentTime = new Date();
+    const twentyFourHoursAgo = new Date(currentTime - 24 * 60 * 60 * 1000);
+
+    // Optimized main aggregation pipeline
+    const users = await User.aggregate([
+      // Match stage first to reduce documents early
+      { $match: matchConditions },
+
+      // Add a field to help with sorting
+      {
+        $addFields: {
+          sortOrder: {
+            $cond: {
+              if: { $eq: ["$status", "Online"] },
+              then: 1,
+              else: 0
+            }
+          }
+        }
+      },
+
+      // Sort by online status first, then by last seen
+      {
+        $sort: {
+          sortOrder: -1,  // Online users first
+          lastSeen: -1    // Then by most recently seen
+        }
+      },
+
+      // Paginate before heavy operations
+      { $skip: skip },
+      { $limit: limit },
+
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$user", "$$userId"] }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          as: "reviewStats"
+        }
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$user", "$$userId"] },
+              },
+            },
+            // Optionally project only needed fields to reduce payload size
+            {
+              $project: {
+                rating: 1,
+                comments: 1,
+                createdAt: 1,
+                reviewer: 1, // If you have a reviewer field (e.g., user who left the review)
+              },
+            },
+          ],
+          as: "reviews",
+        },
+      },
+
+      {
+        $lookup: {
+          from: "chats",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: [{ $size: "$participants" }, 2] },
+                    { $setIsSubset: [[loggedInUserId, "$$userId"], "$participants"] }
+                  ]
+                }
+              }
+            },
+            { $project: { _id: 1 } },
+            { $limit: 1 }
+          ],
+          as: "chat"
+        }
+      },
+
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: {
+            chatId: { $arrayElemAt: ["$chat._id", 0] },
+            userId: "$_id"
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $eq: ["$sender", "$$userId"] },
+                    { $not: { $in: [loggedInUserId, { $ifNull: ["$seenBy", []] }] } }
+                  ]
+                }
+              }
+            },
+            { $count: "unreadCount" }
+          ],
+          as: "unreadMessages"
+        }
+      },
+
+      // Final projection with computed fields
+      {
+        $project: {
+          username: 1,
+          name: 1,
+          email: 1,
+          gender: 1,
+          status: 1,
+          lastSeen: 1,
+          profilePhoto: 1,
+          UserStatus: 1,
+          shortDecs: 1,
+          CallStatus: 1,
+          decs: 1,
+          Language: 1,
+          Bio: 1,
+          avatarUrl: 1,
+          userCategory: 1,
+          userType: 1,
+          report: 1,
+          avgRating: { $arrayElemAt: ["$reviewStats.avgRating", 0] },
+          reviews: 1, // Include the full reviews array          
+          reviewCount: { $arrayElemAt: ["$reviewStats.count", 0] },
+          isOnline: { $eq: ["$status", "Online"] },
+          lastSeenStatus: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "Online"] }, then: "Online" },
+                { case: { $gte: ["$lastSeen", twentyFourHoursAgo] }, then: "recently" }
+              ],
+              default: "away"
+            }
+          },
+          unreadMessageCount: {
+            $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0]
+          },
+          chatId: {
+            $ifNull: [{ $arrayElemAt: ["$chat._id", 0] }, null]
+          }
+        }
+      }
+    ]).exec();
+
+    // Send response
+    let message = "Users fetched successfully";
+    if (genderFilter && categoryFilter) {
+      message = `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users in category '${categoryFilter}' fetched successfully`;
+    } else if (genderFilter) {
+      message = `${genderFilter.charAt(0).toUpperCase() + genderFilter.slice(1)} users fetched successfully`;
+    } else if (categoryFilter) {
+      message = `Users in category '${categoryFilter}' fetched successfully`;
     }
 
     res.status(200).json({
@@ -1944,8 +2838,6 @@ export const addBio = async (req, res) => {
 };
 
 
-
-
 // Edit a bio entry
 export const editBio = async (req, res) => {
   try {
@@ -2105,7 +2997,8 @@ export const Reporte_User = async (req, res) => {
 
 
 
-export const addBankDetails = async (req, res) => {
+// Add or Update Bank Details
+export const addOrUpdateBankDetails = async (req, res) => {
   const userId = req.user._id || req.user.id;
   const {
     bankName,
@@ -2113,45 +3006,176 @@ export const addBankDetails = async (req, res) => {
     ifscCode,
     accountHolderName,
   } = req.body;
-  console.log("req.body", req.body)
+
   try {
     // Validate input
     if (!bankName || !accountNumber || !ifscCode || !accountHolderName) {
       return res.status(400).json({ message: 'All fields are required.' });
     }
 
-    // Find the user by ID
+    // Validate IFSC code format (basic check)
+    if (!/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(ifscCode)) {
+      return res.status(400).json({ message: 'Invalid IFSC code format.' });
+    }
+
+    // Validate account number (basic check)
+    if (!/^\d{9,18}$/.test(accountNumber)) {
+      return res.status(400).json({ message: 'Account number must be 9-18 digits.' });
+    }
+
     const user = await User.findById(userId);
-
-    console.log("user", user)
-
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    // Check for duplicate account numbers
-    const isDuplicateAccount = user.bankDetails.some(
-      (detail) => detail.accountNumber === accountNumber
+    // Check if account number exists
+    const existingIndex = user.bankDetails.findIndex(
+      detail => detail.accountNumber === accountNumber
     );
 
-    if (isDuplicateAccount) {
-      return res.status(400).json({ message: 'Account number already exists.' });
+    if (existingIndex !== -1) {
+      // Update existing
+      user.bankDetails[existingIndex] = {
+        bankName,
+        accountNumber,
+        ifscCode,
+        accountHolderName,
+        updatedAt: new Date()
+      };
+    } else {
+      // Add new
+      user.bankDetails.push({
+        bankName,
+        accountNumber,
+        ifscCode,
+        accountHolderName,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
     }
 
-    // Add the new bank details
-    user.bankDetails.push({
-      bankName,
-      accountNumber,
-      ifscCode,
-      accountHolderName,
-    });
-
-    // Save the updated user document
     await user.save();
 
-    res.status(201).json({
-      message: 'Bank details added successfully.',
-      bankDetails: user.bankDetails,
+    return res.status(existingIndex !== -1 ? 200 : 201).json({
+      message: existingIndex !== -1
+        ? 'Bank details updated successfully.'
+        : 'Bank details added successfully.',
+      bankDetails: user.bankDetails
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+// Get All Bank Details
+export const getAllBankDetails = async (req, res) => {
+  const userId = req.user._id || req.user.id;
+
+  try {
+    const user = await User.findById(userId).select('bankDetails');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    res.status(200).json({
+      bankDetails: user.bankDetails
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+// Get Single Bank Detail
+export const getBankDetail = async (req, res) => {
+  const userId = req.user._id || req.user.id;
+  const { accountNumber } = req.params;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const detail = user.bankDetails.find(
+      d => d.accountNumber === accountNumber
+    );
+
+    if (!detail) {
+      return res.status(404).json({ message: 'Bank details not found.' });
+    }
+
+    res.status(200).json(detail);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+// Delete Bank Detail
+export const deleteBankDetail = async (req, res) => {
+  const userId = req.user._id || req.user.id;
+  const { accountNumber } = req.params;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const initialLength = user.bankDetails.length;
+    user.bankDetails = user.bankDetails.filter(
+      d => d.accountNumber !== accountNumber
+    );
+
+    if (user.bankDetails.length === initialLength) {
+      return res.status(404).json({ message: 'Bank details not found.' });
+    }
+
+    await user.save();
+    res.status(200).json({
+      message: 'Bank details deleted successfully.',
+      bankDetails: user.bankDetails
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+};
+
+// Set Default Bank Account
+export const setDefaultBankAccount = async (req, res) => {
+  const userId = req.user._id || req.user.id;
+  const { accountNumber } = req.body;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // First reset all to non-default
+    user.bankDetails.forEach(detail => {
+      detail.isDefault = false;
+    });
+
+    // Find and set the specified one as default
+    const detail = user.bankDetails.find(
+      d => d.accountNumber === accountNumber
+    );
+
+    if (!detail) {
+      return res.status(404).json({ message: 'Bank details not found.' });
+    }
+
+    detail.isDefault = true;
+    await user.save();
+
+    res.status(200).json({
+      message: 'Default bank account set successfully.',
+      bankDetails: user.bankDetails
     });
   } catch (error) {
     console.error(error);
@@ -2182,11 +3206,7 @@ export const getBankDetails = async (req, res) => {
   }
 };
 
-
-
-
 // addToMailingList
-
 export const subscribeUser = async (req, res) => {
   const { firstName, lastName, email } = req.body;
 
@@ -2202,7 +3222,171 @@ export const subscribeUser = async (req, res) => {
 };
 
 
+// export const getChatsWithLatestMessages = async (req, res) => {
+//   try {
+//     const userId = req.user.id || req.user._id;
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 20;
+//     const search = req.query.search || "";
+//     const skip = (page - 1) * limit;
 
+//     // Step 1: Get current user's online status
+//     const currentUser = await User.findById(userId);
+//     const isCurrentUserOnline = currentUser.status === 'Online';
+
+//     // Step 2: Find all chat IDs where the user is a participant
+//     const userChats = await Chat.find({ participants: userId })
+//       .sort({ updatedAt: -1 });
+
+//     const chatIds = userChats.map(chat => chat._id);
+
+//     // Step 3: Get all participant IDs from these chats (excluding the current user)
+//     const participantIds = userChats.reduce((acc, chat) => {
+//       chat.participants.forEach(participantId => {
+//         if (participantId.toString() !== userId.toString()) {
+//           acc.add(participantId.toString());
+//         }
+//       });
+//       return acc;
+//     }, new Set());
+
+//     // Step 4: Fetch participants with search and Online status
+//     const participants = await User.aggregate([
+//       {
+//         $match: {
+//           _id: { $in: Array.from(participantIds).map(id => new mongoose.Types.ObjectId(id)) },
+//           ...(search && {
+//             username: { $regex: search, $options: 'i' }
+//           })
+//         }
+//       },
+//       {
+//         $addFields: {
+//           isOnline: { $cond: [{ $eq: ['$status', 'Online'] }, 1, 0] }
+//         }
+//       }
+//     ]);
+
+//     if (!participants.length) {
+//       return res.json({ chats: [], page, limit });
+//     }
+
+//     // Step 5: Fetch reviews for participants
+//     const reviews = await Review.find({
+//       user: { $in: participants.map(p => p._id) }
+//     });
+
+//     // Step 6: Calculate average ratings
+//     const userRatingsMap = {};
+//     reviews.forEach((review) => {
+//       const userId = review.user.toString();
+//       if (!userRatingsMap[userId]) {
+//         userRatingsMap[userId] = { sum: 0, count: 0 };
+//       }
+//       userRatingsMap[userId].sum += review.rating || 0;
+//       userRatingsMap[userId].count += 1;
+//     });
+
+//     const avgRatings = {};
+//     for (const [userId, ratingData] of Object.entries(userRatingsMap)) {
+//       avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
+//     }
+
+//     // Step 7: Fetch chats with filtered participants
+//     const filteredChatIds = userChats
+//       .filter(chat =>
+//         chat.participants.some(participantId =>
+//           participants.some(p => p._id.toString() === participantId.toString())
+//         )
+//       )
+//       .map(chat => chat._id);
+
+//     const chats = await Chat.find({ _id: { $in: filteredChatIds } })
+//       .populate({
+//         path: 'participants',
+//         model: User,
+//         select: '-password -refreshToken',
+//       })
+//       .sort({ updatedAt: -1 })
+//       .skip(skip)
+//       .limit(limit);
+
+//     // Step 8: Format chat data
+//     const uniqueUsersMap = new Map();
+
+//     for (const chat of chats) {
+//       chat.participants.forEach((participant) => {
+//         if (participant._id.toString() !== userId.toString()) {
+//           const matchingParticipant = participants.find(p =>
+//             p._id.toString() === participant._id.toString()
+//           );
+
+//           if (matchingParticipant && !uniqueUsersMap.has(participant._id.toString())) {
+//             uniqueUsersMap.set(participant._id.toString(), {
+//               user: {
+//                 ...participant.toObject(),
+//                 isOnline: matchingParticipant.isOnline === 1,
+//                 averageRating: avgRatings[participant._id.toString()] || 0
+//               },
+//               chatId: chat._id,
+//               lastMessage: chat.lastMessage || null,
+//               updatedAt: chat.updatedAt,
+//               timestamp: new Date(chat.updatedAt).getTime() // Convert to timestamp for easier comparison
+//             });
+//           }
+//         }
+//       });
+//     }
+
+//     // Sort with both message recency and online status
+//     const formattedChats = Array.from(uniqueUsersMap.values())
+//       .sort((a, b) => {
+//         // First, check if both users are online
+//         const bothOnline = isCurrentUserOnline && a.user.isOnline && isCurrentUserOnline && b.user.isOnline;
+
+//         if (bothOnline) {
+//           // If both are online, sort by timestamp
+//           return b.timestamp - a.timestamp;
+//         }
+
+//         // If timestamps are the same (messages in the same second)
+//         if (a.timestamp === b.timestamp) {
+//           // Prioritize chats where both users are online
+//           if (isCurrentUserOnline && a.user.isOnline) return -1;
+//           if (isCurrentUserOnline && b.user.isOnline) return 1;
+//         }
+
+//         // Default to sorting by timestamp
+//         return b.timestamp - a.timestamp;
+//       })
+//       .map((item) => {
+//         const { password, refreshToken, ...userDetails } = item.user;
+
+//         return {
+//           participants: [{
+//             ...userDetails
+//           }],
+//           chatId: item.chatId,
+//           lastMessage: item.lastMessage,
+//           updatedAt: item.updatedAt,
+//         };
+//       });
+
+//     res.json({
+//       chats: formattedChats,
+//       page,
+//       limit,
+//       searchQuery: search ? {
+//         term: search,
+//         resultsCount: formattedChats.length
+//       } : null
+//     });
+
+//   } catch (error) {
+//     console.error('Error fetching chats with latest messages:', error);
+//     res.status(500).json({ error: 'Failed to fetch chats' });
+//   }
+// };
 
 
 export const getChatsWithLatestMessages = async (req, res) => {
@@ -2210,135 +3394,206 @@ export const getChatsWithLatestMessages = async (req, res) => {
     const userId = req.user.id || req.user._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
-    const search = req.query.search || ""; // Add search parameter
+    const search = req.query.search || "";
     const skip = (page - 1) * limit;
 
-    // Step 1: Find all chat IDs where the user is a participant
-    const userChats = await Chat.find({ participants: userId });
-    const chatIds = userChats.map(chat => chat._id);
+    // Convert userId to ObjectId
+    const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    // Step 2: Get all participant IDs from these chats (excluding the current user)
-    const participantIds = userChats.reduce((acc, chat) => {
-      chat.participants.forEach(participantId => {
-        if (participantId.toString() !== userId.toString()) {
-          acc.add(participantId.toString());
-        }
-      });
-      return acc;
-    }, new Set());
+    // Get current user's online status in a single query
+    const currentUser = await User.findById(userId).select('status');
+    const isCurrentUserOnline = currentUser.status === 'Online';
 
-    // Step 3: Fetch participants with search and Online status
-    const participants = await User.aggregate([
+    const pipeline = [
+      // Stage 1: Match chats where the current user is a participant
       {
         $match: {
-          _id: { $in: Array.from(participantIds).map(id => new mongoose.Types.ObjectId(id)) },
-          ...(search && {
-            username: { $regex: search, $options: 'i' }
-          })
+          participants: userObjectId
         }
       },
+
+      // Stage 2: Sort by most recent activity first
+      {
+        $sort: { updatedAt: -1 }
+      },
+
+      // Stage 3: Skip and limit for pagination
+      {
+        $skip: skip
+      },
+      {
+        $limit: limit
+      },
+
+      // Stage 4: Lookup to get participant details
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'participants',
+          foreignField: '_id',
+          as: 'participantDetails'
+        }
+      },
+
+      // Stage 5: Filter out the current user from participants
       {
         $addFields: {
-          isOnline: { $cond: [{ $eq: ['$status', 'Online'] }, 1, 0] }
-        }
-      },
-      {
-        $sort: {
-          updatedAt: -1,
-          isOnline: -1,
-        }
-      }
-    ]);
-
-    if (!participants.length) {
-      return res.json({ chats: [], page, limit });
-    }
-
-    // Step 4: Fetch chats with filtered participants
-    const filteredChatIds = userChats.filter(chat =>
-      chat.participants.some(participantId =>
-        participants.some(p => p._id.toString() === participantId.toString())
-      )
-    ).map(chat => chat._id);
-
-    const chats = await Chat.find({ _id: { $in: filteredChatIds } })
-      .populate({
-        path: 'participants',
-        model: User,
-        select: '-password -refreshToken',
-      })
-      .sort({ updatedAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    // Step 5: Fetch reviews for participants
-    const reviews = await Review.find({
-      user: { $in: participants.map(p => p._id) }
-    });
-
-    // Step 6: Calculate average ratings
-    const userRatingsMap = {};
-    reviews.forEach((review) => {
-      const userId = review.user.toString();
-      if (!userRatingsMap[userId]) {
-        userRatingsMap[userId] = { sum: 0, count: 0 };
-      }
-      userRatingsMap[userId].sum += review.rating || 0;
-      userRatingsMap[userId].count += 1;
-    });
-
-    const avgRatings = {};
-    for (const [userId, ratingData] of Object.entries(userRatingsMap)) {
-      avgRatings[userId] = (ratingData.sum || 0) / (ratingData.count || 1);
-    }
-
-    // Step 7: Format chat data with Online status and search results
-    const uniqueUsersMap = new Map();
-
-    for (const chat of chats) {
-      chat.participants.forEach((participant) => {
-        if (participant._id.toString() !== userId.toString()) {
-          const matchingParticipant = participants.find(p =>
-            p._id.toString() === participant._id.toString()
-          );
-
-          if (matchingParticipant && !uniqueUsersMap.has(participant._id.toString())) {
-            uniqueUsersMap.set(participant._id.toString(), {
-              user: {
-                ...participant.toObject(),
-                isOnline: matchingParticipant.isOnline === 1
-              },
-              chatId: chat._id,
-              lastMessage: chat.lastMessage || null,
-              updatedAt: chat.updatedAt,
-            });
+          participantDetails: {
+            $filter: {
+              input: '$participantDetails',
+              as: 'participant',
+              cond: { $ne: ['$$participant._id', userObjectId] }
+            }
           }
         }
-      });
-    }
+      },
 
-    const formattedChats = Array.from(uniqueUsersMap.values()).map((item) => {
-      const avgRating = avgRatings[item.user._id.toString()] || 0;
-      const { password, refreshToken, ...userDetails } = item.user;
+      // Stage 6: Match if search term provided
+      ...(search ? [{
+        $match: {
+          'participantDetails.username': { $regex: search, $options: 'i' }
+        }
+      }] : []),
 
-      return {
-        participants: [{
-          ...userDetails,
-          averageRating: avgRating
-        }],
-        chatId: item.chatId,
-        lastMessage: item.lastMessage,
-        updatedAt: item.updatedAt,
-      };
-    });
+      // Stage 7: Lookup reviews for participants
+      {
+        $lookup: {
+          from: 'reviews',
+          let: { participantIds: '$participantDetails._id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: ['$user', '$$participantIds']
+                }
+              }
+            }
+          ],
+          as: 'participantReviews'
+        }
+      },
 
-    // Sort formatted chats by Online status and then by updatedAt
-    formattedChats.sort((a, b) => {
-      if (a.participants[0].isOnline !== b.participants[0].isOnline) {
-        return b.participants[0].isOnline ? 1 : -1;
+      // Stage 8: Lookup unread messages count - FIXED
+      {
+        $lookup: {
+          from: "chatmessages",
+          let: { chatId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$chat", "$$chatId"] },
+                    { $ne: ["$sender", userObjectId] },
+                    { $not: { $in: [userObjectId, { $ifNull: ["$seenBy", []] }] } }
+                  ]
+                }
+              }
+            },
+            { $count: "unreadCount" }
+          ],
+          as: "unreadMessages"
+        }
+      },
+
+      // Stage 9: Process and format the final output
+      {
+        $project: {
+          chatId: '$_id',
+          lastMessage: 1,
+          updatedAt: 1,
+          timestamp: { $toLong: '$updatedAt' },
+          unreadCount: { $ifNull: [{ $arrayElemAt: ["$unreadMessages.unreadCount", 0] }, 0] },
+          participants: {
+            $map: {
+              input: '$participantDetails',
+              as: 'participant',
+              in: {
+                _id: '$$participant._id',
+                username: '$$participant.username',
+                email: '$$participant.email',
+                avatar: '$$participant.avatarUrl',
+                shortDecs: '$$participant.shortDecs',
+                userType: '$$participant.userType',
+                userCategory: '$$participant.userCategory',
+                gender: '$$participant.gender',
+                Language: '$$participant.Language',
+                lastSeen: '$$participant.lastSeen',
+                Bio: '$$participant.Bio',
+                decs: '$$participant.decs',
+                status: '$$participant.status',
+                isOnline: { $eq: ['$$participant.status', 'Online'] },
+                averageRating: {
+                  $let: {
+                    vars: {
+                      userReviews: {
+                        $filter: {
+                          input: '$participantReviews',
+                          as: 'review',
+                          cond: { $eq: ['$$review.user', '$$participant._id'] }
+                        }
+                      }
+                    },
+                    in: {
+                      $cond: {
+                        if: { $gt: [{ $size: '$$userReviews' }, 0] },
+                        then: {
+                          $divide: [
+                            { $sum: '$$userReviews.rating' },
+                            { $size: '$$userReviews' }
+                          ]
+                        },
+                        else: 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+
+      // Stage 10: Custom sort with online priority if current user is online
+      {
+        $sort: isCurrentUserOnline ? {
+          'participants.isOnline': -1,
+          timestamp: -1
+        } : {
+          timestamp: -1
+        }
       }
-      return new Date(b.updatedAt) - new Date(a.updatedAt);
-    });
+    ];
+
+    const chats = await Chat.aggregate(pipeline);
+
+    // Format the response to match the expected structure
+    const formattedChats = chats.map(chat => ({
+      participants: chat.participants.map(p => {
+        return {
+          _id: p._id,
+          username: p.username,
+          email: p.email,
+          avatar: p.avatar,
+          userType: p.userType,
+          gender: p.gender,
+          userCategory: p.userCategory,
+          Language: p.Language,
+          shortDecs: p.shortDecs,
+          Bio: p.Bio,
+          status: p.status,
+          decs: p.decs,
+          isOnline: p.isOnline,
+          averageRating: p.averageRating
+        };
+      }),
+      chatId: chat.chatId,
+      lastMessage: chat.lastMessage,
+      updatedAt: chat.updatedAt,
+      unreadCount: chat.unreadCount
+    }));
+
+    emitSocketEvent(req, userId.toString(), ChatEventEnum.NEW_CHAT_EVENT, formattedChats);
 
     res.json({
       chats: formattedChats,
@@ -2356,9 +3611,191 @@ export const getChatsWithLatestMessages = async (req, res) => {
   }
 };
 
+export const getReviews = async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const page = parseInt(req.query.page) || 1; // Default to page 1
+    const limit = parseInt(req.query.limit) || 10; // Default to 10 reviews per page
+    const skip = (page - 1) * limit;
+
+    // Fetch reviews with pagination
+    const reviews = await Review.find({ user: userId }) // Filter by user if needed
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 }); // Optional: Sort by latest reviews
+
+    // Get total count for pagination
+    const totalReviews = await Review.countDocuments({ user: userId });
+
+    res.status(200).json({
+      success: true,
+      page,
+      limit,
+      totalPages: Math.ceil(totalReviews / limit),
+      totalReviews,
+      data: reviews,
+    });
+  } catch (error) {
+    console.error("Error fetching reviews:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 
 
+export const UpdateCallStatus = async (req, res) => {
+  const userid = req.user.id || req.user._id;
+  const { CallStats } = req.body;
 
+  // Check if userid and CallStats are provided
+  if (!userid || !CallStats) {
+    return res.status(400).json({
+      message: "Bad Request: userId and CallStats are required",
+    });
+  }
+
+  try {
+    // Find the user by userid and update the CallStatus
+    const updatedUser = await User.findByIdAndUpdate(
+      userid,
+      { CallStatus: CallStats },
+      { new: true, runValidators: true }
+    );
+
+    // If no user is found with the given userid
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: "Not Found: User not found",
+      });
+    }
+
+    // Return the updated user
+    res.status(200).json({
+      message: "CallStatus updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    // Handle any errors that occur during the update process
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+
+export const ChatStatusStatus = async (req, res) => {
+  const userid = req.user.id || req.user._id;
+  const { ChatStatus } = req.body;
+
+  // Check if userid and CallStats are provided
+  if (!userid || !ChatStatus) {
+    return res.status(400).json({
+      message: "Bad Request: userId and ChatStatus are required",
+    });
+  }
+
+  try {
+    // Find the user by userid and update the CallStatus
+    const updatedUser = await User.findByIdAndUpdate(
+      userid,
+      { ChatStatus: ChatStatus },
+      { new: true, runValidators: true }
+    );
+
+    // If no user is found with the given userid
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: "Not Found: User not found",
+      });
+    }
+
+    // Return the updated user
+    res.status(200).json({
+      message: "ChatStatus updated successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    // Handle any errors that occur during the update process
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+
+
+export const RegisterEnquiry = async (req, res) => {
+  try {
+
+    const { name, email, instagram } = req.body;
+
+    const existingEnquiry = await Zhohocampain.findOne({ email });
+
+    if (existingEnquiry) {
+      return res.status(400).json({
+        success: false,
+        message: "An enquiry with this email already exists.",
+      });
+    }
+    // Create the enquiry in the database
+    const enquiry = await Zhohocampain.create({ name, email, instagram });
+    await SendTemplate(email, name);
+    addToMailingList(email)
+
+    // Respond with success message
+    res.status(201).json({
+      success: true,
+      message: "Enquiry registered successfully",
+      data: enquiry,
+    });
+  } catch (error) {
+    console.error("Error registering enquiry:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to register enquiry",
+      error: error.message,
+    });
+  }
+};
+
+export const GetRegisterEnquiry = async (req, res) => {
+  try {
+    const { startDate, endDate, page = 1, limit = 10 } = req.query;
+
+    // Convert dates to ISO format if provided
+    let filter = {};
+    if (startDate && endDate) {
+      filter.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      };
+    }
+
+    // Get total count of records matching the filter
+    const totalCount = await Zhohocampain.countDocuments(filter);
+
+    // Fetch paginated data
+    const enquiryData = await Zhohocampain.find(filter)
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit))
+      .sort({ createdAt: -1 }); // Sorting by latest entries
+
+    res.status(200).json({
+      success: true,
+      message: "Enquiries retrieved successfully",
+      totalRecords: totalCount,
+      currentPage: page,
+      totalPages: Math.ceil(totalCount / limit),
+      data: enquiryData,
+    });
+  } catch (error) {
+    console.error("Error fetching enquiries:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch enquiries",
+      error: error.message,
+    });
+  }
+};
 
 
 async function sendNotification(userId, title, message) {
