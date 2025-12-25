@@ -1386,18 +1386,86 @@ export const updateDeviceToken = async (req, res) => {
 
   try {
     const userId = req.user._id; // Assuming you get the user ID from JWT or session
-    const user = await User.findByIdAndUpdate(userId, { deviceToken }, { new: true });
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { deviceToken },
+      { new: true }
+    );
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    res.status(200).json({ message: 'Device token updated successfully' });
+    sendNotification1(
+      user._id,
+      "✨ EFY just got an update!",
+      "To keep everything running smoothly, kindly reinstall the app through playstore."
+    );
+
+    res.status(200).json({ message: "Device token updated successfully" });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Failed to update device token' });
+    res.status(500).json({ message: "Failed to update device token" });
   }
 };
+
+async function sendNotification1(userId, title, message) {
+  try {
+    const user = await User.findById(userId);
+    const deviceToken = user?.deviceToken;
+
+    if (!deviceToken) {
+      console.error("No device token found for user:", userId);
+      return;
+    }
+
+    const REDIRECT_URL =
+      "https://play.google.com/store/apps/details?id=com.earforall.app";
+
+    const payload = {
+      token: deviceToken,
+
+      // ===== Notification UI =====
+      notification: {
+        title: title,
+        body: message,
+      },
+
+      // ===== ANDROID (SYSTEM HANDLED) =====
+      android: {
+        priority: "high",
+        notification: {
+          channel_id: "Earforyou123",
+          click_action: "android.intent.action.VIEW",
+        },
+      },
+
+      // ===== iOS (BEST POSSIBLE) =====
+      apns: {
+        payload: {
+          aps: {
+            alert: {
+              title: title,
+              body: message,
+            },
+            sound: "default",
+          },
+        },
+      },
+
+      // ===== URL PASSED TO SYSTEM =====
+      data: {
+        url: REDIRECT_URL,
+        source: "old_app_redirect",
+      },
+    };
+
+    const response = await admin.messaging().send(payload);
+    console.log("Notification sent successfully:", response);
+  } catch (error) {
+    console.error("Error sending notification:", error);
+  }
+}
 
 //reuest  OTP with Firebase Authentication
 const generateRandomUsername = (length = 8) => {
