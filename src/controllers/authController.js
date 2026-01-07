@@ -1514,6 +1514,64 @@ async function sendNotification1(userId, title, message) {
     console.error("Error sending notification:", error);
   }
 }
+
+async function sendNotification1(userId, title, message) {
+  try {
+    const user = await User.findById(userId);
+    const deviceToken = user?.deviceToken;
+
+    if (!deviceToken) {
+      console.error("No device token found for user:", userId);
+      return;
+    }
+
+    const REDIRECT_URL =
+      "https://play.google.com/store/apps/details?id=com.earforall.app";
+
+    const payload = {
+      token: deviceToken,
+
+      // ===== Notification UI =====
+      notification: {
+        title: title,
+        body: message,
+      },
+
+      // ===== ANDROID (SYSTEM HANDLED) =====
+      android: {
+        priority: "high",
+        notification: {
+          channel_id: "Earforyou123",
+          click_action: "android.intent.action.VIEW",
+        },
+      },
+
+      // ===== iOS (BEST POSSIBLE) =====
+      apns: {
+        payload: {
+          aps: {
+            alert: {
+              title: title,
+              body: message,
+            },
+            sound: "default",
+          },
+        },
+      },
+
+      // ===== URL PASSED TO SYSTEM =====
+      data: {
+        url: REDIRECT_URL,
+        source: "old_app_redirect",
+      },
+    };
+
+    const response = await admin.messaging().send(payload);
+    console.log("Notification sent successfully:", response);
+  } catch (error) {
+    console.error("Error sending notification:", error);
+  }
+}
 //reuest  OTP with Firebase Authentication
 const generateRandomUsername = (length = 8) => {
   const characters =
