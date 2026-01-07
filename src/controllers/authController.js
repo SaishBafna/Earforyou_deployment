@@ -8,6 +8,7 @@ import {
   sendOtpEmail,
   SendTemplate,
 } from "../utils/generateOtp.js";
+import { generateOtp, sendOtpEmail,SendTemplate } from "../utils/generateOtp.js";
 import bcrypt from "bcrypt";
 import multer from "multer";
 import unirest from "unirest";
@@ -37,6 +38,40 @@ export const generateTransactionId = async () => {
 };
 
 // Example usage
+
+
+export const RegisterEnquiry = async (req, res) => {
+  try {
+
+    const { name, email, instagram } = req.body;
+
+    const existingEnquiry = await Zhohocampain.findOne({ email });
+
+    if (existingEnquiry) {
+      return res.status(400).json({
+        success: false,
+        message: "An enquiry with this email already exists.",
+      });
+    }
+    // Create the enquiry in the database
+    const enquiry = await Zhohocampain.create({ name, email, instagram });
+    await SendTemplate(email , name);
+
+    // Respond with success message
+    res.status(201).json({
+      success: true,
+      message: "Enquiry registered successfully",
+      data: enquiry,
+    });
+  } catch (error) {
+    console.error("Error registering enquiry:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to register enquiry",
+      error: error.message,
+    });
+  }
+};
 
 const generateAccessAndRefreshTokens = async (userId) => {
   try {
@@ -329,6 +364,7 @@ export const getTopListenersByDuration = async (req, res) => {
     });
   }
 };
+
 
 export const registerUser = async (req, res) => {
   const { phone, password } = req.body; // Ensure correct field names
