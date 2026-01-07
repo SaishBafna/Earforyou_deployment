@@ -26,13 +26,7 @@ import {
     getAllUsers2,
     UpdateCallStatus,
     UserCategoryData,
-    RegisterEnquiry,
-    getAllUserCategory,
-    GetRegisterEnquiry,
-    getTopListenersByDuration,
-    getAllForCallUser,
-    ChatStatusStatus,
-    getAllForChatStatus
+    RegisterEnquiry
 } from '../controllers/authController.js';
 // import { validateUserSignup } from '../middlewares/auth/validators.js';
 import { protect } from '../middlewares/auth/authMiddleware.js'
@@ -116,6 +110,7 @@ router.get('/userStatics', protect, userStatics);
 router.get('/getUsersByLatestActivity', protect, getChatsWithLatestMessages);
 router.get('/getReviews/:userId', getReviews);
 router.post('/UpdateCallStatus', protect, UpdateCallStatus);
+router.post('/RegisterEnquiry', RegisterEnquiry);
 
 router.post('/ChatStatusStatus', protect, ChatStatusStatus);
 
