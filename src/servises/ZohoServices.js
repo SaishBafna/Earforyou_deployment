@@ -15,7 +15,7 @@ const getAuthorizationCode = () => {
     const params = {
         client_id: process.env.ZOHO_CLIENT_ID,
         response_type: 'code',
-        scope: 'ZohoCampaigns.contact.CREATE,ZohoCampaigns.lists.ALL,ZohoCampaigns.subscribe.CREATE',
+        scope: "ZohoMail.accounts.READ, ZohoMail.messages.CREATE",
         redirect_uri: process.env.ZOHO_REDIRECT_URI,
         access_type: 'offline',
         prompt: 'consent'
@@ -36,7 +36,7 @@ const handleCallback = async (code) => {
             client_secret: process.env.ZOHO_CLIENT_SECRET,
             redirect_uri: process.env.ZOHO_REDIRECT_URI,
             grant_type: 'authorization_code',
-            scope: "ZohoCampaigns.contact.CREATE,ZohoCampaigns.lists.ALL"
+            scope: "ZohoMail.accounts.READ, ZohoMail.messages.CREATE"
         });
 
         const response = await axios.post(
@@ -73,7 +73,7 @@ const refreshAccessToken = async () => {
             client_id: '1000.M9PNU2DDSI2RFY2K2HVLTCY4153HTN',
             client_secret: 'c1217b89fccf397a715ddb7a1b56df5d068494db4c',
             grant_type: 'refresh_token',
-            scope:'ZohoCampaigns.subscribe.CREATE'
+            scope: 'ZohoMail.messages.CREATE'
         };
 
         const response = await axios.post(
@@ -160,7 +160,7 @@ const addToMailingList = async (email) => {
         }
 
         const access_token = tokenResponse.accessToken;
-        console.log("access_token",access_token);
+        console.log("access_token", access_token);
 
         const url = 'https://campaigns.zoho.in/api/v1.1/json/listsubscribe';
 

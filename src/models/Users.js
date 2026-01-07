@@ -69,11 +69,21 @@ const userSchema = new mongoose.Schema(
     },
     userCategory: {
       type: String,
-      enum: ["Therapist", "Psychologist", "Profisnal_listner", 'User'],
+      enum: ["Therapist", "Psychologist", "Profisnal_listner", 'User','Healer','Counsellor'],
       default: 'User',
       index: true,
     },
     CallStatus: {
+      type: String,
+      enum: ['Active', 'InActive'],
+      default: 'Active'
+    },
+    CallStatus: {
+      type: String,
+      enum: ['Active', 'InActive'],
+      default: 'Active'
+    },
+    ChatStatus: {
       type: String,
       enum: ['Active', 'InActive'],
       default: 'Active'
@@ -144,6 +154,61 @@ const userSchema = new mongoose.Schema(
       type: [bankDetailsSchema], // Array of bank details
       default: [], // Default to an empty array
     },
+    // Add other fields as needed
+    // chatCredits: {
+    //   privateChats: {
+    //     remaining: {
+    //       type: Number,
+    //       default: 0
+    //     },
+    //     expiresAt: {
+    //       type: Date
+
+    //     }
+    //   },
+    //   groupChats: {
+    //     remaining: {
+    //       type: Number,
+    //       default: 0
+    //     },
+    //     expiresAt: {
+    //       type: Date
+
+    //     }
+    //   }
+    // },
+    // paymentHistory: [{
+    //   type: {
+    //     type: String,
+    //     enum: ['private', 'group'],
+    //     required: true
+    //   },
+    //   plan: {
+    //     type: String,
+    //     required: true
+
+    //   },
+    //   amount: {
+    //     type: Number,
+    //     required: true
+
+    //   },
+    //   chatsAdded: {
+    //     type: Number,
+    //     required: true
+
+    //   },
+    //   validityDays: {
+    //     type: Number,
+    //     required: true
+
+    //   },
+    //   purchaseDate: {
+    //     type: Date,
+    //     default: Date.now
+
+    //   }
+    // }]
 
   },
   { timestamps: true }

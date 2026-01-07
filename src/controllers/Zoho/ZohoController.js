@@ -1,5 +1,4 @@
 import { getAuthorizationCode, handleCallback } from "../../servises/ZohoServices.js";
-
 const generateAuthCode = (req, res) => {
     try {
         const authUrl = getAuthorizationCode();

@@ -4,16 +4,28 @@ import firebaseConfig from '../../config/firebaseConfig.js';
 import User from '../../models/Users.js';
 import admin from 'firebase-admin';
 import { getMessaging } from 'firebase-admin/messaging';
-
+import { ChatMessage } from '../../models/message.models.js';
+import { Chat } from '../../models/chat.modal.js';
 
 // Function to send notification to a single user
-const sendSingleNotification = async (deviceToken, title, body) => {
+const sendSingleNotification = async (deviceToken, title, body, chatId, messageId, senderId, senderName, senderAvatar) => {
   const message = {
     notification: {
       title,
       body,
     },
     token: deviceToken,
+    data: {
+      screen: 'Chat',
+      params: JSON.stringify({
+        chatId: chatId,
+        messageId: messageId,
+        type: 'chat_message',
+        AgentID: senderId,
+        friendName: senderName,
+        imageurl: senderAvatar || '',
+      })
+    },
   };
 
   try {
@@ -260,30 +272,123 @@ export const sendBulkNotification = async (req, res) => {
 // Original single user notification function (kept for backward compatibility)
 
 
+// export const sendPushNotification = async (req, res) => {
+//   const loginuserid = req.user.id || req.user._id;
+//   const { userId } = req.body
+
+//   try {
+//     const user = await User.findById(userId);
+//     const loginuser = await User.findById(loginuserid);
+
+//     console.log("user", user);
+//     console.log("user", user.deviceToken);
+
+//     if (!user || !user.deviceToken) {
+//       console.log()
+//       return res.status(404).json({
+//         success: false,
+//         message: 'User or device token not found'
+//       });
+//     }
+//     const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : 'Unknown Person';
+//     // Create body text with user's name
+//     const body = `Your True Listener ${capitalize(loginuser.username) || capitalize(user.name) || 'Unknown Person'}`;
+//     const title = `Are you free now, ${capitalize(user.username) || capitalize(user.name) || 'Unknown Person'}? If Yes, Let's Connect Over A Call`;
+
+//     const response = await sendSingleNotification(user.deviceToken, title, body);
+
+
+
+//     if (!response) {
+//       throw new Error('Failed to send notification');
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       message: 'Notification sent!',
+//       response
+//     });
+//   } catch (error) {
+//     console.error('Error sending notification:', error);
+//     return res.status(500).json({
+//       success: false,
+//       message: 'Failed to send notification',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
 export const sendPushNotification = async (req, res) => {
-  const loginuserid = req.user.id || req.user._id;
-  const { userId } = req.body
+  const loginUserId = req.user.id || req.user._id;
+  const { userId } = req.body; // The user ID to send notification to
+
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Recipient user ID is required'
+    });
+  }
 
   try {
-    const user = await User.findById(userId);
-    const loginuser = await User.findById(loginuserid);
-
-    console.log("user", user);
-    console.log("user", user.deviceToken);
-
-    if (!user || !user.deviceToken) {
-      console.log()
+    // Get the current user (sender)
+    const currentUser = await User.findById(loginUserId);
+    if (!currentUser) {
       return res.status(404).json({
         success: false,
-        message: 'User or device token not found'
+        message: 'Current user not found'
       });
     }
-    const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : 'Unknown Person';
-    // Create body text with user's name
-    const body = `Your True Listener ${capitalize(loginuser.username) || capitalize(user.name) || 'Unknown Person'}`;
-    const title = `Are you free now, ${capitalize(user.username) || capitalize(user.name) || 'Unknown Person'}? If Yes, Let's Connect Over A Call`;
 
-    const response = await sendSingleNotification(user.deviceToken, title, body);
+    // Get the recipient user
+    const recipientUser = await User.findById(userId);
+    if (!recipientUser || !recipientUser.deviceToken) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recipient user not found or device token not available'
+      });
+    }
+
+    // Find a chat between these two users
+    const chat = await Chat.findOne({
+      participants: { $all: [loginUserId, userId] }
+    }).sort({ updatedAt: -1 }).limit(1);
+
+    let chatId = null;
+    let messageId = null;
+
+    if (chat) {
+      chatId = chat._id;
+      // Get the most recent message in the chat if chat exists
+      const recentMessage = await ChatMessage.findOne({
+        chat: chat._id
+      }).sort({ createdAt: -1 }).limit(1);
+
+      if (recentMessage) {
+        messageId = recentMessage._id;
+      }
+    }
+
+    // Prepare notification content
+    const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : 'Unknown Person';
+    const recipientName = capitalize(recipientUser.username) || capitalize(recipientUser.name) || 'User';
+    const senderName = capitalize(currentUser.username) || capitalize(currentUser.name) || 'Someone';
+
+    const title = `New message from ${senderName}`;
+    const body = `${senderName} wants to connect with you`;
+
+    // Send notification
+    const response = await sendSingleNotification(
+      recipientUser.deviceToken,
+      title,
+      body,
+      chatId,
+      messageId,
+      currentUser._id,
+      senderName,
+      currentUser.avatarUrl
+    );
 
     if (!response) {
       throw new Error('Failed to send notification');
@@ -291,7 +396,7 @@ export const sendPushNotification = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Notification sent!',
+      message: 'Notification sent successfully!',
       response
     });
   } catch (error) {
@@ -303,7 +408,6 @@ export const sendPushNotification = async (req, res) => {
     });
   }
 };
-
 
 export const getValidTokenCount = async (req, res) => {
   try {

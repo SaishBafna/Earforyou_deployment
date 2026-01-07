@@ -1,34 +1,58 @@
-
 import nodemailer from 'nodemailer';
 
 const sendEmail = async (email, subject, message) => {
     try {
+        console.log('Attempting to send email...');
+        console.log(`Recipient: ${email}, Subject: ${subject}`);
+
+        // Create transporter with debug and logger options
         let transporter = nodemailer.createTransport({
-            service: 'gmail',  // Using Gmail as the email service
+            service: 'gmail',
             auth: {
-                user: process.env.EMAIL_USER, // Your email id
-                pass: process.env.EMAIL_PASS // Your password
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
             },
+            debug: true, // Enable debug output
+            logger: true // Enable logging
+        });
+
+        console.log('Transporter created, verifying connection...');
+
+        // Verify transporter connection
+        await transporter.verify((error, success) => {
+            if (error) {
+                console.error('Transporter verification failed:', error);
+            } else {
+                console.log('Server is ready to take our messages');
+            }
         });
 
         let mailOptions = {
-            from: process.env.EMAIL_USER,  // Sender address
-            to: email,  // Recipient's email
-            subject: subject,  // Email subject
-            text: message,  // Plain text message
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: subject,
+            text: message,
         };
 
+        console.log('Sending email with options:', mailOptions);
+
         // Send the email
-        await transporter.sendMail(mailOptions);
-        console.log('Email sent successfully');
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Email sent successfully:', info.messageId);
+        return info;
     } catch (error) {
-        console.error('Error sending email:', error);
-        throw new Error('Error sending email');
+        console.error('Error sending email:');
+        console.error('Full error object:', error);
+
+        if (error.responseCode) {
+            console.error('SMTP response code:', error.responseCode);
+        }
+        if (error.response) {
+            console.error('SMTP response:', error.response);
+        }
+
+        throw new Error(`Failed to send email: ${error.message}`);
     }
 };
 
 export default sendEmail;
-
-
-// =ukvalleytech@gmail.com   
-// =leuekrikffdperkg

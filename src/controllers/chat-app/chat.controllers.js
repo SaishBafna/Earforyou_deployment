@@ -61,6 +61,7 @@ const markMessageAsRead = asyncHandler(async (req, res) => {
  * @returns {mongoose.PipelineStage[]}
  */
 
+
 const chatCommonAggregation = () => {
   return [
     {
@@ -190,6 +191,7 @@ const createOrGetAOneOnOneChat = asyncHandler(async (req, res) => {
 
   // Check if it's a valid receiver
   const receiver = await User.findById(receiverId);
+
 
   if (!receiver) {
     throw new ApiError(404, "Receiver does not exist");
@@ -367,88 +369,6 @@ const getAllChats = asyncHandler(async (req, res) => {
 });
 
 
-
-
-// export const getUnreadMessagesCount = asyncHandler(async (req, res) => {
-//   const loggedInUserId = req.user._id;
-
-//   // Get all chats that the user is part of
-//   const userChats = await Chat.find({
-//     participants: { $elemMatch: { $eq: loggedInUserId } }
-//   });
-
-//   // Get the chat IDs
-//   const chatIds = userChats.map(chat => chat._id);
-
-//   // Count unread messages across all user's chats
-//   const unreadCount = await ChatMessage.countDocuments({
-//     chat: { $in: chatIds },
-//     seenBy: {
-//       $not: {
-//         $elemMatch: {
-//           $eq: loggedInUserId
-//         }
-//       }
-//     },
-//     sender: { $ne: loggedInUserId }
-//   });
-
-//   // Get unread count per chat with other participant info
-//   const unreadCountByChat = await ChatMessage.aggregate([
-//     {
-//       $match: {
-//         chat: { $in: chatIds },
-//         seenBy: {
-//           $not: {
-//             $elemMatch: {
-//               $eq: loggedInUserId
-//             }
-//           }
-//         },
-//         sender: { $ne: loggedInUserId }
-//       }
-//     },
-//     {
-//       $lookup: {
-//         from: "chats",
-//         localField: "chat",
-//         foreignField: "_id",
-//         as: "chatInfo"
-//       }
-//     },
-//     {
-//       $unwind: "$chatInfo"
-//     },
-//     {
-//       $addFields: {
-//         otherParticipant: {
-//           $filter: {
-//             input: "$chatInfo.participants",
-//             as: "participant",
-//             cond: { $ne: ["$$participant", loggedInUserId] }
-//           }
-//         }
-//       }
-//     },
-//     {
-//       $unwind: "$otherParticipant"
-//     },
-//     {
-//       $group: {
-//         _id: "$chat",
-//         count: { $sum: 1 },
-//         otherParticipantId: { $first: "$otherParticipant" }
-//       }
-//     }
-//   ]);
-
-//   return res.status(200).json(
-//     new ApiResponse(unreadCount, unreadCountByChat)
-//   );
-// });
-
-// Add to your routes file
-
 export const getUnreadMessagesCount = asyncHandler(async (req, res) => {
   const loggedInUserId = req.user._id;
   const otherParticipantId = req.query.otherParticipantId;
@@ -492,10 +412,6 @@ export const getUnreadMessagesCount = asyncHandler(async (req, res) => {
     })
   );
 });
-
-
-
-
 
 
 export {
