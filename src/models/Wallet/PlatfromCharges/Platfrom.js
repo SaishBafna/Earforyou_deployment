@@ -1,5 +1,36 @@
 import mongoose from 'mongoose';
 
+const PaymentDetailsSchema = new mongoose.Schema({
+    gateway: {
+        type: String,
+        enum: ['PhonePe', 'RazorPay', 'Admin', 'Internal'],
+        required: true
+    },
+    transactionId: {
+        type: String,
+        required: true
+    },
+    orderId: String,
+    paymentId: String,
+    signature: String, // For RazorPay verification
+    amount: Number,
+    currency: {
+        type: String,
+        default: 'INR'
+    },
+    status: {
+        type: String,
+        enum: ['created', 'pending', 'success', 'failed', 'refunded'],
+        default: 'pending'
+    },
+    gatewayResponse: mongoose.Schema.Types.Mixed,
+    initiatedAt: {
+        type: Date,
+        default: Date.now
+    },
+    completedAt: Date
+}, { _id: false });
+
 const PlatformChargesSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -23,14 +54,10 @@ const PlatformChargesSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'active', 'expired', 'queued', 'queued_confirmed'],
+        enum: ['pending', 'processing', 'failed', 'active', 'expired', 'queued', 'queued_confirmed'],
         default: 'pending'
     },
-    transactionId: {
-        type: String,
-        required: true,
-        unique: true
-    },
+    payment: PaymentDetailsSchema,
     createdAt: {
         type: Date,
         default: Date.now
@@ -43,7 +70,6 @@ PlatformChargesSchema.pre('save', function (next) {
     const todayStart = new Date(today.setHours(0, 0, 0, 0));
     const todayEnd = new Date(today.setHours(23, 59, 59, 999));
 
-    // If status is 'active' and endDate is today, set status to 'expired' and endDate to 23:59
     if (this.status === 'active' && this.endDate) {
         const endDateDay = new Date(this.endDate).setHours(0, 0, 0, 0);
         const todayDay = todayStart.getTime();
@@ -54,7 +80,6 @@ PlatformChargesSchema.pre('save', function (next) {
         }
     }
 
-    // If status is 'queued' and startDate is today, set status to 'active' and startDate to 12:00
     if (this.status === 'queued' && this.startDate) {
         const startDateDay = new Date(this.startDate).setHours(0, 0, 0, 0);
         const todayDay = todayStart.getTime();
@@ -74,7 +99,6 @@ PlatformChargesSchema.statics.updateStatuses = async function () {
     const todayStart = new Date(today.setHours(0, 0, 0, 0));
     const todayEnd = new Date(today.setHours(23, 59, 59, 999));
 
-    // Update active plans that expire today
     await this.updateMany(
         {
             status: 'active',
@@ -91,7 +115,6 @@ PlatformChargesSchema.statics.updateStatuses = async function () {
         }
     );
 
-    // Update queued plans that start today
     await this.updateMany(
         {
             status: 'queued',

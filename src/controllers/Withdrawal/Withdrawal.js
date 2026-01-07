@@ -10,7 +10,7 @@ export const requestWithdrawal = async (req, res) => {
         const { amount } = req.body;
 
         // Define the daily withdrawal limit
-        const DAILY_LIMIT = 1000; // ₹29 per day
+        const DAILY_LIMIT = 5000; // ₹29 per day
 
         // Validate amount
         if (amount <= 0) {

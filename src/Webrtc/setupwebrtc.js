@@ -5,6 +5,7 @@ import User from '../models/Users.js';
 import Wallet from '../models/Wallet/Wallet.js'
 import admin from 'firebase-admin';
 import PlatformCharges from '../models/Wallet/PlatfromCharges/Platfrom.js';
+import { createStreak } from '../controllers/Streak.js';
 // import { ChatMessage } from '../models/message.models.js';
 
 export const setupWebRTC = (io) => {
@@ -45,6 +46,9 @@ export const setupWebRTC = (io) => {
 
         // Log socket connection
         logger.info(`User ${userId} joined with socket ID ${socket.id}`);
+
+        // Add user to the online users map
+        createStreak(userId);
 
         // Update user's status in the database
         const updatedUser = await User.findByIdAndUpdate(
@@ -999,15 +1003,7 @@ export const setupWebRTC = (io) => {
           status: 'missed',
         });
 
-        // Log missed call for receiver
-        const logForReceiver = await CallLog.create({
-          caller: new mongoose.Types.ObjectId(receiverId),
-          receiver: new mongoose.Types.ObjectId(callerId),
-          startTime: new Date(),
-          endTime: new Date(),
-          duration: 0,
-          status: 'missed',
-        });
+      
 
         logger.info('Cleaning up call data...');
 
@@ -1138,6 +1134,7 @@ export const setupWebRTC = (io) => {
             receiverSockets.forEach((socketId) => {
               socket.to(socketId).emit('callEnded', {
                 callerId,
+                receiverId,
                 timestamp: Date.now()
               });
 
@@ -1207,14 +1204,7 @@ export const setupWebRTC = (io) => {
               status: 'completed',
             });
 
-            await CallLog.create({
-              caller: new mongoose.Types.ObjectId(receiverId),
-              receiver: new mongoose.Types.ObjectId(callerId),
-              startTime: new Date(startTime),
-              endTime,
-              duration,
-              status: 'completed',
-            });
+            
 
 
             for (const key in pendingCalls) {
@@ -1275,6 +1265,23 @@ export const setupWebRTC = (io) => {
         });
       }
     });
+
+
+
+    // Threaded disconnect handler
+    // Handle user joining rooms
+    socket.on('joinUserRoom', (userId) => {
+      socket.join(`user:${userId}`);
+    });
+
+    socket.on('joinPostRoom', (postId) => {
+      socket.join(`post:${postId}`);
+    });
+
+    socket.on('joinCommentRoom', (commentId) => {
+      socket.join(`comment:${commentId}`);
+    });
+
 
     socket.on('disconnect', async () => {
       try {
@@ -1516,8 +1523,9 @@ async function sendMNotification(userId, title, message, type, receiverId, sende
         priority: 'high',
       },
       data: {
-        screen: 'Recent_Calls', // Target screen
+        screen: 'Call_list', // Target screen
         params: JSON.stringify({
+          act_tab: '1',
           user_id: userId, // Include Call ID
           type: type, // Type of call
           agent_id: receiverId, // Receiver ID
@@ -1539,5 +1547,4 @@ async function sendMNotification(userId, title, message, type, receiverId, sende
     console.error("Error sending notification:", error);
   }
 }
-
 

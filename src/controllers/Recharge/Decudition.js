@@ -329,7 +329,6 @@ export const deductPerMinute = async (req, res) => {
 
   try {
     const { callerId, receiverId, durationInMinutes } = req.body;
-
     // Validate input
     if (!callerId || !receiverId || durationInMinutes <= 0 || isNaN(durationInMinutes)) {
       return res.status(400).json({
@@ -351,6 +350,7 @@ export const deductPerMinute = async (req, res) => {
       userType: receiver.userType,
     }).session(session);
 
+
     if (!callRateData) {
       await session.abortTransaction();
       return res.status(500).json({
@@ -364,11 +364,12 @@ export const deductPerMinute = async (req, res) => {
     console.log("User Type:", receiver.userType, "User Category:", receiver.userCategory, "Rate:", ratePerMinute, "Commission:", adminCommissionPercent);
 
     // **Calculate total deduction and earnings**
-    const totalDeduction = ratePerMinute * durationInMinutes;
+    const totalDeduction = (ratePerMinute / 2) * durationInMinutes;
     const commission = (adminCommissionPercent / 100) * totalDeduction;
     const amountForReceiver = totalDeduction - commission;
 
     if (isNaN(totalDeduction) || isNaN(amountForReceiver)) {
+
       await session.abortTransaction();
       return res.status(500).json({
         success: false,
@@ -459,4 +460,27 @@ export const deductPerMinute = async (req, res) => {
   }
 };
 
+
+export const getCallRate = async (req, res) => {
+  try {
+
+    // Fetch the user's call rate
+    const user = await CallRatePerMin.find();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Call rate not found',
+      });
+    }
+    res.status(200).json({
+      success: true,
+      message: 'Call rate fetched successfully',
+      data: user,
+    });
+  }
+  catch (error) {
+    console.error('Error fetching call rate:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+}
 

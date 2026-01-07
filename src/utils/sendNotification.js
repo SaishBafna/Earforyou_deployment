@@ -1,6 +1,6 @@
 import admin from "../config/firebaseConfig.js";
 
-const sendNotification = async (deviceToken, title, message) => {
+ const sendNotification = async (deviceToken, title, message) => {
   const payload = {
     notification: {
       title: title,
